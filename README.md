@@ -2,19 +2,32 @@
 
 <p align="center"><b>Project Coldfall</b></p>
 
-**A terminal-first console for running several long-lived AI agents, across several vendors, without losing track of what it costs.**
+**See what every AI coding agent is costing you, across vendors, before you run out.**
 
-macOS · Swift · early, but it runs
+Project Coldfall is a macOS terminal for running several long-lived AI agents side by side: Claude Code, Codex, Antigravity, Copilot, or a local model through Ollama. A strip along the bottom reads each vendor's real remaining quota and shows it in one place, so you find out on Tuesday that Claude is nearly spent for the week and Codex still has room, not on Thursday when a session dies mid-task. Each agent lives on a persistent desk that keeps its own folder, its own memory and its own conversation, so you switch between them instead of starting over.
+
+<!-- DEMO GIF PLACEHOLDER. Record per the shot list, save as docs/media/coldfall-demo.gif (keep it under about 8 MB), then delete this comment wrapper and the line below stays as is.
+![Two desks running in Project Coldfall while the cost meter along the bottom shows Claude nearly out of weekly quota and Codex with room to spare](docs/media/coldfall-demo.gif)
+-->
+
+macOS 13 or later · Swift · MIT licensed · early, but it runs
 
 [![build and test](https://github.com/anthonyproctor/project-coldfall/actions/workflows/ci.yml/badge.svg)](https://github.com/anthonyproctor/project-coldfall/actions/workflows/ci.yml)
 
-> The two L's are pipes. In a shell, `|` feeds one program's output into the next — which is what the bridge does between desks. You type it as `coldfall`; a pipe cannot appear in a command name.
+**Jump to:** [The meter](#what-it-does) · [Install](#install) · [Opening it on macOS 15 and later](#opening-project-coldfall-on-macos-15-and-later) · [Build from source](#install) · [The guide](https://project-coldfall.vercel.app/guide)
 
-*Previously named Deskwork. The rename was forced by a live 1989 trademark on "Deskworks" in the same software class. Existing installs migrate automatically on first launch — see [the migration notes](#renamed-from-deskwork).*
+### Why it exists
+
+- **The meter.** Live quota for Claude and Codex, side by side, with the week's reset time. When one vendor is far ahead of the other, it says so and names where to send the next task. Click the strip for quota bars, which desk used what, and fourteen days of history. Copilot shows tokens and premium requests but no quota, and Antigravity shows nothing yet.
+- **Desks, not threads.** One desk per specialist. Switch desks and the others keep running. A green dot tells you which one has finished answering.
+- **Your own agents, untouched.** Project Coldfall launches the vendor's real CLI in a real terminal, so your agent definitions, hooks, memory files and model pins all still apply. It never reimplements an agent.
+- **Yours to leave.** Everything it writes is in two folders, and Settings can list and remove all of it.
+
+> The two L's are pipes. In a shell, `|` feeds one program's output into the next, which is what the bridge does between desks. You type it as `coldfall`; a pipe cannot appear in a command name.
+
+*Previously named Deskwork. The rename was forced by a live 1989 trademark on "Deskworks" in the same software class. Existing installs migrate automatically on first launch, see [the migration notes](#renamed-from-deskwork).*
 
 ---
-
-New here? The [guide](https://project-coldfall.vercel.app/guide) covers what it's for, setting up desks, and a normal day with it.
 
 ## The idea
 
@@ -73,15 +86,11 @@ Each desk shows which vendor is behind it, and each runtime can have a **home** 
 
 ## Install
 
-Download the latest `Project-Coldfall.app.zip` from [Releases](https://github.com/anthonyproctor/project-coldfall/releases), unzip it, and drag it to Applications.
+Two ways. Download the app, or build it yourself.
 
-It is **not notarised**, so the first launch is blocked with "Apple could not verify Project Coldfall is free of malware." That is Gatekeeper telling you the truth: nobody has paid Apple $99 to vouch for this binary. To open it anyway:
+**Download.** Get `Project-Coldfall.app.zip` from [Releases](https://github.com/anthonyproctor/project-coldfall/releases), unzip it, and drag it to Applications. It is not signed or notarized yet, so macOS blocks the first launch. The next section walks through it.
 
-```sh
-xattr -d com.apple.quarantine "/Applications/Project Coldfall.app"
-```
-
-Or, without Terminal: try to open it once, then go to **System Settings ▸ Privacy & Security**, scroll down, and click **Open Anyway** next to Project Coldfall. (On macOS 15 and later, right-click ▸ Open no longer gets past this.) If you would rather not do either, build it yourself — the source is right here, and that is the better habit:
+**Build from source.** No Xcode needed, only the Command Line Tools:
 
 ```sh
 git clone https://github.com/anthonyproctor/project-coldfall
@@ -90,7 +99,34 @@ cd project-coldfall
 open ~/Applications/"Project Coldfall.app"
 ```
 
-Pass a directory to put it elsewhere: `./scripts/build-app.sh /Applications`.
+Pass a directory to put it elsewhere: `./scripts/build-app.sh /Applications`. An app you build on your own Mac is not quarantined, so it opens without the steps below.
+
+### Opening Project Coldfall on macOS 15 and later
+
+The download is not notarized. Nobody has paid Apple for a Developer ID for it yet, so on first launch macOS says it could not verify the app is free of malware. That is Gatekeeper telling the truth about the signature, not a finding about the code. Since macOS 15 (Sequoia), the old right-click and Open shortcut no longer gets past it. Do this once:
+
+1. Double-click Project Coldfall in Applications. macOS shows the warning. Click **Done**.
+2. Open **System Settings**, then **Privacy & Security**.
+3. Scroll down to the **Security** section. You will see a line saying Project Coldfall was blocked, with an **Open Anyway** button. Click it.
+4. Confirm in the dialog that appears by clicking **Open**. macOS may ask for your password or Touch ID.
+
+After that it opens normally. These are Apple's own steps, described at [support.apple.com/102445](https://support.apple.com/en-us/102445). If you would rather use Terminal, this does the same thing:
+
+```sh
+xattr -d com.apple.quarantine "/Applications/Project Coldfall.app"
+```
+
+The most careful path is to build from source, above. The code is right here to read.
+
+### Checking your download
+
+Each release page lists a SHA-256 digest next to the zip under Assets. To check that the file you downloaded is the file that was published, run this and compare the output to that digest:
+
+```sh
+shasum -a 256 ~/Downloads/Project-Coldfall.app.zip
+```
+
+If the two strings differ, do not open it, and please [open an issue](../../issues/new/choose).
 
 First launch writes a working config from whichever CLIs it finds and shows a welcome screen explaining what it found. There is nothing to set up by hand. If you have no agent CLI yet, the welcome screen lists how to install each one (Claude Code, Codex, Antigravity CLI, Copilot CLI, Ollama), with a copy button, and **Check again** picks it up without a relaunch.
 
