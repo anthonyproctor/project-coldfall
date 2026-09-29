@@ -40,7 +40,7 @@
   html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 76px; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
   a { color: inherit; }
-  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 6px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible, pre:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 6px; }
   img { max-width: 100%; height: auto; display: block; }
   .skip { position: absolute; left: -9999px; top: 8px; z-index: 20; background: var(--green); color: var(--green-ink); padding: 8px 14px; border-radius: 8px; font-weight: 600; }
   .skip:focus { left: 12px; }
@@ -286,7 +286,7 @@
     <p>Open <strong>Settings</strong> (<kbd>⌘,</kbd>) and go to <strong>Desks</strong>. Give it a name, pick the agent, choose the folder it works in, then click <strong>Add / Update</strong> and <strong>Save</strong>. Two optional fields there: a second Claude account, and a weekly budget in dollars. Agents you've already defined, like Claude Code subagents, are listed there too, one click each.</p>
     <h3>Or edit the file</h3>
     <p>Every desk lives in one plain text file, <code>~/.config/coldfall/desks.toml</code>. Edit it in any editor, or let an agent edit it, and the app picks up the change within a second.</p>
-<pre><code><span class="c"># one desk per ongoing job</span>
+<pre tabindex="0" role="region" aria-label="Example desks.toml"><code><span class="c"># one desk per ongoing job</span>
 [desk.api]
 runtime = "claude"
 cwd = "~/code/api"
@@ -407,7 +407,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <p>Coldfall runs your agents; it never replaces them. So leaving costs nothing: Claude Code, Codex and the rest keep their logins, conversations, settings, hooks and memory files, and work from a plain terminal exactly as before. Desks that run your own script are your script.</p>
     <p>Everything Coldfall has of its own is in two folders, plus one thing it changes elsewhere if you turned on live Claude limits: <code>statusLine</code> in that account's <code>settings.json</code>, which it points at its own recorder (that recorder still runs whatever statusline you had).</p>
     <p>In the app, <strong>Settings ▸ General ▸ Remove Project Coldfall's Files…</strong> shows you exactly what it would delete and how big it is, puts the statusline back the way it was, and deletes the two folders. Then quit and drag the app to the Trash. By hand it's the same three steps:</p>
-<pre><code>rm -rf ~/.config/coldfall ~/.local/share/coldfall
+<pre tabindex="0" role="region" aria-label="Commands to remove Coldfall's files"><code>rm -rf ~/.config/coldfall ~/.local/share/coldfall
 <span class="c"># and if you turned on live limits, point statusLine in</span>
 <span class="c"># ~/.claude/settings.json back at your own command, or delete the line</span></code></pre>
     <p>Your desk list goes with it, so copy <code>~/.config/coldfall/desks.toml</code> first if you might come back.</p>
@@ -431,10 +431,6 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     </span>
   </div>
 </footer>
-<script>
-  var h = document.querySelector("header");
-  var onScroll = function () { h.classList.toggle("scrolled", window.scrollY > 8); };
-  window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
-</script>
+<script src="/site.js" defer></script>
 </body>
 </html>

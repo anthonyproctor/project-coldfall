@@ -372,13 +372,15 @@
         <li>
           <strong>Download and move it to Applications.</strong>
           <p><a href="https://github.com/anthonyproctor/project-coldfall/releases/latest/download/Project-Coldfall.app.zip">Download the latest version</a>, unzip it, and drag Project Coldfall into your Applications folder.</p>
+          <p class="note">Want to check the file first? Before you unzip it, run this in Terminal and compare the result to the SHA-256 digest listed next to the zip on the <a href="https://github.com/anthonyproctor/project-coldfall/releases/latest">release page</a>. If they don't match, don't open it.</p>
+          <div class="code"><code id="shasum">shasum -a 256 ~/Downloads/Project-Coldfall.app.zip</code><button type="button" data-copy="shasum">Copy</button></div>
         </li>
         <li>
           <strong>Let macOS open it.</strong>
-          <p>This build isn't signed and notarized through Apple's developer program yet, so macOS blocks the first launch. Paste this into Terminal:</p>
+          <p>This build isn't signed and notarized through Apple's developer program yet, so macOS blocks the first launch. Open it once and click Done on the warning. Then open System Settings, go to Privacy &amp; Security, scroll down to Security, and click Open Anyway. macOS may ask for your password.</p>
+          <p class="note">Rather use Terminal? This does the same thing:</p>
           <div class="code"><code id="xattr">xattr -d com.apple.quarantine "/Applications/Project Coldfall.app"</code><button type="button" data-copy="xattr">Copy</button></div>
           <span class="sr" role="status" aria-live="polite" id="copy-status"></span>
-          <p class="note">Or try to open it once, then go to System Settings, Privacy &amp; Security, and click Open Anyway.</p>
         </li>
         <li>
           <strong>Open it.</strong>
@@ -435,7 +437,7 @@
       </details>
       <details>
         <summary>Does it work on Windows or Linux?</summary>
-        <p>Not yet. It's a Mac app for now.</p>
+        <p>Not today. It's a Mac app.</p>
       </details>
     </div>
   </section>
@@ -465,28 +467,6 @@
   </div>
 </footer>
 
-<script>
-  var status = document.getElementById("copy-status");
-  document.querySelectorAll("[data-copy]").forEach(function (b) {
-    b.addEventListener("click", function () {
-      var el = document.getElementById(b.dataset.copy), t = el.textContent;
-      var say = function (msg, label) {
-        status.textContent = msg; b.textContent = label;
-        setTimeout(function () { b.textContent = "Copy"; }, 1800);
-      };
-      var select = function () {
-        var r = document.createRange(); r.selectNodeContents(el);
-        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-        say("Selected. Press Command C to copy.", "Selected");
-      };
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(t).then(function () { say("Command copied.", "Copied"); }, select);
-      } else { select(); }
-    });
-  });
-  var h = document.querySelector("header");
-  var onScroll = function () { h.classList.toggle("scrolled", window.scrollY > 8); };
-  window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
-</script>
+<script src="/site.js" defer></script>
 </body>
 </html>
