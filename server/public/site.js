@@ -21,4 +21,24 @@
     var h = document.querySelector("header");
     var onScroll = function () { h.classList.toggle("scrolled", window.scrollY > 8); };
     window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+    // Small-screen menu: a disclosure button that shows the header links.
+    // The button stays hidden without JS, so the page never shows a dead control.
+    var menu = h.querySelector(".menu-btn"), links = document.getElementById("nav-links");
+    if (menu && links) {
+      menu.hidden = false;
+      var setOpen = function (open) {
+        h.classList.toggle("open", open);
+        menu.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      var isOpen = function () { return menu.getAttribute("aria-expanded") === "true"; };
+      menu.addEventListener("click", function () { setOpen(!isOpen()); });
+      links.addEventListener("click", function (e) { if (e.target.closest("a")) setOpen(false); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && isOpen()) { setOpen(false); menu.focus(); }
+      });
+      document.addEventListener("click", function (e) { if (isOpen() && !h.contains(e.target)) setOpen(false); });
+      h.addEventListener("focusout", function (e) { if (isOpen() && e.relatedTarget && !h.contains(e.relatedTarget)) setOpen(false); });
+      window.matchMedia("(min-width: 881px)").addEventListener("change", function (m) { if (m.matches) setOpen(false); });
+    }
 })();

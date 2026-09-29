@@ -22,16 +22,23 @@
 <meta name="twitter:image" content="https://project-coldfall.vercel.app/og.png">
 <meta name="twitter:image:alt" content="The coldfa|| wordmark beside the app's list of desks.">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Project Coldfall",
- "applicationCategory":"DeveloperApplication","operatingSystem":"macOS 13 or later",
+{"@context":"https://schema.org",
+ "@type":"SoftwareApplication",
+ "name":"Project Coldfall",
+ "softwareVersion":"0.3.18",
+ "applicationCategory":"DeveloperApplication",
+ "operatingSystem":"macOS 13 or later",
  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
  "license":"https://opensource.org/licenses/MIT",
+ "author":{"@type":"Person","name":"Anthony Proctor","url":"https://github.com/anthonyproctor"},
  "downloadUrl":"https://github.com/anthonyproctor/project-coldfall/releases/latest/download/Project-Coldfall.app.zip",
  "codeRepository":"https://github.com/anthonyproctor/project-coldfall",
  "url":"https://project-coldfall.vercel.app/"}
 </script>
 <meta name="color-scheme" content="dark light">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2318181b'/%3E%3Crect x='11' y='7' width='3' height='18' rx='1.5' fill='%236acd63'/%3E%3Crect x='18' y='7' width='3' height='18' rx='1.5' fill='%236acd63'/%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
   :root {
     --bg: #0f0f12; --bg2: #141418; --panel: #19191e; --line: #26262d; --line2: #33333b;
@@ -58,6 +65,7 @@
   a { color: inherit; }
   a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 6px; }
   img { max-width: 100%; height: auto; display: block; }
+  picture { display: contents; }
   .skip { position: absolute; left: -9999px; top: 8px; z-index: 20; background: var(--green); color: var(--green-ink); padding: 8px 14px; border-radius: 8px; font-weight: 600; }
   .skip:focus { left: 12px; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
@@ -71,10 +79,16 @@
   header .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; }
   .mark { font: 500 21px var(--mono); letter-spacing: .4px; text-decoration: none; }
   .mark b { color: var(--green); font-weight: 500; }
-  header nav { display: flex; align-items: center; gap: 22px; font-size: 15px; }
-  header nav a { color: var(--dim); text-decoration: none; }
-  header nav a:hover { color: var(--text); }
-  header nav a.small-btn { color: var(--green-ink); background: var(--green); padding: 7px 14px; border-radius: 8px; font-weight: 600; }
+  header .mark { display: inline-flex; align-items: center; min-height: 44px; }
+  header nav { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  header nav .nav-links { display: flex; align-items: center; gap: 4px; }
+  header nav a { color: var(--dim); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 9px; }
+  header nav a:hover, header nav a[aria-current="page"] { color: var(--text); }
+  header nav a.small-btn { color: var(--green-ink); background: var(--green); padding: 0 16px; border-radius: 9px; font-weight: 600; margin-left: 6px; }
+  .menu-btn { display: none; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; font: 500 15px var(--sans); color: var(--text);
+              background: transparent; border: 1px solid var(--line2); border-radius: 9px; cursor: pointer; }
+  .menu-btn svg { width: 16px; height: 16px; }
+  .menu-btn[aria-expanded="true"] .i-open, .menu-btn[aria-expanded="false"] .i-close { display: none; }
 
   /* hero */
   .hero { text-align: center; padding-top: 72px; padding-bottom: 32px; }
@@ -170,7 +184,9 @@
   footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
   footer a { color: var(--dim); text-decoration: none; }
   footer a:hover { color: var(--text); }
-  footer .links { display: flex; gap: 20px; flex-wrap: wrap; }
+  footer .wrap { align-items: center; }
+  footer .links { display: flex; gap: 4px 6px; flex-wrap: wrap; margin: 0 -8px; }
+  footer .links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; }
 
   @media (max-width: 880px) {
     .row, .row.flip { grid-template-columns: 1fr; gap: 32px; }
@@ -179,7 +195,12 @@
     .three { gap: 26px; padding-top: 56px; }
     section { padding: 64px 0; }
     .hero { padding-top: 44px; }
-    header nav a.hide-sm { display: none; }
+    .menu-btn:not([hidden]) { display: inline-flex; }
+    header nav .nav-links { display: none; }
+    header.open nav .nav-links { display: flex; flex-direction: column; align-items: stretch; gap: 0; position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 12px 12px; box-shadow: 0 24px 40px -24px rgba(0,0,0,.45); }
+    header.open nav .nav-links a { padding: 0 8px; min-height: 48px; font-size: 17px; border-radius: 8px; }
+    header.open nav .nav-links a + a { border-top: 1px solid var(--line); border-radius: 0; }
     .pic { padding: 14px; }
   }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .btn, header { transition: none; } }
@@ -189,7 +210,7 @@
     .code { flex-direction: column; align-items: stretch; }
     .code code { white-space: normal; overflow-wrap: anywhere; }
     .code button { align-self: flex-start; }
-    header nav a.small-btn { padding: 7px 11px; }
+    header nav a.small-btn { padding: 0 13px; margin-left: 0; }
   }
   @media (forced-colors: active) { summary::after { content: none; } summary { list-style: revert; } }
   .three h2 { font-size: 17px; letter-spacing: 0; line-height: 1.4; margin: 0 0 6px; }
@@ -203,10 +224,17 @@
   <div class="wrap">
     <a class="mark" href="#top" aria-label="Project Coldfall, home">coldfa<b>||</b></a>
     <nav aria-label="Main">
-      <a class="hide-sm" href="#features">Features</a>
-      <a class="hide-sm" href="#install">Install</a>
-      <a class="hide-sm" href="/guide">Guide</a>
-      <a class="hide-sm" href="https://github.com/anthonyproctor/project-coldfall">GitHub</a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav-links" hidden>
+        <svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        Menu
+      </button>
+      <div class="nav-links" id="nav-links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="/guide">Guide</a>
+      <a href="https://github.com/anthonyproctor/project-coldfall">GitHub</a>
+      </div>
       <a class="small-btn" href="https://github.com/anthonyproctor/project-coldfall/releases/latest/download/Project-Coldfall.app.zip">Download</a>
     </nav>
   </div>
@@ -230,7 +258,9 @@
     <div class="window">
       <div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
       <picture>
+        <source media="(max-width: 640px)" srcset="/img/rail.webp" type="image/webp" width="480" height="714">
         <source media="(max-width: 640px)" srcset="/img/rail.png" width="480" height="714">
+        <source srcset="/img/app.webp" type="image/webp" width="2360" height="1560">
         <img src="/img/app.png" width="2360" height="1560" fetchpriority="high"
              alt="The Project Coldfall window: a list of desks on the left, a terminal in the middle and a formatted document on the right.">
       </picture>
@@ -257,8 +287,8 @@
           <li>Fan out: ask one question across several project folders at once, with the cost checked against your weekly limit before it runs.</li>
         </ul>
       </div>
-      <div class="pic"><img src="/img/mail.png" width="1280" height="1280" loading="lazy" decoding="async"
-           alt="Agent mail: the api desk asks Codex to review a discount calculation, and Codex, working read-only, points out a rounding error and a missing test."></div>
+      <div class="pic"><picture><source srcset="/img/mail.webp" type="image/webp" width="1280" height="1280"><img src="/img/mail.png" width="1280" height="1280" loading="lazy" decoding="async"
+           alt="Agent mail: the api desk asks Codex to review a discount calculation, and Codex, working read-only, points out a rounding error and a missing test."></picture></div>
     </div>
   </section>
 
@@ -273,8 +303,8 @@
           <li>Each desk also shows how much memory it's using.</li>
         </ul>
       </div>
-      <div class="pic"><img src="/img/meter.png" width="1110" height="158" loading="lazy" decoding="async"
-           alt="The usage meter: Claude at 72 percent of its week, Codex at 12, with the advice to send the next job to Codex."></div>
+      <div class="pic"><picture><source srcset="/img/meter.webp" type="image/webp" width="1110" height="158"><img src="/img/meter.png" width="1110" height="158" loading="lazy" decoding="async"
+           alt="The usage meter: Claude at 72 percent of its week, Codex at 12, with the advice to send the next job to Codex."></picture></div>
     </div>
   </section>
 
@@ -289,8 +319,8 @@
           <li>Group desks, drag them into order, and hide the ones you're not using without losing them.</li>
         </ul>
       </div>
-      <div class="pic tall"><img src="/img/rail-hidden.png" width="480" height="692" loading="lazy" decoding="async"
-           alt="The desk list grouped by job, with one hidden desk listed at the bottom."></div>
+      <div class="pic tall"><picture><source srcset="/img/rail-hidden.webp" type="image/webp" width="480" height="692"><img src="/img/rail-hidden.png" width="480" height="692" loading="lazy" decoding="async"
+           alt="The desk list grouped by job, with one hidden desk listed at the bottom."></picture></div>
     </div>
   </section>
 
@@ -305,8 +335,8 @@
           <li>Turn on <em>Keep Active Groups on Top</em>: groups with waiting desks rise first, then the most recently used.</li>
         </ul>
       </div>
-      <div class="pic tall"><img src="/img/rail.png" width="480" height="714" loading="lazy" decoding="async"
-           alt="The desk list, with a green line reading 3 need you and a folded group showing one waiting desk."></div>
+      <div class="pic tall"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="714"><img src="/img/rail.png" width="480" height="714" loading="lazy" decoding="async"
+           alt="The desk list, with a green line reading 3 need you and a folded group showing one waiting desk."></picture></div>
     </div>
   </section>
 
@@ -321,8 +351,8 @@
           <li>Switch off the local MCP servers a desk doesn't need, for Claude and Codex desks, and it stops starting them.</li>
         </ul>
       </div>
-      <div class="pic"><img src="/img/inventory-top.png" width="1205" height="450" loading="lazy" decoding="async"
-           alt="What This Desk Has for a desk called api, reporting one new hook and one updated plugin since the last look."></div>
+      <div class="pic"><picture><source srcset="/img/inventory-top.webp" type="image/webp" width="1205" height="450"><img src="/img/inventory-top.png" width="1205" height="450" loading="lazy" decoding="async"
+           alt="What This Desk Has for a desk called api, reporting one new hook and one updated plugin since the last look."></picture></div>
     </div>
   </section>
 
@@ -333,8 +363,8 @@
         <h2>No agent installed yet? It shows you how.</h2>
         <p>On first launch, Project Coldfall finds the agents you already have and sets up a desk for each. If you have none, it lists how to install each one and what it needs, with a button to copy the command. Press Check again and you're set.</p>
       </div>
-      <div class="pic"><img src="/img/welcome.png" width="1230" height="620" loading="lazy" decoding="async"
-           alt="The welcome screen on a Mac with no agents installed, listing install commands with Copy buttons."></div>
+      <div class="pic"><picture><source srcset="/img/welcome.webp" type="image/webp" width="1230" height="620"><img src="/img/welcome.png" width="1230" height="620" loading="lazy" decoding="async"
+           alt="The welcome screen on a Mac with no agents installed, listing install commands with Copy buttons."></picture></div>
     </div>
   </section>
 
