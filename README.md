@@ -2,13 +2,13 @@
 
 <p align="center"><b>Project Coldfall</b></p>
 
-**See what every AI coding agent is costing you, across vendors, before you run out.**
+**Every AI you pay for, working together, with one meter that shows what each one has left before you run out.**
 
 Project Coldfall is a macOS terminal for running several long-lived AI agents side by side: Claude Code, Codex, Antigravity, Copilot, or a local model through Ollama. A strip along the bottom reads each vendor's real remaining quota and shows it in one place, so you find out on Tuesday that Claude is nearly spent for the week and Codex still has room, not on Thursday when a session dies mid-task. Each agent lives on a persistent desk that keeps its own folder, its own memory and its own conversation, so you switch between them instead of starting over.
 
-<!-- DEMO GIF PLACEHOLDER. Record per the shot list, save as docs/media/coldfall-demo.gif (keep it under about 8 MB), then delete this comment wrapper and the line below stays as is.
-![Two desks running in Project Coldfall while the cost meter along the bottom shows Claude nearly out of weekly quota and Codex with room to spare](docs/media/coldfall-demo.gif)
--->
+<p align="center"><img src="server/public/img/app.png" width="820" alt="Project Coldfall with a demo project open: desks for api, review, docs and notes in the rail, a test run in the terminal, and a plan file in the reader"></p>
+
+<p align="center"><img src="server/public/img/meter.png" width="820" alt="The cost meter: claude 72 percent of the week used, codex only 12 percent, with the hint to send the next task to codex"></p>
 
 macOS 13 or later · Swift · MIT licensed · early, but it runs
 
