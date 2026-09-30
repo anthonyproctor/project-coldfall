@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-09-30
+
+A helper for writing a clearer prompt, built by the codex desk.
+
 ### Added
 - Write a prompt: a local helper in the terminal header and Edit menu. Describe
   the outcome, context, boundaries, and what a good result looks like; build an
@@ -586,7 +590,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.18...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...HEAD
+[0.3.19]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.16...v0.3.17
 [0.3.16]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.15...v0.3.16
