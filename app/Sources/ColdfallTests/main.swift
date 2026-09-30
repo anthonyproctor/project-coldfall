@@ -37,6 +37,18 @@ func parse(_ toml: String) -> [Desk] {
     return DeskConfig.load(path: f.path)
 }
 
+print("\nprompt helper")
+eq("blank goal produces no draft", PromptDraft.build(goal: " \n ", context: "context"), "")
+eq("simple asks stay simple", PromptDraft.build(goal: " Explain this. "), "Explain this.")
+eq("empty optional fields are omitted", PromptDraft.build(goal: "Review", constraints: " \n "), "Review")
+eq("all supplied sections appear verbatim",
+   PromptDraft.build(goal: "Review", context: "line one\nline two", constraints: "Do not edit", success: "Three findings"),
+   "Review\n\nContext:\nline one\nline two\n\nConstraints:\nDo not edit\n\nWhat a good result looks like:\nThree findings")
+eq("unicode and shell text are preserved as text",
+   PromptDraft.build(goal: "Explain `echo $PATH` 🐾"), "Explain `echo $PATH` 🐾")
+eq("optional fields remain independent", PromptDraft.build(goal: "Write", success: "One paragraph"),
+   "Write\n\nWhat a good result looks like:\nOne paragraph")
+
 print("\nconfig parsing")
 
 // A desk running a bare shell was labelled claude, so it could be chosen as
@@ -2299,4 +2311,3 @@ if !failures.isEmpty {
     failures.forEach { print("  " + $0) }
     exit(1)
 }
-

@@ -15,6 +15,8 @@ final class TerminalHeader: NSView {
     var onSplitRight: (() -> Void)?
     var onSplitDown: (() -> Void)?
     var onClosePane: (() -> Void)?
+    var onPromptHelper: (() -> Void)?
+    private let prompt = NSButton(title: "Write a prompt…", target: nil, action: nil)
 
     private let name = NSTextField(labelWithString: "")
     private let sub = NSTextField(labelWithString: "")
@@ -34,7 +36,12 @@ final class TerminalHeader: NSView {
         close.target = self; close.action = #selector(closeP)
 
         for v in [name, sub] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        let buttons = NSStackView(views: [right, down, close])
+        prompt.target = self; prompt.action = #selector(writePrompt)
+        prompt.bezelStyle = .inline
+        prompt.isBordered = false
+        prompt.font = .systemFont(ofSize: 11)
+        prompt.toolTip = "Build and copy a prompt. Nothing is sent."
+        let buttons = NSStackView(views: [prompt, right, down, close])
         buttons.orientation = .horizontal
         buttons.spacing = 2
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -70,7 +77,7 @@ final class TerminalHeader: NSView {
         name.textColor = ui.text
         sub.font = .systemFont(ofSize: 11)
         sub.textColor = ui.dimText
-        for b in [right, down, close] { b.contentTintColor = ui.dimText }
+        for b in [prompt, right, down, close] { b.contentTintColor = ui.dimText }
         needsDisplay = true
     }
 
@@ -83,6 +90,7 @@ final class TerminalHeader: NSView {
     @objc private func splitR() { onSplitRight?() }
     @objc private func splitD() { onSplitDown?() }
     @objc private func closeP() { onClosePane?() }
+    @objc private func writePrompt() { onPromptHelper?() }
 
     private static func button(_ symbol: String, tip: String) -> NSButton {
         let b = NSButton()

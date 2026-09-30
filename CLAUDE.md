@@ -33,6 +33,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --offer copilot    # the rail offering a desk for a new agent
 ./.build/release/Coldfall --snapshot /tmp/shot.png --waiting          # the launch screen: a desk shown, not started
 ./.build/release/Coldfall --snapshot /tmp/shot.png --budget-demo      # the rail with desks near and over a made-up budget
+./.build/release/Coldfall --snapshot /tmp/shot.png --prompt-helper    # plus the Write a prompt window, to shot-prompt.png
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```

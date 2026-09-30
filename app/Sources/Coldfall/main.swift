@@ -35,6 +35,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var meterZero: NSLayoutConstraint!
     let palette = Palette()
     let updates = Updates()
+    var promptHelper: PromptHelper?
+
+    @objc func openPromptHelper() {
+        if promptHelper == nil { promptHelper = PromptHelper() }
+        promptHelper?.showWindow(nil)
+        promptHelper?.window?.makeKeyAndOrderFront(nil)
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // In the rail's order, so cmd-1..9 match what is on screen even when
@@ -164,6 +171,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         termHeader.onSplitRight = { [weak self] in self?.splitRight() }
         termHeader.onSplitDown = { [weak self] in self?.splitDown() }
         termHeader.onClosePane = { [weak self] in self?.closePane() }
+        termHeader.onPromptHelper = { [weak self] in self?.openPromptHelper() }
         reader.onPopToggle = { [weak self] in self?.popOutOrDock() }
         palette.onPickDesk = { [weak self] i in self?.open(i) }
         palette.onPickFile = { [weak self] u in self?.openReader(u) }
@@ -397,6 +405,22 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 if let png = rep.representation(using: .png, properties: [:]) {
                     try? png.write(to: URL(fileURLWithPath: out))
+                }
+                if CommandLine.arguments.contains("--prompt-helper") {
+                    let helper = PromptHelper()
+                    guard let hv = helper.window?.contentView else { exit(1) }
+                    hv.wantsLayer = true
+                    hv.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        hv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                    }
+                    hv.layoutSubtreeIfNeeded()
+                    guard let hr = hv.bitmapImageRepForCachingDisplay(in: hv.bounds) else { exit(1) }
+                    hv.cacheDisplay(in: hv.bounds, to: hr)
+                    do {
+                        guard let png = hr.representation(using: .png, properties: [:]) else { exit(1) }
+                        try png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-prompt.png"))
+                    } catch { exit(1) }
+                    exit(0)
                 }
                 // `--inventory <desk>`: that desk's "What This Desk Has", to
                 // <out>-inventory.png.
@@ -754,6 +778,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         edit("Copy", #selector(NSText.copy(_:)), "c")
         edit("Paste", #selector(NSText.paste(_:)), "v")
         edit("Select All", #selector(NSText.selectAll(_:)), "a")
+        editMenu.addItem(.separator())
+        let promptItem = NSMenuItem(title: "Write a Prompt…", action: #selector(openPromptHelper), keyEquivalent: "")
+        promptItem.target = self
+        editMenu.addItem(promptItem)
         editItem.submenu = editMenu
 
         let viewItem = NSMenuItem(); main.addItem(viewItem)

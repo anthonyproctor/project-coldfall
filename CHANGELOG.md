@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- Write a prompt: a local helper in the terminal header and Edit menu. Describe
+  the outcome, context, boundaries, and what a good result looks like; build an
+  editable draft and copy it into any agent. No model calls, automatic sending,
+  or reading desk content. Drafts stay in memory while the app is open.
+
 ## [0.3.18] - 2026-09-25
 
 A review of the whole app by Fable 5.1, and what it found. Subagents are
