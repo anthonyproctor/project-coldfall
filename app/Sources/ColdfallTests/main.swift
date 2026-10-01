@@ -1253,6 +1253,57 @@ do {
     eq("a shown desk loads as shown", back.first { $0.name == "hub" }?.hidden, false)
 }
 
+// MARK: - pinned desks, and ready desks floating to the top
+
+do {
+    var list = [Desk(name: "shell"), Desk(name: "hub"),
+                Desk(name: "cpa", group: "money"), Desk(name: "market", group: "money"),
+                Desk(name: "golf", group: "personal"), Desk(name: "cars", group: "personal"),
+                Desk(name: "old", group: "personal")]
+    list[6].hidden = true
+    eq("zones: nothing pinned, nothing ready, nothing on top",
+       DeskOrder.zones(list, floated: []), DeskOrder.Zones(pinned: [], floated: []))
+    eq("float: a ready desk rises, out of its group", DeskOrder.floating(list, waiting: ["golf"], enabled: true), ["golf"])
+    eq("float: in the order they have waited", DeskOrder.floating(list, waiting: ["cars", "hub", "cpa"], enabled: true),
+       ["cars", "hub", "cpa"])
+    eq("float: off means nothing moves", DeskOrder.floating(list, waiting: ["golf"], enabled: false), [])
+    eq("float: a hidden desk stays hidden", DeskOrder.floating(list, waiting: ["old", "golf"], enabled: true), ["golf"])
+    eq("float: a desk that is gone is ignored", DeskOrder.floating(list, waiting: ["nope"], enabled: true), [])
+    list[5].pinned = true      // cars
+    list[1].pinned = true      // hub
+    eq("zones: pinned desks come first, in your order",
+       DeskOrder.zones(list, floated: []).pinned, [1, 5])
+    eq("float: a pinned desk is already on top, so it doesn't float",
+       DeskOrder.floating(list, waiting: ["cars", "golf"], enabled: true), ["golf"])
+    let z = DeskOrder.zones(list, floated: ["golf", "golf", "cars"])
+    eq("zones: no desk appears twice", z, DeskOrder.Zones(pinned: [1, 5], floated: [4]))
+    check("zones: and a desk in a zone is known to be there", z.contains(4) && z.contains(5) && !z.contains(0))
+    eq("cmd-1..9 start with the pinned desks, as the rail does", DeskOrder.shortcuts(list), [1, 5, 0, 2, 3, 4])
+    list[6].pinned = true
+    eq("zones: hidden wins over pinned", DeskOrder.zones(list, floated: []).pinned, [1, 5])
+
+    let back = parse("[desk.a]\npinned = true\n[desk.b]\n")
+    check("config: pinned is read", back.first?.pinned == true && back.last?.pinned == false)
+    let f = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-pin-\(UUID().uuidString).toml")
+    var two = [Desk(name: "a"), Desk(name: "b")]; two[1].pinned = true
+    DeskConfig.write(two, to: f.path)
+    let again = DeskConfig.load(path: f.path)
+    check("config: and survives a save", again.map(\.pinned) == [false, true])
+    try? FileManager.default.removeItem(at: f)
+
+    let m = DeskMenu.items(runtime: "claude", running: false, hidden: false, canReveal: false,
+                           canMakeDefault: false, hasInventory: true, hasMcp: true, pinned: false)
+    check("menu: a desk can be pinned", m.contains { $0.action == .pin } && !m.contains { $0.action == .unpin })
+    let p = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: false,
+                           canMakeDefault: false, hasInventory: true, hasMcp: true, pinned: true)
+    check("menu: a pinned one can be unpinned", p.contains { $0.action == .unpin } && !p.contains { $0.action == .pin })
+    check("menu: pinning keeps the destructive entry apart", DeskMenu.destructiveIsIsolated(p))
+    eq("menu: and remove is still last", p.last?.action, .remove)
+    let h = DeskMenu.items(runtime: "claude", running: false, hidden: true, canReveal: false,
+                           canMakeDefault: false, hasInventory: true, hasMcp: true, pinned: nil)
+    check("menu: a hidden desk isn't offered a pin", !h.contains { $0.action == .pin || $0.action == .unpin })
+}
+
 // MARK: - keeping active groups on top
 
 do {

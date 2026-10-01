@@ -23,7 +23,7 @@ public enum DeskMenu {
     }
 
     public enum Action: String, Equatable {
-        case reveal, makeDefault, rename, inventory, mcp, askResume, stop, hide, unhide, remove, separator
+        case reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
     }
 
     public struct Entry: Equatable {
@@ -47,9 +47,12 @@ public enum DeskMenu {
     /// The menu for one desk.
     /// `askResume`: whether opening this desk asks about starting fresh, or
     /// nil where that doesn't apply (it can't be started fresh).
+    /// `pinned`: whether the desk is pinned to the top of the rail, or nil
+    /// where pinning isn't offered.
     public static func items(runtime: String, running: Bool, hidden: Bool,
                              canReveal: Bool, canMakeDefault: Bool,
-                             hasInventory: Bool, hasMcp: Bool, askResume: Bool? = nil) -> [Entry] {
+                             hasInventory: Bool, hasMcp: Bool, askResume: Bool? = nil,
+                             pinned: Bool? = nil) -> [Entry] {
         var out: [Entry] = []
         if canReveal {
             out.append(Entry(.reveal, "Reveal Agent Definition", symbol: "doc.text.magnifyingglass"))
@@ -79,6 +82,14 @@ public enum DeskMenu {
                              symbol: "stop.circle.fill", tone: .caution))
         }
         out.append(.separator)
+        // Pinning a hidden desk would show nothing, so it isn't offered there.
+        if !hidden, let pinned {
+            out.append(pinned
+                ? Entry(.unpin, "Unpin from Top", symbol: "pin.slash")
+                : Entry(.pin, "Pin to Top",
+                        subtitle: "Keeps it at the top of the rail, above everything else.",
+                        symbol: "pin"))
+        }
         if !hidden {
             out.append(Entry(.hide, "Hide Desk",
                              subtitle: "Out of the rail, but kept. Unhide it from the bottom of the rail.",

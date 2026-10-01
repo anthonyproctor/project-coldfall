@@ -193,6 +193,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.collapsed = Set(ui.collapsed)
         sidebar.liveOn = ui.liveRail
         sidebar.onToggleLive = { [weak self] in self?.toggleLiveRail() }
+        sidebar.floatReady = ui.readyOnTop
+        sidebar.onToggleFloat = { [weak self] in self?.toggleReadyOnTop() }
+        sidebar.onPinDesk = { [weak self] i, on in self?.pinDesk(i, on) }
         sidebar.onAddOffer = { [weak self] rt in self?.addOfferedDesk(rt) }
         sidebar.onDismissOffer = { [weak self] rt in self?.dismissOffer(rt) }
         sidebar.build(desks: desks)
@@ -329,6 +332,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 sidebar.liveOn = true
                 sidebar.groupOrder = DeskOrder.liveGroups(desks, waiting: waiting, used: used)
+                sidebar.build(desks: desks)
+            }
+            // `--pin <desk>`: that desk pinned to the top, for the picture only.
+            if let k = CommandLine.arguments.firstIndex(of: "--pin"), k + 1 < CommandLine.arguments.count,
+               let i = desks.firstIndex(where: { $0.name == CommandLine.arguments[k + 1] }) {
+                desks[i].pinned = true
                 sidebar.build(desks: desks)
             }
             sidebar.status = sample
@@ -825,6 +834,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         live.target = self
         live.state = ui.liveRail ? .on : .off
         deskMenu.addItem(live)
+        let readyUp = NSMenuItem(title: "Move Ready Desks to Top", action: #selector(toggleReadyOnTop), keyEquivalent: "")
+        readyUp.target = self
+        readyUp.state = ui.readyOnTop ? .on : .off
+        deskMenu.addItem(readyUp)
         let sortAZ = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortDesks), keyEquivalent: "")
         sortAZ.target = self
         deskMenu.addItem(sortAZ)
@@ -1213,6 +1226,24 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.liveOn = ui.liveRail
         applyLiveOrder(force: true)
         installMenu()
+    }
+
+    /// "Move Ready Desks to Top". The rail does the moving itself, at calm
+    /// moments; this only holds the setting.
+    @objc func toggleReadyOnTop() {
+        ui.readyOnTop.toggle()
+        ui.save()
+        sidebar.floatReady = ui.readyOnTop
+        installMenu()
+    }
+
+    /// Pin a desk to the top of the rail, or take it back off. Saved in
+    /// desks.toml as `pinned = true`.
+    func pinDesk(_ i: Int, _ on: Bool) {
+        guard desks.indices.contains(i), desks[i].pinned != on else { return }
+        desks[i].pinned = on
+        persist()
+        refreshRail()
     }
 
     func watchLiveRail() {

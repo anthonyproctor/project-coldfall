@@ -17,6 +17,8 @@ final class SidebarView: NSView {
     var onInventoryDesk: ((Int) -> Void)?
     var onHideDesk: ((Int) -> Void)?
     var onUnhideDesk: ((Int) -> Void)?
+    /// Pin or unpin: the desk, and whether it should now be pinned.
+    var onPinDesk: ((Int, Bool) -> Void)?
     var onToggleAskResume: ((Int) -> Void)?
     /// Each desk's week against its budget, for desks that have one.
     var budgets: [String: DeskBudget.Status] = [:] {
@@ -43,7 +45,31 @@ final class SidebarView: NSView {
                                        owner: self, userInfo: nil))
     }
     override func mouseEntered(with e: NSEvent) { pointerInside = true }
-    override func mouseExited(with e: NSEvent) { pointerInside = false }
+    override func mouseExited(with e: NSEvent) { pointerInside = false; syncFloat() }
+
+    /// "Move Ready Desks to Top": a desk waiting on you is shown at the top
+    /// of the rail, under any pinned desks, until you have looked at it.
+    var floatReady = true { didSet { if floatReady != oldValue { syncFloat(force: true) } } }
+    var onToggleFloat: (() -> Void)?
+    /// The desks floated to the top, as last drawn. This follows `waiting`,
+    /// but only at a calm moment: never while the pointer is over the rail or
+    /// a drag is under way, so a row doesn't move out from under a click.
+    /// That includes the click that opens a ready desk: it stays where it
+    /// was clicked until the pointer leaves the rail.
+    private(set) var floated: [String] = []
+    /// Rows in the pinned and floated zones. They don't drag, and a drop is
+    /// never measured against them: their place on screen is not their
+    /// place in the list.
+    private var zoneRows: Set<Int> = []
+
+    /// Bring `floated` in line with who is waiting, if now is a calm moment.
+    func syncFloat(force: Bool = false) {
+        guard let d = lastDesks else { return }
+        let want = DeskOrder.floating(d, waiting: waiting, enabled: floatReady)
+        guard want != floated, force || (!pointerInside && !isDragging) else { return }
+        floated = want
+        build(desks: d)
+    }
     var onMoveDesk: ((Int, DeskDrop) -> Void)?
     /// A group dragged by its header: the group, and the group it now sits
     /// before (nil for last).
@@ -90,7 +116,10 @@ final class SidebarView: NSView {
             // row out from under the pointer. The next tick catches up.
             if q != waiting, dropLine.superview == nil, let d = lastDesks {
                 waiting = q
+                if !pointerInside { floated = DeskOrder.floating(d, waiting: q, enabled: floatReady) }
                 build(desks: d)
+            } else {
+                syncFloat()
             }
         }
     }
@@ -114,6 +143,8 @@ final class SidebarView: NSView {
         rows = [:]
         headers = []
         spans = []
+        zoneRows = []
+        let zones = DeskOrder.zones(desks, floated: floated)
 
         // Size from the scroll view's VISIBLE width, not our own. The first
         // build runs before the window has finished sizing, so our own width
@@ -152,6 +183,16 @@ final class SidebarView: NSView {
             y += 58
         }
 
+        // Pinned desks: always here, in your order, whatever group they are in.
+        for i in zones.pinned {
+            let r = row(i, desks[i], indent: 4, y: y, width: w)
+            r.showsPin = true
+            r.onHide = { [weak self] in self?.onHideDesk?(i) }
+            zoneRows.insert(i)
+            y += DeskRow.height + 2
+        }
+        if !zones.pinned.isEmpty { y += 8 }
+
         if let text = NeedsYou.summary(waiting), let first = waiting.first {
             let strip = NeedsYouStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 26))
             strip.autoresizingMask = [.width]
@@ -162,13 +203,27 @@ final class SidebarView: NSView {
             y += 34
         }
 
+        // Desks that are ready for you, floated up under the line that
+        // names them. Each goes back to its place once you've looked at it.
+        for i in zones.floated {
+            let r = row(i, desks[i], indent: 4, y: y, width: w)
+            r.onHide = { [weak self] in self?.onHideDesk?(i) }
+            zoneRows.insert(i)
+            y += DeskRow.height + 2
+        }
+        if !zones.floated.isEmpty { y += 8 }
+
         // The live order, if on, with any group it doesn't know yet (just
         // created) after it in your order.
         let saved = DeskOrder.groups(desks)
         let order = groupOrder.map { live in live.filter { saved.contains($0) } + saved.filter { !live.contains($0) } } ?? saved
         for g in order {
-            let members = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden }
-            if members.isEmpty { continue }
+            let all = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden }
+            // A desk shown in a zone above is not shown again here. A group
+            // whose desks are all up there still shows its header, so the
+            // group doesn't seem to vanish.
+            let members = all.filter { !zones.contains($0.offset) }
+            if all.isEmpty || (g == nil && members.isEmpty) { continue }
 
             if let g {
                 let isDown = !collapsed.contains(g)
@@ -255,6 +310,10 @@ final class SidebarView: NSView {
                     ? nil : { [weak self] in self?.onMakeDefault?(i) }
                 r.onRename = { [weak self] in self?.onRenameDesk?(i) }
                 r.onStop = { [weak self] in self?.onStopDesk?(i) }
+                if !d.hidden {
+                    if d.pinned { r.onUnpin = { [weak self] in self?.onPinDesk?(i, false) } }
+                    else { r.onPin = { [weak self] in self?.onPinDesk?(i, true) } }
+                }
                 // The vendors whose way of switching one server off has been
                 // checked (see McpTrim).
                 r.onMcp = ["claude", "codex"].contains(d.runtime) ? { [weak self] in self?.onMcpDesk?(i) } : nil
@@ -327,7 +386,7 @@ final class SidebarView: NSView {
         for h in headers where h.view.frame.insetBy(dx: -10, dy: -2).contains(p) {
             return (.endOfGroup(h.group), h.view.frame.maxY)
         }
-        let ordered = rows.sorted { $0.value.frame.minY < $1.value.frame.minY }
+        let ordered = rows.filter { !zoneRows.contains($0.key) }.sorted { $0.value.frame.minY < $1.value.frame.minY }
         guard let first = ordered.first else { return nil }
         if p.y < first.value.frame.minY { return (.before(first.key), first.value.frame.minY) }
         for (i, r) in ordered where p.y < r.frame.maxY + 2 {
@@ -391,6 +450,12 @@ final class SidebarView: NSView {
         live.toolTip = "Groups with a desk that needs you, then the most recently used, rise to the top. "
             + "Your own order is kept underneath: turn this off to get it back."
         m.addItem(live)
+        let up = NSMenuItem(title: "Move Ready Desks to Top", action: #selector(toggleFloat), keyEquivalent: "")
+        up.target = self
+        up.state = floatReady ? .on : .off
+        up.toolTip = "A desk that is waiting on you rises to the top of the rail, under any pinned desks, "
+            + "and goes back to its place once you've looked at it."
+        m.addItem(up)
         let it = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortAll), keyEquivalent: "")
         it.target = self
         m.addItem(it)
@@ -398,6 +463,7 @@ final class SidebarView: NSView {
     }
     @objc private func sortAll() { onSortDesks?() }
     @objc private func toggleLive() { onToggleLive?() }
+    @objc private func toggleFloat() { onToggleFloat?() }
 
     func select(_ i: Int) {
         lastSelected = i

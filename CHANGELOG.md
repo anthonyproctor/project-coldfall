@@ -8,6 +8,18 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Ready desks move to the top.** A desk that is waiting on you already
+  turned green and was named in the "needs you" line; now its row rises to
+  the top of the rail too, right under that line, and goes back to its place
+  once you've looked at it. Rows only move while the pointer is away from the
+  rail, so nothing shifts under a click. Right-click the rail, or use the
+  View menu, to turn **Move Ready Desks to Top** off.
+- **Pin a desk to the top.** Right-click a desk, **Pin to Top**. Pinned desks
+  sit above everything else in the rail, in your order, whatever group they
+  belong to, and cmd-1..9 count from them. Saved in desks.toml as
+  `pinned = true`.
+
 ## [0.3.19] - 2026-09-30
 
 A helper for writing a clearer prompt, built by the codex desk.

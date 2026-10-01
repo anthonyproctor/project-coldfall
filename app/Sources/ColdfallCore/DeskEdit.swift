@@ -77,9 +77,42 @@ public enum DeskOrder {
     }
 
     /// The desks cmd-1..9 go to, as indices into `desks`: the first nine the
-    /// rail shows, so a hidden desk never takes a number.
+    /// rail shows, so a hidden desk never takes a number. Pinned desks come
+    /// first, as they do on screen, so cmd-1 is the top row.
     public static func shortcuts(_ desks: [Desk]) -> [Int] {
-        Array(desks.indices.filter { !desks[$0].hidden }.prefix(9))
+        let shown = desks.indices.filter { !desks[$0].hidden }
+        return Array((shown.filter { desks[$0].pinned } + shown.filter { !desks[$0].pinned }).prefix(9))
+    }
+
+    /// The top of the rail, as indices into `desks`. Pinned desks first, in
+    /// your order; then the desks that have floated up because they are
+    /// ready for you, in the order given (the "needs you" line's: longest
+    /// wait first). A desk in either zone is not shown again in its group.
+    public struct Zones: Equatable {
+        public let pinned: [Int]
+        public let floated: [Int]
+        public init(pinned: [Int], floated: [Int]) { self.pinned = pinned; self.floated = floated }
+        public func contains(_ i: Int) -> Bool { pinned.contains(i) || floated.contains(i) }
+    }
+
+    public static func zones(_ desks: [Desk], floated names: [String]) -> Zones {
+        let pinned = desks.indices.filter { desks[$0].pinned && !desks[$0].hidden }
+        var up: [Int] = []
+        for n in names {
+            guard let i = desks.firstIndex(where: { $0.name == n }),
+                  !desks[i].hidden, !desks[i].pinned, !up.contains(i) else { continue }
+            up.append(i)
+        }
+        return Zones(pinned: pinned, floated: up)
+    }
+
+    /// Which desks should be floated to the top right now: the ones waiting
+    /// on you, unless they are pinned (already on top) or hidden. Empty when
+    /// the setting is off. The rail takes this up only at a calm moment, so
+    /// a row never moves out from under the pointer.
+    public static func floating(_ desks: [Desk], waiting: [String], enabled: Bool) -> [String] {
+        guard enabled else { return [] }
+        return zones(desks, floated: waiting).floated.map { desks[$0].name }
     }
 
     /// Groups in the order the rail shows them: ungrouped desks first, then

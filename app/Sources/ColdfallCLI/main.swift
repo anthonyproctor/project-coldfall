@@ -43,7 +43,8 @@ case "menu":
     out(DeskMenu.items(runtime: d.runtime, running: true, hidden: d.hidden,
                        canReveal: d.agent != nil, canMakeDefault: !d.isDefault,
                        hasInventory: d.runtime != "shell", hasMcp: ["claude", "codex"].contains(d.runtime),
-                       askResume: d.runtime == "claude" && d.freshCommand() != nil ? !d.alwaysResume : nil)
+                       askResume: d.runtime == "claude" && d.freshCommand() != nil ? !d.alwaysResume : nil,
+                       pinned: d.hidden ? nil : d.pinned)
         .map { e -> [String: Any] in
             var o: [String: Any] = ["action": e.action.rawValue, "title": e.title]
             if let s = e.subtitle { o["subtitle"] = s }

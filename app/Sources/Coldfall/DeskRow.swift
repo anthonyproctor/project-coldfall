@@ -43,6 +43,19 @@ final class DeskRow: NSView {
     var onInventory: (() -> Void)?
     var onHide: (() -> Void)?
     var onUnhide: (() -> Void)?
+    /// Pin to the top of the rail, or take it back off. Whichever applies
+    /// is set; a hidden desk gets neither.
+    var onPin: (() -> Void)?
+    var onUnpin: (() -> Void)?
+    /// A small pin at the right of the second line, for a pinned desk.
+    var showsPin = false {
+        didSet {
+            pinIcon.isHidden = !showsPin
+            subTrailing?.constant = showsPin ? -26 : -10
+        }
+    }
+    private let pinIcon = NSImageView()
+    private var subTrailing: NSLayoutConstraint?
     /// Toggle whether opening this desk asks about starting fresh. Nil where
     /// it can't be started fresh, so the item isn't offered.
     var onToggleAskResume: (() -> Void)?
@@ -124,8 +137,20 @@ final class DeskRow: NSView {
             time.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
 
             sub.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            sub.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             sub.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 1),
+        ])
+        subTrailing = sub.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
+        subTrailing?.isActive = true
+
+        pinIcon.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "Pinned")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
+        pinIcon.contentTintColor = Theme.ui.dimText
+        pinIcon.isHidden = true
+        pinIcon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pinIcon)
+        NSLayoutConstraint.activate([
+            pinIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
+            pinIcon.centerYAnchor.constraint(equalTo: sub.centerYAnchor),
         ])
 
         addTrackingArea(NSTrackingArea(rect: .zero,
@@ -247,7 +272,8 @@ final class DeskRow: NSView {
         let entries = DeskMenu.items(runtime: runtime, running: status.running, hidden: onUnhide != nil,
                                      canReveal: onReveal != nil, canMakeDefault: onMakeDefault != nil,
                                      hasInventory: onInventory != nil, hasMcp: onMcp != nil,
-                                     askResume: onToggleAskResume != nil ? asksResume : nil)
+                                     askResume: onToggleAskResume != nil ? asksResume : nil,
+                                     pinned: onUnpin != nil ? true : (onPin != nil ? false : nil))
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
             let sel: Selector
@@ -258,6 +284,8 @@ final class DeskRow: NSView {
             case .inventory:   sel = #selector(inventory)
             case .mcp:         sel = #selector(mcp)
             case .stop:        sel = #selector(stop)
+            case .pin:         sel = #selector(pin)
+            case .unpin:       sel = #selector(unpin)
             case .hide:        sel = #selector(hide)
             case .unhide:      sel = #selector(unhide)
             case .askResume:   sel = #selector(toggleAskResume)
@@ -296,6 +324,8 @@ final class DeskRow: NSView {
     @objc private func mcp() { onMcp?() }
     @objc private func inventory() { onInventory?() }
     @objc private func hide() { onHide?() }
+    @objc private func pin() { onPin?() }
+    @objc private func unpin() { onUnpin?() }
     @objc private func unhide() { onUnhide?() }
     @objc private func toggleAskResume() { onToggleAskResume?() }
     @objc private func reveal() { onReveal?() }

@@ -47,6 +47,10 @@ public struct Desk {
     /// Out of the rail and cmd-1..9, but kept: its settings, group and
     /// conversation stay, and quick open still finds it.
     public var hidden: Bool = false
+    /// Kept at the very top of the rail, above everything else, in the
+    /// order pinned desks have in the file. A hidden desk is not shown
+    /// there: hidden wins.
+    public var pinned: Bool = false
     /// Desks are not a flat list. `study` belongs under `school` next to `mba`.
     /// Ungrouped desks sit at the top, above the first group header.
     public var group: String?
@@ -401,6 +405,7 @@ public enum DeskConfig {
             case "always_resume": current?.alwaysResume = val == "true"
             case "budget":  current?.budget = DeskBudget.parse(val)
             case "hidden":  current?.hidden = val == "true"
+            case "pinned":  current?.pinned = val == "true"
             case "session": current?.session = UUID(uuidString: val) != nil ? val.lowercased() : nil
             case "cwd":     current?.cwd = val
             case "command": current?.command = val
@@ -548,6 +553,7 @@ public enum DeskConfig {
             if let b = d.budget { out += "budget = \(DeskBudget.text(b))\n" }
             if let s = d.session { out += "session = \"\(TomlText.escape(s))\"\n" }
             if d.hidden { out += "hidden = true\n" }
+            if d.pinned { out += "pinned = true\n" }
             if !d.mcpOff.isEmpty {
                 out += "mcp_off = [" + d.mcpOff.map { "\"\(TomlText.escape($0))\"" }.joined(separator: ", ") + "]\n"
             }

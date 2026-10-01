@@ -29,6 +29,9 @@ public struct UIState: Codable {
     /// Picking a desk that isn't running shows its Start button first,
     /// rather than starting it on the click. Settings, Desks turns it off.
     public var confirmStart: Bool = true
+    /// "Move Ready Desks to Top": a desk that is waiting on you rises to the
+    /// top of the rail, under any pinned desks, until you have looked at it.
+    public var readyOnTop: Bool = true
 
     public init() {}
 
@@ -57,6 +60,7 @@ public struct UIState: Codable {
         agentUpdates = try c.decodeIfPresent([String: [String]].self, forKey: .agentUpdates) ?? [:]
         lastDesk = try c.decodeIfPresent(String.self, forKey: .lastDesk)
         confirmStart = try c.decodeIfPresent(Bool.self, forKey: .confirmStart) ?? true
+        readyOnTop = try c.decodeIfPresent(Bool.self, forKey: .readyOnTop) ?? true
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }
