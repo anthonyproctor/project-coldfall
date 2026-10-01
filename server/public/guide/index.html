@@ -349,12 +349,13 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       <figcaption>The desk list. The green line names the desks waiting on you.</figcaption>
     </figure>
     <ul>
-      <li><strong>A green check</strong> on a desk means it finished while you were looking at something else, and its screen changed. It might want an answer, or it's just done.</li>
+      <li><strong>A green check</strong> on a desk means it finished while you were looking at something else, and its screen changed. It might want an answer, or it's just done. Its row also moves up to the top of the list, under the green line, until you've looked at it.</li>
       <li><strong>The green line</strong> at the top names every waiting desk, oldest first. Click it, or press <kbd>⌘0</kbd>, to go to the one that's waited longest. The <strong>×</strong> clears it without visiting them.</li>
       <li><strong>Jump around</strong> with <kbd>⌘1</kbd> to <kbd>⌘9</kbd> for your first nine desks, or <kbd>⌘P</kbd> to find any desk or file by a few letters.</li>
       <li><strong>Need a plain shell?</strong> <kbd>⌘D</kbd> splits one in beside the agent, in the same desk and folder. For a shell of its own in the list, <kbd>⌘N</kbd> makes a new shell desk.</li>
       <li><strong>Files your agents write</strong> open in the reader on the right, with Markdown and PDFs shown properly.</li>
       <li><strong>Done with a desk for now?</strong> Right-click, Stop Desk. That frees its memory, and the desk picks up its conversation right where it was when you click it again. More in <a href="#stopping">Stopping and coming back</a>.</li>
+      <li><strong>Not sure how to ask?</strong> <strong>Write a prompt…</strong> at the top right of the terminal, or in the Edit menu, walks you through four questions: what you want, what the agent should know, the boundaries, and what a good result looks like. It builds a draft you can edit and copy into any agent. Nothing is sent and no model is called.</li>
       <li><strong>When one of your agents updates,</strong> the top of the desk list says so, like "Claude Code updated to 2.1.280", with a What's New button that opens the vendor's own release notes.</li>
     </ul>
 
@@ -409,7 +410,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <table>
       <thead><tr><th>Keys</th><th>What it does</th></tr></thead>
       <tbody>
-        <tr><td><kbd>⌘1</kbd> to <kbd>⌘9</kbd></td><td>Go to one of your first nine desks</td></tr>
+        <tr><td><kbd>⌘1</kbd> to <kbd>⌘9</kbd></td><td>Go to one of your first nine desks, pinned ones first</td></tr>
         <tr><td><kbd>⌘0</kbd></td><td>Go to the desk that's waited longest</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Find any desk or file</td></tr>
         <tr><td><kbd>⇧⌘M</kbd></td><td>Agent Mail</td></tr>
