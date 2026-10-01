@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-10-01
+
+Finished desks come to you, and the ones you live in stay on top.
+
 ### Added
 - **Ready desks move to the top.** A desk that is waiting on you already
   turned green and was named in the "needs you" line; now its row rises to
@@ -602,7 +606,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...HEAD
+[0.3.20]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.16...v0.3.17
