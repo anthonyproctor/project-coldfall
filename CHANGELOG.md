@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-10-01
+
+The desk in front of you says what it is doing.
+
 ### Fixed
 - The desk you were looking at always said "idle", even while its agent was
   answering in front of you. It now says "working" while output arrives and
@@ -612,7 +616,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...HEAD
+[0.3.21]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.17...v0.3.18
