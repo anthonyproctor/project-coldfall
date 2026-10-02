@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- The desk you were looking at always said "idle", even while its agent was
+  answering in front of you. It now says "working" while output arrives and
+  "idle" once it stops. Typing doesn't count: the echo of your own keystrokes
+  isn't the agent working. It still never turns green, since you can see it.
+
 ## [0.3.20] - 2026-10-01
 
 Finished desks come to you, and the ones you live in stay on top.

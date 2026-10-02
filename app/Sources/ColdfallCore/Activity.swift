@@ -55,13 +55,31 @@ public struct ActivityState {
     /// When the desk last went out of view.
     public private(set) var hiddenAt: Date?
 
+    /// Output this soon after a keystroke is the program echoing what you
+    /// typed (Claude Code redraws its input box on every key), not the agent
+    /// at work. It doesn't make the desk on screen read as working.
+    public static let echoGrace: TimeInterval = 0.5
+
+    /// When you last typed into this desk.
+    public private(set) var typedAt: Date?
+    /// The last output on screen that wasn't an echo of typing. The desk you
+    /// are looking at reads as working from this, so it says "working" while
+    /// its agent answers instead of "idle".
+    public private(set) var lastWork: Date?
+
     public init() {}
 
     public mutating func noteOutput(at now: Date = Date()) {
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
         lastOutput = now
         if !visible { unseen = true }
+        if !visible || typedAt.map({ now.timeIntervalSince($0) >= ActivityState.echoGrace }) ?? true {
+            lastWork = now
+        }
     }
+
+    /// A keystroke, or anything else sent into the desk.
+    public mutating func noteInput(at now: Date = Date()) { typedAt = now }
 
     public mutating func setVisible(_ v: Bool, at now: Date = Date()) {
         if visible, !v { hiddenAt = now }
@@ -74,8 +92,14 @@ public struct ActivityState {
     public mutating func markSeen() { unseen = false }
 
     public func activity(now: Date = Date()) -> DeskActivity {
-        // A desk you are looking at never badges: you can see it.
-        guard !visible, let last = lastOutput else { return .quiet }
+        // A desk you are looking at never badges: you can see it. It can
+        // still be working, and says so, or the row reads "idle" while the
+        // agent is mid-answer in front of you.
+        if visible {
+            if let w = lastWork, now.timeIntervalSince(w) < ActivityState.quietFor { return .working }
+            return .quiet
+        }
+        guard let last = lastOutput else { return .quiet }
         if now.timeIntervalSince(last) < ActivityState.quietFor { return .working }
         return unseen ? .ready : .quiet
     }

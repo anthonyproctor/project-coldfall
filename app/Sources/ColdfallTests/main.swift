@@ -303,6 +303,28 @@ do {
     eq("output you watched arrive does not badge later",
        watched.activity(now: t0.addingTimeInterval(quiet + 1)), .quiet)
 
+    // The desk on screen says what it is doing, but never badges.
+    var open = ActivityState()
+    open.setVisible(true)
+    open.noteOutput(at: t0)
+    eq("the desk you are looking at reads as working while output arrives",
+       open.activity(now: t0.addingTimeInterval(0.5)), .working)
+    eq("and as quiet, never ready, once it stops", open.activity(now: t0.addingTimeInterval(quiet + 5)), .quiet)
+    var typing = ActivityState()
+    typing.setVisible(true)
+    typing.noteInput(at: t0)
+    typing.noteOutput(at: t0.addingTimeInterval(0.05))
+    eq("typing's echo doesn't read as the agent working", typing.activity(now: t0.addingTimeInterval(0.1)), .quiet)
+    typing.noteOutput(at: t0.addingTimeInterval(ActivityState.echoGrace + 0.1))
+    eq("output after the echo does",
+       typing.activity(now: t0.addingTimeInterval(ActivityState.echoGrace + 0.2)), .working)
+    var away = ActivityState()
+    away.setVisible(false)
+    away.noteInput(at: t0)
+    away.noteOutput(at: t0.addingTimeInterval(0.05))
+    eq("away from a desk, output still counts however soon after input",
+       away.activity(now: t0.addingTimeInterval(0.1)), .working)
+
     // A desk that has never written anything has nothing to say.
     var fresh = ActivityState()
     fresh.setVisible(false)

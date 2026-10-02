@@ -28,10 +28,17 @@ import ColdfallCore
 /// has to be inferred from bytes stopping.
 final class DeskTerminalView: LocalProcessTerminalView {
     var onOutput: (() -> Void)?
+    /// Something was sent into the desk: a keystroke, a paste, a drop.
+    var onInput: (() -> Void)?
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
         onOutput?()
+    }
+
+    override func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        onInput?()
+        super.send(source: source, data: data)
     }
 
     // MARK: - getting a file INTO the conversation
@@ -328,6 +335,7 @@ final class DeskSession {
     private var screenChecked = false
 
     func noteOutput() { activityState.noteOutput(); screenChecked = false }
+    func noteInput() { activityState.noteInput() }
 
     /// The agent terminal's visible rows as text.
     func screen() -> [String] {
@@ -409,6 +417,7 @@ final class DeskSession {
         let p = Pane(isAgent: false)
         p.term.processDelegate = processDelegate
         p.term.onOutput = { [weak self] in self?.noteOutput() }
+        p.term.onInput = { [weak self] in self?.noteInput() }
         panes.insert(p, at: focused + 1)
         focused += 1
         rebuild()
@@ -460,7 +469,10 @@ final class DeskSession {
     /// Any pane writing counts as the desk writing — a shell pane finishing a
     /// build is as worth knowing about as the agent answering.
     private func wireOutput() {
-        for p in panes { p.term.onOutput = { [weak self] in self?.noteOutput() } }
+        for p in panes {
+            p.term.onOutput = { [weak self] in self?.noteOutput() }
+            p.term.onInput = { [weak self] in self?.noteInput() }
+        }
     }
 
     private func rebuild() {
