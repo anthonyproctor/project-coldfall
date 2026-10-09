@@ -219,12 +219,20 @@ final class DeskRow: NSView {
         if status.news > 0 { parts.append("\(status.news) new") }
         sub.stringValue = parts.joined(separator: " \u{00B7} ")                  // ·
         sub.font = .systemFont(ofSize: 11)
+        // Blue for news, which is information. Orange is the colour of a
+        // warning, and of Stop Desk in the menu.
         switch budget {
         case .over:  sub.textColor = .systemRed
         case .near:  sub.textColor = .systemOrange
-        default:     sub.textColor = status.news > 0 ? .systemOrange : ui.dimText
+        default:     sub.textColor = status.news > 0 ? ui.accent : ui.dimText
         }
-        toolTip = DeskBudget.label(budget).map { "\(deskName): \($0)" }
+        var tips: [String] = []
+        if let b = DeskBudget.label(budget) { tips.append("\(deskName): \(b)") }
+        if status.news > 0 {
+            tips.append("\(status.news) new on this desk: servers, hooks, skills or plugins added since you last looked. "
+                        + "Right-click, See What's New, to see them and clear this.")
+        }
+        toolTip = tips.isEmpty ? nil : tips.joined(separator: "\n")
 
         needsDisplay = true
     }
@@ -273,7 +281,8 @@ final class DeskRow: NSView {
                                      canReveal: onReveal != nil, canMakeDefault: onMakeDefault != nil,
                                      hasInventory: onInventory != nil, hasMcp: onMcp != nil,
                                      askResume: onToggleAskResume != nil ? asksResume : nil,
-                                     pinned: onUnpin != nil ? true : (onPin != nil ? false : nil))
+                                     pinned: onUnpin != nil ? true : (onPin != nil ? false : nil),
+                                     news: status.news)
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
             let sel: Selector

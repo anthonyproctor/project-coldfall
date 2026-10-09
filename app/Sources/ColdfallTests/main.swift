@@ -325,6 +325,11 @@ do {
     eq("away from a desk, output still counts however soon after input",
        away.activity(now: t0.addingTimeInterval(0.1)), .working)
 
+    // The screen to compare is the live one, not the scrolled view.
+    eq("live rows are the end of the buffer", ScreenChange.liveRows(buffer: "a\nb\nc\nd\n", rows: 2), ["c", "d"])
+    eq("however far you scrolled up to read", ScreenChange.liveRows(buffer: "only\n", rows: 3), ["only"])
+    eq("blank rows on screen are kept", ScreenChange.liveRows(buffer: "x\n\n\n", rows: 2), ["", ""])
+
     // A desk that has never written anything has nothing to say.
     var fresh = ActivityState()
     fresh.setVisible(false)
@@ -1321,6 +1326,14 @@ do {
     check("menu: a pinned one can be unpinned", p.contains { $0.action == .unpin } && !p.contains { $0.action == .pin })
     check("menu: pinning keeps the destructive entry apart", DeskMenu.destructiveIsIsolated(p))
     eq("menu: and remove is still last", p.last?.action, .remove)
+    let fresh = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: true,
+                               canMakeDefault: false, hasInventory: true, hasMcp: true, pinned: false, news: 2)
+    eq("menu: news puts the way to see it first", fresh.first?.action, .inventory)
+    check("menu: saying how many and that looking clears it",
+          fresh.first?.title.contains("(2)") == true && fresh.first?.subtitle?.contains("clears") == true)
+    eq("menu: and it is offered once", fresh.filter { $0.action == .inventory }.count, 1)
+    check("menu: news is never in a warning tone", fresh.first?.tone == .normal)
+    check("menu: news keeps the destructive entry apart", DeskMenu.destructiveIsIsolated(fresh))
     let h = DeskMenu.items(runtime: "claude", running: false, hidden: true, canReveal: false,
                            canMakeDefault: false, hasInventory: true, hasMcp: true, pinned: nil)
     check("menu: a hidden desk isn't offered a pin", !h.contains { $0.action == .pin || $0.action == .unpin })

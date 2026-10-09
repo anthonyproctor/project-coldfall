@@ -337,10 +337,11 @@ final class DeskSession {
     func noteOutput() { activityState.noteOutput(); screenChecked = false }
     func noteInput() { activityState.noteInput() }
 
-    /// The agent terminal's visible rows as text.
+    /// The agent terminal's live screen as text, wherever you have scrolled
+    /// to. See ScreenChange.liveRows.
     func screen() -> [String] {
         let t = agentTerm.getTerminal()
-        return (0..<t.rows).map { t.getLine(row: $0)?.translateToString(trimRight: true) ?? "" }
+        return ScreenChange.liveRows(buffer: String(decoding: t.getBufferAsData(), as: UTF8.self), rows: t.rows)
     }
 
     /// Once a desk has gone quiet and would show as waiting: if its screen

@@ -52,8 +52,18 @@ public enum DeskMenu {
     public static func items(runtime: String, running: Bool, hidden: Bool,
                              canReveal: Bool, canMakeDefault: Bool,
                              hasInventory: Bool, hasMcp: Bool, askResume: Bool? = nil,
-                             pinned: Bool? = nil) -> [Entry] {
+                             pinned: Bool? = nil, news: Int = 0) -> [Entry] {
         var out: [Entry] = []
+        // Something new on the desk: the entry that shows it, and clears the
+        // "new" on the row, goes first, saying so. It used to sit mid-menu
+        // under a plain name, and the row's "2 new" was orange, the colour of
+        // Stop Desk, so nothing said where to go.
+        if hasInventory, news > 0 {
+            out.append(Entry(.inventory, "See What's New on This Desk (\(news))…",
+                             subtitle: "Opens What This Desk Has. Looking clears the \u{201C}\(news) new\u{201D} on the desk.",
+                             symbol: "sparkles"))
+            out.append(.separator)
+        }
         if canReveal {
             out.append(Entry(.reveal, "Reveal Agent Definition", symbol: "doc.text.magnifyingglass"))
             out.append(.separator)
@@ -63,7 +73,7 @@ public enum DeskMenu {
             out.append(.separator)
         }
         out.append(Entry(.rename, "Rename Desk…", symbol: "pencil"))
-        if hasInventory {
+        if hasInventory, news == 0 {
             out.append(Entry(.inventory, "What This Desk Has…", symbol: "list.bullet.rectangle"))
         }
         if hasMcp {

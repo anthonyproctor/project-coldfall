@@ -119,6 +119,19 @@ public enum ScreenChange {
     /// box, the status line, the hint under it.
     public static let footerRows = 5
 
+    /// The live screen: the last `rows` lines of the whole buffer, one line
+    /// per row as the terminal returns it.
+    ///
+    /// Not the rows on view. Those follow the scroll, and reading a long
+    /// answer means scrolling up, so the screen recorded when you left was a
+    /// page of history. The next repaint, at the bottom, never matched it, and
+    /// a desk you had just read turned green again.
+    public static func liveRows(buffer: String, rows: Int) -> [String] {
+        var lines = buffer.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() }      // the final line's own newline
+        return Array(lines.suffix(max(0, rows)))
+    }
+
     public static func meaningful(before: [String], after: [String], footer: Int = footerRows) -> Bool {
         func body(_ lines: [String]) -> [String] {
             let trimmed = lines.map { line -> String in

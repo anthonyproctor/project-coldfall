@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- A desk you had read could turn green again later with nothing new on it.
+  Reading a long answer means scrolling up, and the screen Coldfall noted when
+  you left was that page of history, so the next quiet repaint at the bottom
+  looked like news. It now compares the live screen, wherever you scrolled.
+- The "2 new" on a desk was orange, the colour of Stop Desk in the menu, and
+  nothing said what to click. It's blue now, hovering it says what it means,
+  and the right-click menu opens with **See What's New on This Desk**, which
+  shows what was added and clears it.
+
 ## [0.3.21] - 2026-10-01
 
 The desk in front of you says what it is doing.
