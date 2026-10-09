@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.22] - 2026-10-09
+
+Green means something new, and "new" says where to look.
+
 ### Fixed
 - A desk you had read could turn green again later with nothing new on it.
   Reading a long answer means scrolling up, and the screen Coldfall noted when
@@ -626,7 +630,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...HEAD
+[0.3.22]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.18...v0.3.19
