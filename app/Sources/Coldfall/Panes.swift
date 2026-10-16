@@ -349,7 +349,8 @@ final class DeskSession {
     func dropRepaint() {
         guard !screenChecked, case .ready = activity, let before = hiddenScreen else { return }
         screenChecked = true
-        if !ScreenChange.meaningful(before: before, after: screen()) { markSeen() }
+        let fresh = ScreenChange.newLines(before: before, after: screen())
+        if fresh.isEmpty { markSeen() } else { ScreenChange.logGreen(desk: desk.name, lines: fresh) }
     }
     func markSeen() { activityState.markSeen() }
 

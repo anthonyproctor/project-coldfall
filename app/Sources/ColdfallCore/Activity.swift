@@ -132,19 +132,58 @@ public enum ScreenChange {
         return Array(lines.suffix(max(0, rows)))
     }
 
-    public static func meaningful(before: [String], after: [String], footer: Int = footerRows) -> Bool {
-        func body(_ lines: [String]) -> [String] {
-            let trimmed = lines.map { line -> String in
-                var s = Substring(line)
-                while let last = s.last, last.isWhitespace { s = s.dropLast() }
-                return String(s)
-            }
-            // Blank rows at the foot are the unused part of the screen.
-            var end = trimmed.count
-            while end > 0, trimmed[end - 1].isEmpty { end -= 1 }
-            return Array(trimmed[0..<max(0, end - footer)])
+    /// The lines above the footer that weren't anywhere on the screen when
+    /// you left. Empty means nothing new.
+    ///
+    /// Comparing the two screens row by row cried wolf. A notice appearing
+    /// under the input box, Claude Code's "update installed" line for one,
+    /// pushes every row up by one, so every row differed though nothing had
+    /// been said, and desks you had read turned green after sitting idle. So a
+    /// line counts as new only if it wasn't on the old screen at all, in any
+    /// row, and numbers are ignored when matching, so a timer or a percentage
+    /// ticking in the text isn't news either.
+    public static func newLines(before: [String], after: [String], footer: Int = footerRows) -> [String] {
+        func clean(_ line: String) -> String {
+            var s = Substring(line)
+            while let last = s.last, last.isWhitespace { s = s.dropLast() }
+            return String(s)
         }
-        return body(before) != body(after)
+        func key(_ line: String) -> String {
+            var out = ""; var inDigits = false
+            for ch in line {
+                if ch.isNumber { if !inDigits { out.append("#") }; inDigits = true }
+                else { out.append(ch); inDigits = false }
+            }
+            return out.trimmingCharacters(in: .whitespaces)
+        }
+        let seen = Set(before.map { key(clean($0)) })
+        let rows = after.map(clean)
+        // Blank rows at the foot are the unused part of the screen.
+        var end = rows.count
+        while end > 0, rows[end - 1].isEmpty { end -= 1 }
+        let body = rows[0..<max(0, end - footer)]
+        return body.filter { !key($0).isEmpty && !seen.contains(key($0)) }
+    }
+
+    /// Why a desk turned green, kept on this Mac so a false one can be traced:
+    /// the time, the desk, and the start of the first new line. The last 100.
+    /// Overridable so tests write to a temp folder.
+    public static var logPath = NSString(string: "~/.local/share/coldfall/logs/green.log").expandingTildeInPath
+
+    public static func logGreen(desk: String, lines: [String], at now: Date = Date()) {
+        guard let first = lines.first else { return }
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]
+        let entry = "\(f.string(from: now))  \(desk)  \(lines.count) new  \(String(first.prefix(80)))"
+        let dir = (logPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        var kept = ((try? String(contentsOfFile: logPath, encoding: .utf8)) ?? "")
+            .split(separator: "\n").map(String.init)
+        kept.append(entry)
+        try? (kept.suffix(100).joined(separator: "\n") + "\n").write(toFile: logPath, atomically: true, encoding: .utf8)
+    }
+
+    public static func meaningful(before: [String], after: [String], footer: Int = footerRows) -> Bool {
+        !newLines(before: before, after: after, footer: footer).isEmpty
     }
 }
 

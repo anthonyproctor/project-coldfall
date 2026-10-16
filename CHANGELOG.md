@@ -8,6 +8,14 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- Desks you had read could still turn green after sitting idle for a while.
+  A notice appearing under the input box (Claude Code's "update installed",
+  for one) pushed every row up by one, and a row-by-row comparison read that
+  as a whole new screen. A desk now turns green only when a line appears that
+  wasn't on its screen before, anywhere, with numbers ignored, so moved text
+  and ticking timers don't count.
+
 ## [0.3.22] - 2026-10-09
 
 Green means something new, and "new" says where to look.

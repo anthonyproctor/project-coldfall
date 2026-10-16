@@ -2312,8 +2312,29 @@ do {
     check("repaint: an identical screen is not news", !ScreenChange.meaningful(before: left, after: left.map { $0 + "  " }))
     var reply = left; reply[3] = "Also pushed it."
     check("repaint: a new line above the input box is news", ScreenChange.meaningful(before: left, after: reply))
-    let scrolled = Array(left.dropFirst()) + [""]
-    check("repaint: scrolled content is news", ScreenChange.meaningful(before: left, after: scrolled))
+    // A notice under the input box pushes everything up a row. Nothing new
+    // was said, and this is what turned read desks green after a while.
+    let pushed = Array(left.dropFirst()) + ["  ✓ Update installed · Restart to apply"]
+    check("repaint: rows pushed up by a notice below are not news", !ScreenChange.meaningful(before: left, after: pushed))
+    let shifted = Array(left.dropFirst()) + [""]
+    check("repaint: the same lines, moved, are not news", !ScreenChange.meaningful(before: left, after: shifted))
+    var timer = left; timer[2] = "Done. Tests pass in 12s."
+    var timer2 = left; timer2[2] = "Done. Tests pass in 13s."
+    check("repaint: a number ticking in the text is not news", !ScreenChange.meaningful(before: timer, after: timer2))
+    var answer = left; answer[0] = "> fix the build"; answer[1] = "Fixed two imports."
+    eq("repaint: a new line anywhere above the footer is news, and is named",
+       ScreenChange.newLines(before: left, after: answer), ["Fixed two imports."])
+    let logDir = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-green-\(UUID().uuidString)")
+    let realLog = ScreenChange.logPath
+    ScreenChange.logPath = logDir.appendingPathComponent("green.log").path
+    for i in 0..<105 { ScreenChange.logGreen(desk: "d\(i)", lines: [String(repeating: "x", count: 200)]) }
+    let logged = (try? String(contentsOfFile: ScreenChange.logPath, encoding: .utf8))?.split(separator: "\n") ?? []
+    eq("green log: keeps the last hundred", logged.count, 100)
+    check("green log: newest last, line cut short", logged.last?.contains("d104") == true && (logged.last?.count ?? 999) < 140)
+    ScreenChange.logPath = realLog
+    try? FileManager.default.removeItem(at: logDir)
+    let grown = ["> fix the build", "Done. Tests pass.", "Also pushed it."] + Array(left.suffix(from: 4))
+    check("repaint: a reply that scrolled the screen is still news", ScreenChange.meaningful(before: left, after: grown))
 }
 
 // MARK: - clearing needs-you, and desks that stay removed
