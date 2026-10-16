@@ -1280,6 +1280,100 @@ do {
     eq("a shown desk loads as shown", back.first { $0.name == "hub" }?.hidden, false)
 }
 
+// MARK: - agents saying when they're done
+
+do {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent("coldfall-done-\(UUID().uuidString)").path
+    let home = root + "/home"
+    try? fm.createDirectory(atPath: home + "/.claude", withIntermediateDirectories: true)
+    try? fm.createDirectory(atPath: home + "/.codex", withIntermediateDirectories: true)
+    let wasCfg = Limits.configDir, wasLog = DoneSignal.logPath
+    Limits.configDir = root + "/config"
+    DoneSignal.logPath = home + "/.local/share/coldfall/signals.log"
+    defer { Limits.configDir = wasCfg; DoneSignal.logPath = wasLog; try? fm.removeItem(atPath: root) }
+
+    eq("done: a desk name can't break the log line", DoneSignal.fileName("my desk/../x"), "my_desk_.._x")
+    eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
+       DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
+    check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)
+
+    // Settings: Coldfall's entry goes in beside the person's own hooks and
+    // comes out again leaving theirs exactly as they were.
+    let mine: [String: Any] = ["model": "opus", "hooks": ["Stop": [["hooks": [["type": "command", "command": "say done"]]]]]]
+    let added = DoneSignal.adding(to: mine, events: [("Stop", .stop), ("Notification", .notify)], script: "/x/done-hook.sh")
+    check("done: added to Stop and Notification", added.map { DoneSignal.installed(in: $0, events: ["Stop", "Notification"]) } == true)
+    let stopRules = (added?["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]
+    eq("done: the person's own Stop hook stays", stopRules?.count, 2)
+    check("done: adding twice changes nothing", added.flatMap { DoneSignal.adding(to: $0, events: [("Stop", .stop)], script: "/x/done-hook.sh") } == nil)
+    let removed = added.flatMap { DoneSignal.removing(from: $0) }
+    let back = (removed?["hooks"] as? [String: Any])
+    check("done: removing leaves only theirs",
+          (back?["Stop"] as? [[String: Any]])?.count == 1 && back?["Notification"] == nil && removed?["model"] as? String == "opus")
+    check("done: nothing of ours, nothing to remove", DoneSignal.removing(from: mine) == nil)
+    let onlyOurs = DoneSignal.adding(to: [:], events: [("Stop", .stop)], script: "/x/done-hook.sh")!
+    check("done: an emptied hooks table is dropped", DoneSignal.removing(from: onlyOurs).map { $0["hooks"] == nil } == true)
+
+    // Install into a fake home: Claude's settings and Codex's hooks.json.
+    try? #"{"theme": "dark"}"#.write(toFile: home + "/.claude/settings.json", atomically: true, encoding: .utf8)
+    let log = DoneSignal.install(desks: [], home: home, codex: true)
+    check("done: installed for Claude and Codex", log.count == 2 && log.allSatisfy { $0.hasPrefix("Turned on") })
+    let claudeJSON = (try? JSONSerialization.jsonObject(with: fm.contents(atPath: home + "/.claude/settings.json")!)) as? [String: Any]
+    check("done: Claude's other settings survive", claudeJSON?["theme"] as? String == "dark")
+    let codexJSON = (try? JSONSerialization.jsonObject(with: fm.contents(atPath: home + "/.codex/hooks.json")!)) as? [String: Any]
+    check("done: Codex gets Stop only", codexJSON.map { DoneSignal.installed(in: $0, events: ["Stop"])
+                                                        && !DoneSignal.installed(in: $0, events: ["Notification"]) } == true)
+    check("done: the script is executable", fm.isExecutableFile(atPath: DoneSignal.scriptPath))
+
+    // The script itself, run the way a hook runs it.
+    func runHook(_ ev: String, desk: String?, stdin: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = [DoneSignal.scriptPath, ev]
+        var env = ["HOME": home, "PATH": "/usr/bin:/bin"]
+        if let desk { env["CLAUDE_DESK"] = desk }
+        p.environment = env
+        let pipe = Pipe(); p.standardInput = pipe
+        try? p.run()
+        pipe.fileHandleForWriting.write(stdin.data(using: .utf8)!); try? pipe.fileHandleForWriting.close()
+        p.waitUntilExit()
+    }
+    let reader = DoneSignal.Reader(path: DoneSignal.logPath, fromStart: true)
+    runHook("stop", desk: "hub", stdin: #"{"hook_event_name":"Stop"}"#)
+    runHook("notify", desk: "cars", stdin: #"{"notification_type":"permission_prompt"}"#)
+    runHook("notify", desk: "golf", stdin: #"{"notification_type":"idle_prompt"}"#)
+    runHook("stop", desk: nil, stdin: "{}")
+    runHook("stop", desk: "odd name", stdin: "{}")
+    let got = reader.read()
+    eq("done: the hook writes what happened, to which desk", got.map { "\($0.event.rawValue) \($0.desk)" },
+       ["stop hub", "notify cars", "stop odd_name"])
+    eq("done: and nothing is read twice", reader.read().count, 0)
+    try? "1700000000 sto".write(toFile: DoneSignal.logPath, atomically: true, encoding: .utf8)
+    eq("done: a half-written line waits; a trimmed log starts over", reader.read().count, 0)
+
+    let gone = DoneSignal.uninstall(desks: [], home: home)
+    check("done: uninstall takes it out of both", gone.count == 2 && !fm.fileExists(atPath: DoneSignal.scriptPath))
+    let afterJSON = (try? JSONSerialization.jsonObject(with: fm.contents(atPath: home + "/.claude/settings.json")!)) as? [String: Any]
+    check("done: and Claude's settings are as they were", afterJSON?["hooks"] == nil && afterJSON?["theme"] as? String == "dark")
+    check("done: the remove-files text says so", Uninstall.summary(items: [], recorders: [], doneHook: true).contains("done hook"))
+
+    // The rail, once a desk reports.
+    let t0 = Date()
+    var s = ActivityState()
+    s.setVisible(false)
+    s.noteSignal(at: t0)
+    eq("done: the agent's word turns a desk green", s.activity(now: t0.addingTimeInterval(0.1)), .ready)
+    s.setVisible(true); s.setVisible(false, at: t0.addingTimeInterval(10))
+    s.noteOutput(at: t0.addingTimeInterval(20))
+    eq("done: after that, output shows it working", s.activity(now: t0.addingTimeInterval(20.5)), .working)
+    eq("done: but never turns it green on its own", s.activity(now: t0.addingTimeInterval(30)), .quiet)
+    var w = ActivityState()
+    w.setVisible(true)
+    w.noteSignal(at: t0)
+    w.setVisible(false, at: t0.addingTimeInterval(1))
+    eq("done: finishing while you watched isn't news later", w.activity(now: t0.addingTimeInterval(9)), .quiet)
+}
+
 // MARK: - pinned desks, and ready desks floating to the top
 
 do {

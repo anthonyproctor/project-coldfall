@@ -185,6 +185,21 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + "Claude tells only its statusline, so the button above installs a recorder as that "
             + "statusline — any statusline you already have keeps working, the recorder chains to it. "
             + "Any other tool can join by writing ~/.local/share/coldfall/limits/<vendor>.json."))
+        rtLines.append(caps("KNOWING WHEN A DESK IS DONE"))
+        let doneOn = DoneSignal.isInstalled
+        let doneBtn = NSButton(title: doneOn ? "Agents report when they're done ✓" : "Let agents say when they're done",
+                               target: self, action: #selector(toggleDoneHooks(_:)))
+        doneBtn.bezelStyle = .rounded
+        doneBtn.toolTip = "Adds a small hook to Claude Code (and Codex, if it's here) that notes when a desk's agent "
+            + "finishes or needs you, so a desk turns green on the agent's word instead of a guess from its output. "
+            + "It writes one line to a file on this Mac and sends nothing anywhere. Click again to remove it."
+        rtLines.append(doneBtn)
+        if !doneOn {
+            let note = NSTextField(wrappingLabelWithString:
+                "Without it, a desk turns green when its output stops, which can be fooled by a repaint.")
+            note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor
+            rtLines.append(note)
+        }
         rtLines.append(caps("AGENTS FOUND ON DISK"))
         discoveredStack.orientation = .vertical
         discoveredStack.alignment = .leading
@@ -466,6 +481,17 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         let msg = Limits.installRecorder(for: a)
         let al = NSAlert(); al.messageText = "Live plan limits for \(a.vendor)"; al.informativeText = msg
         al.runModal()
+    }
+
+    @objc private func toggleDoneHooks(_ sender: NSButton) {
+        let on = DoneSignal.isInstalled
+        let lines = on ? DoneSignal.uninstall(desks: desks) : DoneSignal.install(desks: desks)
+        let a = NSAlert()
+        a.messageText = on ? "Agents no longer report when they're done" : "Agents now report when they're done"
+        a.informativeText = (lines.isEmpty ? "Nothing to change." : lines.joined(separator: "\n\n"))
+            + (on ? "" : "\n\nDesks already running pick it up the next time they start.")
+        a.runModal()
+        sender.title = DoneSignal.isInstalled ? "Agents report when they're done ✓" : "Let agents say when they're done"
     }
 
     @objc private func installLimits() {

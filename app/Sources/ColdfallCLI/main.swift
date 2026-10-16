@@ -153,6 +153,15 @@ case "inventory":
                      "removed": c.removed]
          } ?? NSNull()])
 
+case "hooks":
+    // `hooks [install|remove]`: the done hook (see DoneSignal). No argument prints where it is.
+    let desks = DeskConfig.load()
+    switch args.count > 1 ? args[1] : "" {
+    case "install": DoneSignal.install(desks: desks).forEach { print($0) }
+    case "remove":  DoneSignal.uninstall(desks: desks).forEach { print($0) }
+    default: out(["installed": DoneSignal.isInstalled, "script": DoneSignal.scriptPath, "log": DoneSignal.logPath])
+    }
+
 case "hosts":
     out(SSHHosts.all().map { ["alias": $0.alias, "target": $0.blurb, "command": $0.command] })
 
@@ -174,6 +183,7 @@ default:
       desks              configured desks and how each launches
       agents [dir]       agent definitions on disk that could become desks
       hosts              ssh hosts that could become desks
+      hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
       limits             remaining quota per vendor, stale entries dropped
       usage [--days N]   consumption by vendor and by desk (default: this week)

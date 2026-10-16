@@ -8,6 +8,17 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Agents can say when they're done.** Settings, **Let agents say when
+  they're done**, adds a small hook to Claude Code (and Codex, if it's set
+  up) that notes when a desk's agent finishes or asks you something. A desk
+  that reports turns green on the agent's word instead of a guess from its
+  output, so repaints, notices and status lines can't fake it. Claude Code's
+  one-minute "waiting for your input" reminder doesn't count. The hook writes
+  one line to a file on this Mac and sends nothing. Click again to remove it,
+  and Remove Files takes it out too. Codex asks you to trust a new hook once:
+  run /hooks in a Codex desk. `coldfall-cli hooks install` does the same.
+
 ## [0.3.23] - 2026-10-16
 
 Green only for lines that are actually new.

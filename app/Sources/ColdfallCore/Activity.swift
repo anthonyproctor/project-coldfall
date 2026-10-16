@@ -66,13 +66,23 @@ public struct ActivityState {
     /// are looking at reads as working from this, so it says "working" while
     /// its agent answers instead of "idle".
     public private(set) var lastWork: Date?
+    /// This desk's agent reports when it is done (see DoneSignal). From then
+    /// on output only shows it working; only the agent's word turns it green.
+    public private(set) var signaled = false
 
     public init() {}
+
+    /// The agent said it finished, or that it needs you. Green if you
+    /// weren't looking; nothing if you were, because you saw it.
+    public mutating func noteSignal(at now: Date = Date()) {
+        signaled = true
+        if !visible { unseen = true }
+    }
 
     public mutating func noteOutput(at now: Date = Date()) {
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
         lastOutput = now
-        if !visible { unseen = true }
+        if !visible, !signaled { unseen = true }
         if !visible || typedAt.map({ now.timeIntervalSince($0) >= ActivityState.echoGrace }) ?? true {
             lastWork = now
         }
@@ -99,8 +109,8 @@ public struct ActivityState {
             if let w = lastWork, now.timeIntervalSince(w) < ActivityState.quietFor { return .working }
             return .quiet
         }
-        guard let last = lastOutput else { return .quiet }
-        if now.timeIntervalSince(last) < ActivityState.quietFor { return .working }
+        if let last = lastOutput, now.timeIntervalSince(last) < ActivityState.quietFor { return .working }
+        guard lastOutput != nil || signaled else { return .quiet }
         return unseen ? .ready : .quiet
     }
 }

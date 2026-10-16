@@ -1518,7 +1518,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
         let a = NSAlert()
         a.messageText = "Remove Project Coldfall's files?"
-        let body = Uninstall.summary(items: items, recorders: recorders)
+        let body = Uninstall.summary(items: items, recorders: recorders, doneHook: DoneSignal.isInstalled)
         a.informativeText = body
         if items.isEmpty && recorders.isEmpty {
             a.addButton(withTitle: "OK")
@@ -1846,9 +1846,18 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// Polled rather than event-driven on purpose: "finished" is inferred from
     /// output STOPPING, and nothing fires an event when data does not arrive.
     /// A one-second tick against a handful of desks costs nothing.
+    /// What desks' agents have said about being done (see DoneSignal).
+    let doneSignals: DoneSignal.Reader = { DoneSignal.trim(); return DoneSignal.Reader() }()
+
     func watchDeskActivity() {
         activityTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             guard let self else { return }
+            let said = self.doneSignals.read()
+            if !said.isEmpty {
+                for sig in said {
+                    for (name, s) in self.sessions where DoneSignal.fileName(name) == sig.desk { s.noteSignal() }
+                }
+            }
             var map: [String: DeskStatus] = [:]
             var waiting = 0
             for (name, s) in self.sessions where self.desks.contains(where: { $0.name == name }) {

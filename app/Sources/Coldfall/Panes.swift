@@ -347,12 +347,15 @@ final class DeskSession {
     /// Once a desk has gone quiet and would show as waiting: if its screen
     /// is what it was when you left, the output was a repaint, not news.
     func dropRepaint() {
+        // The agent's own word needs no second opinion from the screen.
+        guard !activityState.signaled else { return }
         guard !screenChecked, case .ready = activity, let before = hiddenScreen else { return }
         screenChecked = true
         let fresh = ScreenChange.newLines(before: before, after: screen())
         if fresh.isEmpty { markSeen() } else { ScreenChange.logGreen(desk: desk.name, lines: fresh) }
     }
     func markSeen() { activityState.markSeen() }
+    func noteSignal() { activityState.noteSignal() }
 
     /// What the rail should draw right now.
     var activity: DeskActivity { activityState.activity() }

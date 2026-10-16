@@ -123,10 +123,10 @@ public enum Uninstall {
     }
 
     /// What the alert says, built here so the wording is testable.
-    public static func summary(items: [Item], recorders: [String]) -> String {
+    public static func summary(items: [Item], recorders: [String], doneHook: Bool = false) -> String {
         var body = "Your agents are not touched. Claude Code, Codex and the rest keep their logins, "
                  + "conversations, settings and hooks, and work from a terminal exactly as before.\n\n"
-        guard !items.isEmpty || !recorders.isEmpty else {
+        guard !items.isEmpty || !recorders.isEmpty || doneHook else {
             return body + "There is nothing of Coldfall's left to remove."
         }
         body += "This deletes:\n"
@@ -134,6 +134,10 @@ public enum Uninstall {
         for s in recorders {
             body += "\nand puts statusLine in \(s) back the way it was, so Claude stops running "
                   + "Coldfall's recorder.\n"
+        }
+        if doneHook {
+            body += "\nand takes Coldfall's done hook out of Claude Code's and Codex's hooks, "
+                  + "leaving every other hook there.\n"
         }
         return body + "\nYour desk list goes with it. Afterwards, quit Project Coldfall and drag it to the Trash."
     }
@@ -150,6 +154,7 @@ public enum Uninstall {
         for s in settingsFiles(desks: desks, home: home) {
             if let line = revertStatusline(settings: s) { log.append(line) }
         }
+        log += DoneSignal.uninstall(desks: desks, home: home)
         for root in [configRoot, dataRoot] where FileManager.default.fileExists(atPath: root) {
             do {
                 try FileManager.default.removeItem(atPath: root)
