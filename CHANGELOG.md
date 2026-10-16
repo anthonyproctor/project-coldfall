@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-10-16
+
+Green only for lines that are actually new.
+
 ### Fixed
 - Desks you had read could still turn green after sitting idle for a while.
   A notice appearing under the input box (Claude Code's "update installed",
@@ -638,7 +642,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...HEAD
+[0.3.23]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.19...v0.3.20
