@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-10-16
+
+Green on the agent's word, not a guess.
+
 ### Added
 - **Agents can say when they're done.** Settings, **Let agents say when
   they're done**, adds a small hook to Claude Code (and Codex, if it's set
@@ -653,7 +657,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...HEAD
+[0.3.24]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...v0.3.24
 [0.3.23]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.20...v0.3.21
