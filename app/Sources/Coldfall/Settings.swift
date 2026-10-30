@@ -36,6 +36,7 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                                              height: min(600, vis.height - 60)),
                          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         w.contentMinSize = NSSize(width: 700, height: 420)
+        w.backgroundColor = Theme.ui.editor
         self.init(window: w)
         w.title = "Project Coldfall Settings"
         self.projectDir = projectDir
@@ -52,13 +53,13 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
     }
 
     private func caps(_ s: String) -> NSTextField {
-        let l = NSTextField(labelWithString: s)
-        l.font = .systemFont(ofSize: 9.5, weight: .semibold); l.textColor = .tertiaryLabelColor
+        let l = NSTextField(labelWithString: TextStyle.sentence(s))
+        l.font = .systemFont(ofSize: 12, weight: .medium); l.textColor = .secondaryLabelColor
         return l
     }
     private func note(_ s: String, width: CGFloat = 520) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: s)
-        l.font = .systemFont(ofSize: 11); l.textColor = .secondaryLabelColor
+        l.font = .systemFont(ofSize: 12); l.textColor = .secondaryLabelColor
         l.preferredMaxLayoutWidth = width
         return l
     }
@@ -237,7 +238,7 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
         // Leaving, kept here on purpose: findable by someone looking for it,
         // and nowhere near Quit.
-        updLines.append(caps("REMOVE PROJECT COLDFALL"))
+        updLines.append(caps("REMOVE Project Coldfall"))
         let bye = NSButton(title: "Remove Project Coldfall's Files…", target: self, action: #selector(openUninstall))
         bye.bezelStyle = .rounded
         updLines.append(bye)

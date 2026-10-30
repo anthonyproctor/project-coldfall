@@ -31,6 +31,13 @@ import AppKit
 import SwiftTerm
 import ColdfallCore
 
+/// A split view whose divider is the theme's hairline. AppKit's own is a
+/// hard line, near black in a light window and pale in a dark one, which cut
+/// the window into boxes.
+final class SoftSplitView: NSSplitView {
+    override var dividerColor: NSColor { Theme.ui.border }
+}
+
 enum Theme {
 
     // MARK: - the two halves of a skin

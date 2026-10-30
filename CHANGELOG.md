@@ -12,6 +12,9 @@ opens this file.
 - A calmer desk list: labels as you typed them rather than in capitals, larger
   desk names, more room between rows, softer corners, and warmer neutral colors
   for the default theme's chrome. The terminal's colors are unchanged.
+- The same calm everywhere else: Settings, Welcome and Usage headings in larger
+  sentence case instead of tiny capitals, soft dividers between panes in place
+  of a hard line, and easier type in the terminal header and the reader's title.
 
 ### Fixed
 - A desk with a timer in its conversation turned green every time the timer

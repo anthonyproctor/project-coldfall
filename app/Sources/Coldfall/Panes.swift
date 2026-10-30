@@ -301,7 +301,7 @@ final class DeskSession {
 
     /// The view to put on screen. A single pane is shown bare; a split view is
     /// only introduced once there is something to divide.
-    let container = NSSplitView()
+    let container = SoftSplitView()
 
     init(desk: Desk) {
         self.desk = desk

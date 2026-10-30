@@ -62,6 +62,10 @@ wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
 
+Snapshots take their theme from the real desks.toml, not from `--desks`. To see
+another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding
+`.config/coldfall/desks.toml` with `[theme] mode = "light"`.
+
 ## Rules
 
 - **Never quit or relaunch a running Project Coldfall.** The person you are

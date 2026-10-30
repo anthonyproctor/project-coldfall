@@ -16,7 +16,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     let tree = FileTreeView()
     let host = NSView()
     let reader = ReaderView()
-    let split = NSSplitView()
+    let split = SoftSplitView()
     let meter = MeterBar()
     let watcher = WorkspaceWatcher()
     var desks: [Desk] = []
@@ -88,7 +88,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         deskScroll.drawsBackground = false
         deskScroll.automaticallyAdjustsContentInsets = false
 
-        rail = NSSplitView()
+        rail = SoftSplitView()
         rail.delegate = self
         rail.isVertical = false          // stacked, so the divider is horizontal
         rail.dividerStyle = .thin
@@ -442,7 +442,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     guard let iv = iw.window?.contentView else { exit(1) }
                     iv.wantsLayer = true
                     iv.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        iv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        iv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     iv.layoutSubtreeIfNeeded()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -468,7 +468,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     guard let mv = mw.content ?? mw.window?.contentView else { exit(1) }
                     mv.wantsLayer = true
                     mv.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        mv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        mv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                         _ = mw
@@ -499,7 +499,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     guard let wv = ww.window?.contentView else { exit(1) }
                     wv.wantsLayer = true
                     wv.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        wv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        wv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     wv.layoutSubtreeIfNeeded()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -528,7 +528,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     guard let mv = mp.window?.contentView else { exit(1) }
                     mv.wantsLayer = true
                     mv.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        mv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        mv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     mv.layoutSubtreeIfNeeded()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -554,7 +554,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     guard let av = a.window.contentView else { exit(1) }
                     av.wantsLayer = true
                     av.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        av.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        av.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         guard let arep = av.bitmapImageRepForCachingDisplay(in: av.bounds) else { exit(1) }
@@ -580,7 +580,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     // and light label text vanishes on the blank white.
                     sv.wantsLayer = true
                     sv.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        sv.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                        sv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     sv.layoutSubtreeIfNeeded()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {

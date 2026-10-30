@@ -39,7 +39,7 @@ final class TerminalHeader: NSView {
         prompt.target = self; prompt.action = #selector(writePrompt)
         prompt.bezelStyle = .inline
         prompt.isBordered = false
-        prompt.font = .systemFont(ofSize: 11)
+        prompt.font = .systemFont(ofSize: 12)
         prompt.toolTip = "Build and copy a prompt. Nothing is sent."
         let buttons = NSStackView(views: [prompt, right, down, close])
         buttons.orientation = .horizontal
@@ -73,9 +73,9 @@ final class TerminalHeader: NSView {
     func restyle() {
         let ui = Theme.ui
         layer?.backgroundColor = ui.editor.cgColor
-        name.font = .systemFont(ofSize: 12, weight: .semibold)
+        name.font = .systemFont(ofSize: 13, weight: .medium)
         name.textColor = ui.text
-        sub.font = .systemFont(ofSize: 11)
+        sub.font = .systemFont(ofSize: 12)
         sub.textColor = ui.dimText
         for b in [prompt, right, down, close] { b.contentTintColor = ui.dimText }
         needsDisplay = true

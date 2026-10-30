@@ -1280,6 +1280,16 @@ do {
     eq("a shown desk loads as shown", back.first { $0.name == "hub" }?.hidden, false)
 }
 
+// MARK: - section labels
+
+eq("label: capitals become a sentence", TextStyle.sentence("RUNTIMES DETECTED"), "Runtimes detected")
+eq("label: acronyms stay", TextStyle.sentence("SSH HOSTS"), "SSH hosts")
+eq("label: apostrophes survive", TextStyle.sentence("WHAT'S FILLING THE CONVERSATIONS  (tool output, estimated)"),
+   "What's filling the conversations  (tool output, estimated)")
+eq("label: a date stays as written", TextStyle.sentence("THIS WEEK, SINCE Sep 21"), "This week, since Sep 21")
+eq("label: a product name loses only the shouting", TextStyle.sentence("REMOVE PROJECT COLDFALL"), "Remove project coldfall")
+eq("label: empty is empty", TextStyle.sentence(""), "")
+
 // MARK: - agents saying when they're done
 
 do {

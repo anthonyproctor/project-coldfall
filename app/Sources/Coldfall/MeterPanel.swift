@@ -47,6 +47,7 @@ final class MeterPanel: NSWindowController {
                          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         self.init(window: w)
         w.title = "Usage"
+        w.backgroundColor = Theme.ui.editor
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
@@ -111,8 +112,8 @@ final class MeterPanel: NSWindowController {
     }
 
     private func caps(_ s: String) -> NSTextField {
-        let l = NSTextField(labelWithString: s)
-        l.font = .systemFont(ofSize: 9.5, weight: .semibold); l.textColor = .tertiaryLabelColor
+        let l = NSTextField(labelWithString: TextStyle.sentence(s))
+        l.font = .systemFont(ofSize: 12, weight: .medium); l.textColor = .secondaryLabelColor
         return l
     }
     private func mono(_ s: String, _ size: CGFloat = 11.5, _ w: NSFont.Weight = .regular) -> NSTextField {
@@ -250,7 +251,7 @@ final class MeterPanel: NSWindowController {
         let df = DateFormatter(); df.dateFormat = "EEE h a"
         let total = report.byVendor.values.reduce(0) { $0 + $1.tokens }
 
-        stack.addArrangedSubview(caps("THIS WEEK, SINCE \(df.string(from: since).uppercased())"))
+        stack.addArrangedSubview(caps("THIS WEEK, SINCE \(df.string(from: since))"))
         for (v, b) in report.byVendor.sorted(by: { $0.value.tokens > $1.value.tokens }) {
             let share = total > 0 ? Double(b.tokens) / Double(total) * 100 : 0
             var s = pad(v, 15) + lpad(fmt(b.tokens), 9) + " tokens  "

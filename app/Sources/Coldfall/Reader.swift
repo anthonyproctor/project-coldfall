@@ -50,7 +50,7 @@ final class ReaderView: NSView {
         tabScroll.drawsBackground = false
         tabScroll.translatesAutoresizingMaskIntoConstraints = false
 
-        titleBar.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        titleBar.font = .systemFont(ofSize: 12)
         titleBar.textColor = .secondaryLabelColor
         titleBar.lineBreakMode = .byTruncatingHead
         titleBar.translatesAutoresizingMaskIntoConstraints = false

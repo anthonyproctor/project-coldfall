@@ -23,6 +23,7 @@ final class WelcomeWindow: NSWindowController {
         w.contentMinSize = NSSize(width: 560, height: 420)
         self.init(window: w)
         w.title = "Welcome to Project Coldfall"
+        w.backgroundColor = Theme.ui.editor
         self.projectDir = projectDir
         self.found = Discovery.agents(in: projectDir)
         build()
@@ -31,20 +32,20 @@ final class WelcomeWindow: NSWindowController {
 
     private func h1(_ s: String) -> NSTextField {
         let l = NSTextField(labelWithString: s)
-        l.font = .systemFont(ofSize: 22, weight: .semibold)
+        l.font = .systemFont(ofSize: 26, weight: .semibold)
         return l
     }
     private func body(_ s: String) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: s)
-        l.font = .systemFont(ofSize: 12.5)
+        l.font = .systemFont(ofSize: 13)
         l.textColor = .secondaryLabelColor
         l.preferredMaxLayoutWidth = 580
         return l
     }
     private func caps(_ s: String) -> NSTextField {
-        let l = NSTextField(labelWithString: s)
-        l.font = .systemFont(ofSize: 9.5, weight: .semibold)
-        l.textColor = .tertiaryLabelColor
+        let l = NSTextField(labelWithString: TextStyle.sentence(s))
+        l.font = .systemFont(ofSize: 12, weight: .medium)
+        l.textColor = .secondaryLabelColor
         return l
     }
 
