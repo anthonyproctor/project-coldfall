@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.25] - 2026-10-30
+
+A calmer look, and timers that stop crying wolf.
+
 ### Changed
 - A calmer desk list: labels as you typed them rather than in capitals, larger
   desk names, more room between rows, softer corners, and warmer neutral colors
@@ -671,7 +675,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...HEAD
+[0.3.25]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...v0.3.25
 [0.3.24]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...v0.3.24
 [0.3.23]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.21...v0.3.22
