@@ -489,7 +489,7 @@ final class GroupHeader: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 10, weight: .bold)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
         label.textColor = Theme.ui.dimText
         label.frame = bounds
         label.autoresizingMask = [.width]
@@ -499,12 +499,12 @@ final class GroupHeader: NSView {
     convenience init() { self.init(frame: .zero) }
 
     func configure(title: String, expanded: Bool, waiting: Int = 0) {
-        let s = NSMutableAttributedString(string: (expanded ? "▾ " : "▸ ") + title.uppercased(), attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: Theme.ui.dimText,
+        let s = NSMutableAttributedString(string: (expanded ? "▾ " : "▸ ") + title, attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: Theme.ui.dimText,
         ])
         if waiting > 0 {
             s.append(NSAttributedString(string: "  ● \(waiting)", attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: NSColor.systemGreen,
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.systemGreen,
             ]))
         }
         label.attributedStringValue = s
@@ -596,7 +596,7 @@ final class HiddenHeader: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 10, weight: .bold)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
         label.textColor = Theme.ui.dimText
         label.frame = bounds
         label.autoresizingMask = [.width]
@@ -606,7 +606,7 @@ final class HiddenHeader: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(count: Int, expanded: Bool) {
-        label.stringValue = (expanded ? "▾ " : "▸ ") + "\(count) HIDDEN"
+        label.stringValue = (expanded ? "▾ " : "▸ ") + "\(count) hidden"
     }
     override func mouseDown(with e: NSEvent) { onClick?() }
 }

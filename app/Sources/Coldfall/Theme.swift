@@ -87,9 +87,9 @@ enum Theme {
 
     static let vscodeDark = Skin(
         family: "vscode", isDark: true,
-        ui: UI(sidebar: hex("181818"), editor: hex("1f1f1f"), status: hex("181818"),
-               border: hex("2b2b2b"), hover: hex("2a2d2e"), selected: hex("37373d"),
-               accent: hex("0078d4"), text: hex("cccccc"), dimText: hex("9d9d9d")),
+        ui: UI(sidebar: hex("1b1b1a"), editor: hex("1f1f1f"), status: hex("1b1b1a"),
+               border: hex("2c2c2a"), hover: hex("262625"), selected: hex("323230"),
+               accent: hex("0078d4"), text: hex("dcdcd8"), dimText: hex("9c9c97")),
         terminal: Palette(
             background: hex("1f1f1f"), foreground: hex("cccccc"),
             cursor: hex("cccccc"), selection: hex("264f78"),
@@ -100,9 +100,9 @@ enum Theme {
 
     static let vscodeLight = Skin(
         family: "vscode", isDark: false,
-        ui: UI(sidebar: hex("f8f8f8"), editor: hex("ffffff"), status: hex("f8f8f8"),
-               border: hex("e5e5e5"), hover: hex("f0f0f0"), selected: hex("e4e6f1"),
-               accent: hex("005fb8"), text: hex("3b3b3b"), dimText: hex("767676")),
+        ui: UI(sidebar: hex("fafaf8"), editor: hex("ffffff"), status: hex("fafaf8"),
+               border: hex("ebebe7"), hover: hex("f1f1ee"), selected: hex("e9e9e5"),
+               accent: hex("005fb8"), text: hex("2c2c2a"), dimText: hex("74746f")),
         terminal: Palette(
             background: hex("ffffff"), foreground: hex("3b3b3b"),
             cursor: hex("3b3b3b"), selection: hex("add6ff"),

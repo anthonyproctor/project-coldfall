@@ -8,6 +8,11 @@ opens this file.
 
 ## [Unreleased]
 
+### Changed
+- A calmer desk list: labels as you typed them rather than in capitals, larger
+  desk names, more room between rows, softer corners, and warmer neutral colors
+  for the default theme's chrome. The terminal's colors are unchanged.
+
 ### Fixed
 - A desk with a timer in its conversation turned green every time the timer
   ran, all day, with nothing to say to you. With agents reporting when they're

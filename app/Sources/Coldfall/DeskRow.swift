@@ -95,7 +95,7 @@ final class DeskRow: NSView {
 
     private var hovering = false { didSet { needsDisplay = true } }
 
-    static let height: CGFloat = 40
+    static let height: CGFloat = 46
 
     /// Quarter circles rather than braille. Braille dots rendered as a faint
     /// speck — near invisible in a snapshot of the real rail — and "working" is
@@ -130,14 +130,14 @@ final class DeskRow: NSView {
             glyph.centerYAnchor.constraint(equalTo: name.centerYAnchor),
 
             name.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 6),
-            name.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            name.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
 
             time.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             time.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
 
             sub.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            sub.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 1),
+            sub.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 2),
         ])
         subTrailing = sub.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
         subTrailing?.isActive = true
@@ -168,14 +168,14 @@ final class DeskRow: NSView {
         let fill: NSColor? = selected ? Theme.ui.selected : (hovering ? Theme.ui.hover : nil)
         guard let fill else { return }
         fill.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 9, yRadius: 9).fill()
     }
 
     func restyle() {
         let ui = Theme.ui
 
         name.stringValue = deskName
-        name.font = .systemFont(ofSize: 13, weight: selected ? .semibold : .regular)
+        name.font = .systemFont(ofSize: 14, weight: selected ? .medium : .regular)
 
         // Status first, so the eye finds "needs you" before anything else.
         let (g, gColor, state): (String, NSColor, String)
@@ -346,10 +346,9 @@ final class DeskRow: NSView {
 final class SectionTitle: NSTextField {
     convenience init(_ text: String) {
         self.init(labelWithString: "")
-        let a = NSAttributedString(string: text.uppercased(), attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+        let a = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: Theme.ui.dimText,
-            .kern: 0.6,
         ])
         attributedStringValue = a
         translatesAutoresizingMaskIntoConstraints = false
