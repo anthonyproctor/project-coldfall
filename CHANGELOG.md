@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- A desk with a timer in its conversation turned green every time the timer
+  ran, all day, with nothing to say to you. With agents reporting when they're
+  done, a finished turn now turns a desk green only if you sent that desk
+  something since you last read it. An agent asking for you always does.
+
 ## [0.3.24] - 2026-10-16
 
 Green on the agent's word, not a guess.

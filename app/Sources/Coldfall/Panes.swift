@@ -29,7 +29,7 @@ import ColdfallCore
 final class DeskTerminalView: LocalProcessTerminalView {
     var onOutput: (() -> Void)?
     /// Something was sent into the desk: a keystroke, a paste, a drop.
-    var onInput: (() -> Void)?
+    var onInput: (([UInt8]) -> Void)?
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
@@ -37,7 +37,7 @@ final class DeskTerminalView: LocalProcessTerminalView {
     }
 
     override func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        onInput?()
+        onInput?(Array(data))
         super.send(source: source, data: data)
     }
 
@@ -335,7 +335,11 @@ final class DeskSession {
     private var screenChecked = false
 
     func noteOutput() { activityState.noteOutput(); screenChecked = false }
-    func noteInput() { activityState.noteInput() }
+    func noteInput(_ bytes: [UInt8], from term: DeskTerminalView?) {
+        activityState.noteInput()
+        // A shell split beside the agent isn't asking the agent anything.
+        if term === agentTerm, ActivityState.isSubmit(bytes) { activityState.noteAsked() }
+    }
 
     /// The agent terminal's live screen as text, wherever you have scrolled
     /// to. See ScreenChange.liveRows.
@@ -355,7 +359,7 @@ final class DeskSession {
         if fresh.isEmpty { markSeen() } else { ScreenChange.logGreen(desk: desk.name, lines: fresh) }
     }
     func markSeen() { activityState.markSeen() }
-    func noteSignal() { activityState.noteSignal() }
+    func noteSignal(_ event: DoneSignal.Event) { activityState.noteSignal(event) }
 
     /// What the rail should draw right now.
     var activity: DeskActivity { activityState.activity() }
@@ -422,7 +426,7 @@ final class DeskSession {
         let p = Pane(isAgent: false)
         p.term.processDelegate = processDelegate
         p.term.onOutput = { [weak self] in self?.noteOutput() }
-        p.term.onInput = { [weak self] in self?.noteInput() }
+        p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
         panes.insert(p, at: focused + 1)
         focused += 1
         rebuild()
@@ -476,7 +480,7 @@ final class DeskSession {
     private func wireOutput() {
         for p in panes {
             p.term.onOutput = { [weak self] in self?.noteOutput() }
-            p.term.onInput = { [weak self] in self?.noteInput() }
+            p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
         }
     }
 

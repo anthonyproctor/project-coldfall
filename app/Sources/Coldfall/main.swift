@@ -1855,7 +1855,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             let said = self.doneSignals.read()
             if !said.isEmpty {
                 for sig in said {
-                    for (name, s) in self.sessions where DoneSignal.fileName(name) == sig.desk { s.noteSignal() }
+                    for (name, s) in self.sessions where DoneSignal.fileName(name) == sig.desk { s.noteSignal(sig.event) }
                 }
             }
             var map: [String: DeskStatus] = [:]

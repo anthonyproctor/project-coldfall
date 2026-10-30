@@ -74,9 +74,45 @@ public struct ActivityState {
 
     /// The agent said it finished, or that it needs you. Green if you
     /// weren't looking; nothing if you were, because you saw it.
-    public mutating func noteSignal(at now: Date = Date()) {
+    ///
+    /// A finished turn counts only if you asked for it. An agent with a timer
+    /// inside its conversation really does finish a turn every few minutes,
+    /// and a desk that turned green for each one was green all day with
+    /// nothing to say to you. Needing you always counts, whoever started it.
+    public mutating func noteSignal(_ event: DoneSignal.Event = .stop, at now: Date = Date()) {
         signaled = true
-        if !visible { unseen = true }
+        switch event {
+        case .notify:
+            if !visible { unseen = true }
+        case .stop:
+            if visible { asked = false }           // you watched it finish
+            else if asked { unseen = true }
+        }
+    }
+
+    /// You sent this desk something and haven't yet seen the answer.
+    public private(set) var asked = false
+
+    /// You pressed Enter in the agent's pane, or something was sent on your behalf.
+    public mutating func noteAsked() { asked = true }
+
+    /// Whether bytes sent to a terminal submit something. Keys alone don't,
+    /// and the terminal's own reports (focus in and out, on every desk switch)
+    /// travel the same road, so only Enter counts: a return, or Enter in the
+    /// kitty keyboard encoding, not as part of a paste.
+    public static func isSubmit(_ bytes: [UInt8]) -> Bool {
+        var rest = bytes
+        let endPaste: [UInt8] = [27, 91, 50, 48, 49, 126]      // ESC[201~
+        let startPaste: [UInt8] = [27, 91, 50, 48, 48, 126]    // ESC[200~
+        func find(_ needle: [UInt8], in hay: [UInt8]) -> Int? {
+            guard hay.count >= needle.count else { return nil }
+            return (0...(hay.count - needle.count)).last { Array(hay[$0..<($0 + needle.count)]) == needle }
+        }
+        if let e = find(endPaste, in: rest) { rest = Array(rest[(e + endPaste.count)...]) }
+        else if find(startPaste, in: rest) != nil { return false }
+        if rest.contains(13) || rest.contains(10) { return true }
+        let text = String(decoding: rest, as: UTF8.self)
+        return text.contains("\u{1b}[13u") || text.contains("\u{1b}[13;1u")
     }
 
     public mutating func noteOutput(at now: Date = Date()) {
@@ -94,12 +130,20 @@ public struct ActivityState {
     public mutating func setVisible(_ v: Bool, at now: Date = Date()) {
         if visible, !v { hiddenAt = now }
         visible = v
-        if v { unseen = false }
+        if v {
+            // Looking at an answer settles the question. A glance while it is
+            // still working doesn't: its finish is still news.
+            if unseen { asked = false }
+            unseen = false
+        }
     }
 
     /// "Clear" on the needs-you line: counts as having looked, without
     /// opening the desk.
-    public mutating func markSeen() { unseen = false }
+    public mutating func markSeen() {
+        if unseen { asked = false }
+        unseen = false
+    }
 
     public func activity(now: Date = Date()) -> DeskActivity {
         // A desk you are looking at never badges: you can see it. It can
