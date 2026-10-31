@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.26] - 2026-10-30
+
+A first launch that fits the Mac and speaks plainly.
+
 ### Changed
 - New setups follow the Mac's light or dark setting. Existing setups keep what
   they have; Settings, Appearance changes it.
@@ -680,7 +684,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...HEAD
+[0.3.26]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...v0.3.26
 [0.3.25]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...v0.3.25
 [0.3.24]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...v0.3.24
 [0.3.23]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.22...v0.3.23
