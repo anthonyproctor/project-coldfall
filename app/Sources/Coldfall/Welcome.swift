@@ -55,19 +55,19 @@ final class WelcomeWindow: NSWindowController {
         let found = checks.filter { $0.1 }
 
         var views: [NSView] = [
-            h1("Project Coldfall"),
-            body("A desk is a persistent specialist — its own agent, memory and model — "
-               + "with a long-lived terminal of its own. Sessions are disposable. The desk is not.\n\n"
-               + "Project Coldfall never reimplements an agent. Each desk launches the vendor's own CLI "
-               + "in a real terminal, so your existing config, hooks and memory work untouched."),
+            h1("Welcome to Project Coldfall"),
+            body("Coldfall keeps your AI agents side by side in one window. Each one gets a desk: "
+               + "its own folder, its own instructions and its own conversation, ready when you "
+               + "come back, days or weeks later.\n\n"
+               + "It runs the real Claude Code, Codex and other tools, on the plans you already pay for. "
+               + "They keep working the same way, with or without Coldfall."),
         ]
 
         // A column of six crosses says nothing the install list below doesn't.
-        if !found.isEmpty { views.append(caps("FOUND ON THIS MACHINE")) }
+        if !found.isEmpty { views.append(caps("FOUND ON THIS Mac")) }
         for (rt, ok) in checks where !found.isEmpty {
             let line = NSTextField(labelWithString:
-                (ok ? "✓  " : "✗  ") + rt.name
-                + (ok ? "   \((DeskConfig.which(rt.bin) ?? "") as String)" : "   not on PATH"))
+                (ok ? "✓  " : "✗  ") + rt.name + (ok ? "" : "   not installed"))
             line.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
             line.textColor = ok ? .labelColor : .tertiaryLabelColor
             views.append(line)
@@ -76,37 +76,37 @@ final class WelcomeWindow: NSWindowController {
         if found.isEmpty {
             // The dead end this used to be: "install one, then reopen". Now
             // the commands are here, and Check again looks without a relaunch.
-            views.append(body("No agent CLIs are installed yet. Install one below, then press Check again. "
-                + "Paste the command into Terminal, or into the shell desk Project Coldfall opens for you."))
-            views.append(caps("INSTALL ONE TO START"))
+            views.append(body("You need at least one AI tool to get started, and none are on this Mac yet. "
+                + "Pick one below and press Copy. Open the Terminal app, paste it and press Return. "
+                + "When it finishes, press Check again."))
+            views.append(caps("PICK ONE TO INSTALL"))
             for v in VendorInstall.all { views += installRows(v) }
             views.append(body(VendorInstall.npmNote))
             let again = NSButton(title: "Check again", target: self, action: #selector(checkAgain))
             again.bezelStyle = .rounded
             views.append(again)
         } else {
-            views.append(body("Project Coldfall will write a starter config with "
+            views.append(body("Coldfall will make a desk for "
                 + found.map(\.0.name).joined(separator: ", ")
-                + ", plus a plain shell desk so opening the app costs nothing. "
-                + "Edit it any time in Settings, or by hand at ~/.config/coldfall/desks.toml."))
+                + ", plus a plain terminal desk, which uses no tokens. "
+                + "You can change them any time in Settings."))
         }
 
         if found.count >= 2 {
-            views.append(caps("AGENT MAIL"))
-            views.append(body("You have more than one vendor installed, so the bridge works: "
-                + "put a question to a second agent and it answers with the whole thread as "
-                + "context, in an append-only markdown file you can read and keep. "
-                + "The responder runs read-only where the vendor supports it. cmd-shift-m."))
+            views.append(caps("AGENT Mail"))
+            views.append(body("You have more than one tool, so your agents can check each other's work. "
+                + "Press ⇧⌘M to put a question to a second agent. It sees the whole conversation so far "
+                + "and answers in a file you can keep. Where the tool allows it, "
+                + "the second agent can only read, not change anything."))
         }
 
         // Someone with existing agents should not have to configure anything.
         if !self.found.isEmpty {
-            views.append(caps("AGENTS ALREADY IN THIS PROJECT"))
-            views.append(body("Found \(self.found.count) agent definition"
+            views.append(caps("AGENTS ALREADY IN THIS FOLDER"))
+            views.append(body("Found \(self.found.count) agent"
                 + (self.found.count == 1 ? "" : "s")
-                + " in .claude/agents and .github/agents. Project Coldfall will make a desk for each, "
-                + "launching that vendor's own CLI with that agent. Remove any you do not want "
-                + "in Settings."))
+                + " you've already set up here. Coldfall will make a desk for each. "
+                + "Remove any you don't want in Settings."))
             let names = self.found.prefix(8).map(\.name).joined(separator: ", ")
             let l = NSTextField(wrappingLabelWithString: names
                 + (self.found.count > 8 ? ", and \(self.found.count - 8) more" : ""))

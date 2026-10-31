@@ -20,7 +20,7 @@
 //
 //     [theme]
 //     palette = "vscode"     # vscode | gruvbox | nord | solarized
-//     mode    = "dark"       # dark (default) | light | system
+//     mode    = "system"     # system (new setups) | dark (no mode set) | light
 //     font    = "JetBrainsMono Nerd Font Mono"
 //     size    = 14
 //

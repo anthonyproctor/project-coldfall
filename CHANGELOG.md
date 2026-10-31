@@ -8,6 +8,11 @@ opens this file.
 
 ## [Unreleased]
 
+### Changed
+- New setups follow the Mac's light or dark setting. Existing setups keep what
+  they have; Settings, Appearance changes it.
+- The Welcome window is written for people who don't live in a terminal.
+
 ## [0.3.25] - 2026-10-30
 
 A calmer look, and timers that stop crying wolf.

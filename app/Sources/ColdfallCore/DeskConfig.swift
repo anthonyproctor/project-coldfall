@@ -160,6 +160,11 @@ public enum DeskConfig {
         NSString(string: "~/.config/coldfall/desks.toml").expandingTildeInPath
     }
 
+    /// A new setup follows the Mac's light or dark setting. It is written into
+    /// the starter rather than made the app's default, so a setup with no
+    /// theme table, from before this, keeps the dark it has always had.
+    public static let starterTheme = "[theme]\nmode = \"system\"\n"
+
     /// First run: leave a working config on disk rather than an empty window.
     /// Only desks whose CLI is actually installed get written.
     public static func writeStarter() {
@@ -168,9 +173,10 @@ public enum DeskConfig {
         guard !FileManager.default.fileExists(atPath: path) else { return }
 
         var out = """
-        # Project Coldfall desks. A desk is a persistent specialist; sessions are disposable.
+        # Project Coldfall desks. A desk is one agent for one ongoing job.
         # Written on first run. Edit freely, then restart Project Coldfall.
 
+        \(starterTheme)
         [desk.shell]
         # A plain shell first, so opening the app costs nothing.
         command = "exec zsh -l"
@@ -314,13 +320,9 @@ public enum DeskConfig {
         public var font: String?
         public var size: Int?
         public var palette: String?
-        /// "dark" (the default), "light", or "system" to follow the OS.
-        ///
-        /// Dark rather than system on purpose. This is a terminal-first tool
-        /// and every terminal-first tool it sits next to — VS Code, Ghostty,
-        /// iTerm — opens dark. Following the OS means someone whose Mac is in
-        /// light mode gets a white terminal they never asked for on first
-        /// launch, and first launch is the only impression there is.
+        /// "dark", "light", or "system" to follow the OS. New setups are
+        /// written with "system" (see starterTheme); a file with no mode at
+        /// all is an older setup, and stays dark as it always was.
         public var mode: String?
         /// Space between the terminal and the edge of its pane. Ghostty's
         /// defaults, because text butting against the frame is the first thing

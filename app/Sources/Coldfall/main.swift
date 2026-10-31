@@ -63,6 +63,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let firstRun = desks.isEmpty || !ui.seenWelcome
         if desks.isEmpty {
             DeskConfig.writeStarter()
+            // The theme was read before this file existed. Read it again, or
+            // the first launch, the one that counts, ignores the starter's.
+            Theme.applyGlobally()
             desks = DeskOrder.grouped(DeskConfig.load())
         }
         if desks.isEmpty {

@@ -447,8 +447,8 @@ do {
           after3.components(separatedBy: "[desk.one]").count == 2)
 }
 
-// Dark is the default, not the system setting. A terminal-first tool that
-// opens white on a light-mode Mac has wasted its only first impression.
+// New setups follow the Mac; a file with no mode is an older setup and stays
+// dark, so nobody's terminal turns white because they updated.
 do {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -457,6 +457,10 @@ do {
     try? "[desk.one]\nruntime = \"claude\"\n".write(toFile: f, atomically: true, encoding: .utf8)
     eq("no theme table means no mode set, so the app default applies",
        DeskConfig.themeSettings(path: f).mode, nil)
+    try? (DeskConfig.starterTheme + "\n[desk.one]\nruntime = \"claude\"\n").write(toFile: f, atomically: true, encoding: .utf8)
+    eq("a new setup follows the system", DeskConfig.themeSettings(path: f).mode, "system")
+    DeskConfig.write(DeskConfig.load(path: f), to: f)
+    eq("and saving the desks keeps that", DeskConfig.themeSettings(path: f).mode, "system")
 }
 
 // MARK: - the usage cache
