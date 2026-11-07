@@ -2545,6 +2545,51 @@ do {
     eq("it launches that agent's own CLI", d.launchCommand(), "copilot")
 }
 
+// MARK: - opening a desk from outside
+
+do {
+    let fm = FileManager.default
+    let root = NSTemporaryDirectory() + "cf-remote-\(UUID().uuidString)"
+    let was = RemoteOpen.root
+    RemoteOpen.root = root
+    defer { RemoteOpen.root = was; try? fm.removeItem(atPath: root) }
+
+    let names = ["hub", "market", "golf", "secret"]
+    eq("remote: a desk in the list starts", RemoteOpen.decide("market", names: names, hidden: [], running: []).outcome, .started)
+    eq("remote: one already going is left alone",
+       RemoteOpen.decide("hub", names: names, hidden: [], running: ["hub"]).outcome, .alreadyRunning)
+    eq("remote: a name not in desks.toml opens nothing",
+       RemoteOpen.decide("rm -rf", names: names, hidden: [], running: []).outcome, .unknownDesk)
+    eq("remote: names are exact", RemoteOpen.decide("Market", names: names, hidden: [], running: []).outcome, .unknownDesk)
+    check("remote: a near miss suggests the real name",
+          RemoteOpen.decide("Market", names: names, hidden: [], running: []).message.contains("\"market\""))
+    eq("remote: a hidden desk stays hidden",
+       RemoteOpen.decide("secret", names: names, hidden: ["secret"], running: []).outcome, .hiddenDesk)
+
+    let now = Date()
+    let r = RemoteOpen.Request(desk: "golf", time: now.timeIntervalSince1970)
+    try? RemoteOpen.submit(r)
+    let old = RemoteOpen.Request(desk: "hub", time: now.timeIntervalSince1970 - 600)
+    try? RemoteOpen.submit(old)
+    try? "not json".write(toFile: root + "/requests/junk.json", atomically: true, encoding: .utf8)
+    eq("remote: a fresh request waits, stale and broken ones don't", RemoteOpen.pending(now: now).map(\.desk), ["golf"])
+    check("remote: the stale one is cleared away", !fm.fileExists(atPath: root + "/requests/\(old.id).json"))
+    RemoteOpen.answer(r, .init(.started, "Started golf in Coldfall."))
+    eq("remote: an answered request leaves the queue", RemoteOpen.pending(now: now).count, 0)
+    eq("remote: the asker reads the answer", RemoteOpen.wait(for: r, timeout: 1)?.outcome, .started)
+    let lost = RemoteOpen.Request(desk: "golf")
+    try? RemoteOpen.submit(lost)
+    eq("remote: no answer is nil", RemoteOpen.wait(for: lost, timeout: 0.3), nil)
+    check("remote: and the unanswered request is withdrawn", RemoteOpen.pending().isEmpty)
+
+    let st = RemoteOpen.Status(time: now.timeIntervalSince1970, pid: 42,
+                               desks: [.init(name: "hub", running: true, activity: "ready")])
+    RemoteOpen.writeStatus(st)
+    eq("remote: status reads back while the app is alive", RemoteOpen.status(now: now, alive: { _ in true }), st)
+    eq("remote: not once the app has gone", RemoteOpen.status(now: now, alive: { _ in false }), nil)
+    eq("remote: nor when it has gone quiet", RemoteOpen.status(now: now.addingTimeInterval(60), alive: { _ in true }), nil)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

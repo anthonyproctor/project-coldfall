@@ -686,7 +686,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// enough for its cache to lapse. Resume is the default and the answer
     /// for everything else: this only ever adds a choice.
     func startOrAsk(_ s: DeskSession, _ d: Desk) {
-        guard !s.started, !s.holding else { return }
+        guard !s.started, !s.holding, !s.resolving else { return }
         let wrappedAt = ui.wrappedUp[d.name].map { Date(timeIntervalSince1970: $0) }
         // A wrap-up is answered by this start, whichever way it goes.
         if wrappedAt != nil { ui.wrappedUp[d.name] = nil; ui.save() }
@@ -1238,6 +1238,68 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         ui.save()
         sidebar.floatReady = ui.readyOnTop
         installMenu()
+    }
+
+    // MARK: - opening desks from outside (coldfall-cli open)
+
+    var lastRemoteServe = Date.distantPast
+    var lastRemoteStatus = Date.distantPast
+
+    /// Answer `coldfall-cli open` and keep status.json fresh (see RemoteOpen).
+    /// Called from the activity tick; does its own pacing.
+    func serveRemote(_ map: [String: DeskStatus]) {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        let now = Date()
+        var changed = false
+        if now.timeIntervalSince(lastRemoteServe) >= 1 {
+            lastRemoteServe = now
+            for r in RemoteOpen.pending(now: now) {
+                let running = Set(sessions.filter { $0.value.started || $0.value.resolving || $0.value.holding }.keys)
+                let a = RemoteOpen.decide(r.desk, names: desks.map(\.name),
+                                          hidden: Set(desks.filter(\.hidden).map(\.name)), running: running)
+                if a.outcome == .started { openRemotely(r.desk, show: r.show); changed = true }
+                else if a.outcome == .alreadyRunning, r.show, let i = deskIndex(r.desk) { show(i) }
+                RemoteOpen.answer(r, a)
+            }
+        }
+        if changed || now.timeIntervalSince(lastRemoteStatus) >= 3 {
+            lastRemoteStatus = now
+            RemoteOpen.writeStatus(RemoteOpen.Status(desks: desks.map { d in
+                let s = sessions[d.name]
+                let act: String
+                switch map[d.name]?.activity {
+                case .working?: act = "working"
+                case .ready?: act = "ready"
+                default: act = "quiet"
+                }
+                return RemoteOpen.DeskState(name: d.name, running: s.map { $0.started || $0.resolving } ?? false, activity: act)
+            }))
+        }
+    }
+
+    /// Start a desk for someone who isn't at the Mac. Like a click, but it
+    /// never asks the start-fresh question (nobody is there to answer it, so
+    /// it picks up where it left off), and unless asked it leaves the screen
+    /// on whatever desk is showing.
+    func openRemotely(_ name: String, show onScreen: Bool) {
+        guard let i = deskIndex(name) else { return }
+        let d = desks[i]
+        let s = sessions[d.name] ?? {
+            let new = DeskSession(desk: d)
+            new.processDelegate = self
+            sessions[d.name] = new
+            return new
+        }()
+        // The size it will have on screen, so the agent draws for it now
+        // rather than for a zero-size terminal.
+        s.container.translatesAutoresizingMaskIntoConstraints = true
+        s.container.frame = host.bounds
+        s.container.layoutSubtreeIfNeeded()
+        checkInventory(d)
+        s.startIfNeeded()
+        // Started first, so show() finds it on its way and asks nothing.
+        if onScreen { show(i) }
+        refreshRail()
     }
 
     /// Pin a desk to the top of the rail, or take it back off. Saved in
@@ -1872,6 +1934,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             self.sidebar.tick &+= 1
             self.sidebar.status = map
+            self.serveRemote(map)
 
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.

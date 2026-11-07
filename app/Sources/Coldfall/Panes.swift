@@ -380,7 +380,7 @@ final class DeskSession {
     /// Finding the conversation to reopen reads session files, which can be
     /// many on a busy Mac, so it happens off the main thread. A desk stopped
     /// in the meantime is not started when the answer comes back.
-    private var resolving = false
+    private(set) var resolving = false
     private var ended = false
 
     /// Waiting on the person: whether to resume or start fresh. Nothing

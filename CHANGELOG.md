@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- Open a desk from your phone. An agent you are driving remotely (Claude's
+  Remote Control, or SSH) can run `coldfall-cli open <desk>`, and the desk
+  starts in Coldfall the way a click starts it: in the list, with its own
+  settings, picking up its last conversation. It starts in the background
+  unless you add `--show`, and it answers with one line saying whether it
+  worked. `coldfall-cli running` lists which desks are going and which have an
+  answer waiting. Only desks already in your list can be opened, and hidden
+  ones stay closed.
+
 ## [0.3.26] - 2026-10-30
 
 A first launch that fits the Mac and speaks plainly.

@@ -162,6 +162,34 @@ case "hooks":
     default: out(["installed": DoneSignal.isInstalled, "script": DoneSignal.scriptPath, "log": DoneSignal.logPath])
     }
 
+case "open":
+    // Open a desk in the running Coldfall, the way a click does. For an
+    // agent driven from a phone. Prints one line; exit 0 only when the desk
+    // is running afterwards.
+    let rest = args.dropFirst()
+    guard let name = rest.first(where: { !$0.hasPrefix("--") }) else {
+        print("usage: coldfall-cli open <desk> [--show]"); exit(2)
+    }
+    guard RemoteOpen.status() != nil else {
+        print("Project Coldfall isn't running, so nothing was opened. Open the app on the Mac first."); exit(1)
+    }
+    let req = RemoteOpen.Request(desk: name, show: rest.contains("--show"))
+    do { try RemoteOpen.submit(req) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); exit(1) }
+    guard let a = RemoteOpen.wait(for: req, timeout: 10) else {
+        print("Coldfall didn't answer within 10 seconds, so the request was withdrawn. Run `coldfall-cli running` to see where things stand."); exit(1)
+    }
+    print(a.message)
+    exit(a.outcome == .started || a.outcome == .alreadyRunning ? 0 : 1)
+
+case "running":
+    // What the running Coldfall says about its desks: which are running, and
+    // whether each is working or has an answer waiting.
+    guard let st = RemoteOpen.status() else {
+        out(["coldfallRunning": false]); exit(1)
+    }
+    out(["coldfallRunning": true,
+         "desks": st.desks.map { ["name": $0.name, "running": $0.running, "activity": $0.activity] }])
+
 case "hosts":
     out(SSHHosts.all().map { ["alias": $0.alias, "target": $0.blurb, "command": $0.command] })
 
@@ -183,6 +211,8 @@ default:
       desks              configured desks and how each launches
       agents [dir]       agent definitions on disk that could become desks
       hosts              ssh hosts that could become desks
+      open <desk> [--show]  start a desk in the running Coldfall, as a click does
+      running            which desks the running Coldfall has going, and how each is doing
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
       limits             remaining quota per vendor, stale entries dropped
