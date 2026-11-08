@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.27] - 2026-11-08
+
+Start a desk from your phone.
+
 ### Added
 - Open a desk from your phone. An agent you are driving remotely (Claude's
   Remote Control, or SSH) can run `coldfall-cli open <desk>`, and the desk
@@ -694,7 +698,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...HEAD
+[0.3.27]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...v0.3.27
 [0.3.26]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...v0.3.26
 [0.3.25]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...v0.3.25
 [0.3.24]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.23...v0.3.24
