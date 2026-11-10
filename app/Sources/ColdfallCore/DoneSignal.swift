@@ -252,15 +252,19 @@ public enum DoneSignal {
     }
 
     /// Take the hook out of every file it went into, and delete the script.
+    /// `script` is the script to delete: a caller working under another
+    /// config folder (a test, a full uninstall) passes its own, so it never
+    /// deletes the real one by default.
     @discardableResult
-    public static func uninstall(desks: [Desk], home: String = NSHomeDirectory()) -> [String] {
+    public static func uninstall(desks: [Desk], home: String = NSHomeDirectory(),
+                                 script: String = DoneSignal.scriptPath) -> [String] {
         var log: [String] = []
         for s in claudeSettings(desks: desks, home: home) + [codexHooks(home: home)] {
             guard FileManager.default.fileExists(atPath: s), let j = readJSON(s),
                   let next = removing(from: j) else { continue }
             log.append(writeJSON(next, to: s) ? "Removed from \(s)" : "Could not write \(s)")
         }
-        try? FileManager.default.removeItem(atPath: scriptPath)
+        try? FileManager.default.removeItem(atPath: script)
         return log
     }
 }

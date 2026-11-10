@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- Running the test suite deleted the real done hook (`~/.config/coldfall/done-hook.sh`), so agents
+  stopped reporting when they finished and every Claude turn ended with "Stop hook error … exit 127".
+  Uninstalling now deletes only the hook in the folder it was given, and the tests never touch the real
+  config or data folders. If you ran the tests since 0.3.24, turn the done hook on again in Settings, Agents.
+
 ## [0.3.27] - 2026-11-08
 
 Start a desk from your phone.

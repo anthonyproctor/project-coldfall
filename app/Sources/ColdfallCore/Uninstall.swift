@@ -154,7 +154,11 @@ public enum Uninstall {
         for s in settingsFiles(desks: desks, home: home) {
             if let line = revertStatusline(settings: s) { log.append(line) }
         }
-        log += DoneSignal.uninstall(desks: desks, home: home)
+        // The script lives in the config folder this call was given, which is
+        // deleted below anyway. Not DoneSignal.scriptPath: a test passing a
+        // temp configRoot deleted the real hook on every run (v0.3.24-0.3.27).
+        log += DoneSignal.uninstall(desks: desks, home: home,
+                                    script: (configRoot as NSString).appendingPathComponent("done-hook.sh"))
         for root in [configRoot, dataRoot] where FileManager.default.fileExists(atPath: root) {
             do {
                 try FileManager.default.removeItem(atPath: root)

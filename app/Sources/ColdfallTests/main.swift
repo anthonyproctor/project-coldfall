@@ -9,6 +9,16 @@ import ColdfallCore
 // defeats the point.
 
 var failures: [String] = []
+
+// Nothing a test does may land in the real ~/.config/coldfall or
+// ~/.local/share/coldfall. These roots default to the real folders, so point
+// them all at a scratch folder before any test runs. (Running the suite used
+// to delete the real done-hook.sh: 0.3.24 to 0.3.27.)
+let testSandbox = NSTemporaryDirectory() + "coldfall-tests-\(UUID().uuidString)"
+Limits.configDir = testSandbox + "/config"
+DoneSignal.logPath = testSandbox + "/share/signals.log"
+ScreenChange.logPath = testSandbox + "/share/logs/green.log"
+RemoteOpen.root = testSandbox + "/share/remote"
 /// Whether a real usage cache existed before any test ran. Lets the final
 /// check tell test pollution apart from the user's own data.
 let preexistingCache = FileManager.default.fileExists(
@@ -2356,7 +2366,13 @@ do {
     check("leaving: with nothing left, it says so",
           Uninstall.summary(items: [], recorders: []).hasSuffix("There is nothing of Coldfall's left to remove."))
 
+    // The suite's stand-in for the real config folder: its hook must survive
+    // an uninstall that was pointed somewhere else.
+    try? fm.createDirectory(atPath: Limits.configDir, withIntermediateDirectories: true)
+    try? "#!/bin/sh\n".write(toFile: DoneSignal.scriptPath, atomically: true, encoding: .utf8)
     let log = Uninstall.removeEverything(desks: [d], configRoot: cfg, dataRoot: data, home: home)
+    check("leaving: an uninstall of another folder leaves the real done hook alone",
+          fm.fileExists(atPath: DoneSignal.scriptPath))
     check("leaving: the folders are gone", !fm.fileExists(atPath: cfg) && !fm.fileExists(atPath: data))
     check("leaving: and it says what it did", log.contains { $0.hasPrefix("deleted ") })
     check("leaving: the agent's own files stay", fm.fileExists(atPath: settings))
