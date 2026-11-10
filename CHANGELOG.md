@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.28] - 2026-11-09
+
+The done hook stays put.
+
 ### Fixed
 - Running the test suite deleted the real done hook (`~/.config/coldfall/done-hook.sh`), so agents
   stopped reporting when they finished and every Claude turn ended with "Stop hook error … exit 127".
@@ -704,7 +708,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...HEAD
+[0.3.28]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...v0.3.28
 [0.3.27]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...v0.3.27
 [0.3.26]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...v0.3.26
 [0.3.25]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.24...v0.3.25
