@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.29] - 2026-11-12
+
+Desks that outlive a quit.
+
 ### Added
 - **Desks can keep running when Coldfall quits.** Turn on "Keep desks running when Coldfall
   quits" in Settings, Desks, or set `keep_running = true` on one desk in desks.toml. A held
@@ -724,7 +728,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...HEAD
+[0.3.29]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...v0.3.28
 [0.3.27]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...v0.3.27
 [0.3.26]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.25...v0.3.26

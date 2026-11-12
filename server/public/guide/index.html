@@ -402,6 +402,11 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <p>If a big conversation has sat for more than an hour, opening its desk asks whether to pick up where you left off or start clean. Picking up is the default. A clean start keeps the desk's name, folder, instructions and memory files; only what was said in the chat stays behind, in the old conversation.</p>
     <p>Nothing is ever deleted. To go back to an older conversation, type <code>/resume</code> in the desk and pick it.</p>
     <p>Don't want to be asked? Tick "Don't ask" in the question itself, right-click a desk and untick <strong>Ask Before Reopening a Big Conversation</strong>, or turn it off for every desk in <strong>Settings ▸ Desks</strong>.</p>
+    <h3>Desks that keep running when Coldfall quits</h3>
+    <p>Turn on <strong>Keep desks running when Coldfall quits</strong> in <strong>Settings ▸ Desks</strong>. Desks you start from then on carry on working while Coldfall is closed, updating or crashed, and come back exactly as they were when you open it. To try it on one desk first, add <code>keep_running = true</code> under that desk in desks.toml.</p>
+    <p>Quitting then asks whether to keep them running or end them. Keeping them is the default; each agent holds about 400 to 600 MB of memory while Coldfall is closed. <code>coldfall-cli holders</code> lists them, and <code>coldfall-cli holders end &lt;desk&gt;</code> ends one.</p>
+    <h3>After a restart of the Mac</h3>
+    <p>A restart ends every desk. Coldfall remembers which ones were running, and the next time it opens it offers them back with one button. Each picks up its conversation.</p>
 
     <h2 id="lean">Keep desks lean</h2>
     <p>Plugins, skills and MCP servers pile up, and some run on every session or every tool call. Right-click a desk and choose <strong>What This Desk Has</strong> to see what it loads: servers, skills, plugins and hooks, read from the vendor's own files. Anything new since you last looked is marked, and the desk's row says "2 new" until you've checked.</p>
