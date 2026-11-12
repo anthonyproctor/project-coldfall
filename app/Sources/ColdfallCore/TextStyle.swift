@@ -8,16 +8,30 @@ import Foundation
 
 public enum TextStyle {
     static let acronyms: Set<String> = ["SSH", "MCP", "CLI", "API", "MB"]
+    /// Names keep their capital wherever they fall.
+    static let names: [String: String] = ["COLDFALL": "Coldfall", "MAC": "Mac"]
+
+    /// "a", "a and b", "a, b and c". Long lists end "and N more".
+    public static func list(_ items: [String], max: Int = 6) -> String {
+        guard items.count > max else {
+            if items.count <= 2 { return items.joined(separator: " and ") }
+            return items.dropLast().joined(separator: ", ") + " and " + items.last!
+        }
+        return items.prefix(max).joined(separator: ", ") + " and \(items.count - max) more"
+    }
 
     /// "SSH HOSTS" -> "SSH hosts", "THIS WEEK, SINCE Sep 21" -> "This week,
     /// since Sep 21". Words already in mixed or lower case are left alone.
     public static func sentence(_ s: String) -> String {
         var first = true
+        // The product's full name is one name; mixed case is left as it is.
+        let s = s.replacingOccurrences(of: "PROJECT COLDFALL", with: "Project Coldfall")
         let parts = s.components(separatedBy: " ").map { word -> String in
             guard !word.isEmpty else { return word }
             let letters = word.filter(\.isLetter)
             defer { if !letters.isEmpty { first = false } }
             guard !letters.isEmpty, letters == letters.uppercased(), !acronyms.contains(letters) else { return word }
+            if let n = names[letters] { return word.replacingOccurrences(of: letters, with: n) }
             let low = word.lowercased()
             return first ? low.prefix(1).uppercased() + low.dropFirst() : low
         }

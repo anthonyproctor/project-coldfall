@@ -236,6 +236,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.ui.offerFreshStart = on
             self.ui.save()
         }
+        NotificationCenter.default.addObserver(forName: .coldfallKeepRunningChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let on = n.object as? Bool else { return }
+            self.ui.keepDesksRunning = on
+            DeskSession.keepGlobal = on
+            self.ui.save()
+        }
         sidebar.onToggleAskResume = { [weak self] i in
             guard let self, self.desks.indices.contains(i) else { return }
             self.desks[i].alwaysResume.toggle()
@@ -282,7 +289,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                panes: 1)
             }
             // `--waiting`: the launch screen, the desk shown but not started.
-            if CommandLine.arguments.contains("--waiting"), desks.indices.contains(i) { showWaiting(i) }
+            if CommandLine.arguments.contains("--waiting"), desks.indices.contains(i) {
+                // `--restore a,b`: with the desks that were running offered back.
+                let a = CommandLine.arguments
+                if let k = a.firstIndex(of: "--restore"), k + 1 < a.count {
+                    restoreOffer = a[k + 1].split(separator: ",").map(String.init)
+                }
+                showWaiting(i)
+            }
             // `--terminal <file>`: that desk's terminal showing the file's
             // text, as captured from a real command. Nothing is started.
             if let k = CommandLine.arguments.firstIndex(of: "--terminal"), k + 1 < CommandLine.arguments.count,
@@ -570,6 +584,30 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 // `--settings <tab>`: the Settings window on that tab, to
                 // <out>-settings.png. Never saved, never shown.
+                // `--quit-prompt a,b`: the question quitting asks with those
+                // desks held, to shot-quit.png. An alert can't be caught in a
+                // window snapshot, so its own window is drawn.
+                if let k = CommandLine.arguments.firstIndex(of: "--quit-prompt"), k + 1 < CommandLine.arguments.count,
+                   let me = self {
+                    let alert = me.quitAlert(CommandLine.arguments[k + 1].split(separator: ",").map(String.init))
+                    alert.layout()
+                    guard let av = alert.window.contentView else { exit(1) }
+                    av.wantsLayer = true
+                    av.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        av.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+                    }
+                    av.layoutSubtreeIfNeeded()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        _ = alert
+                        guard let qrep = av.bitmapImageRepForCachingDisplay(in: av.bounds) else { exit(1) }
+                        av.cacheDisplay(in: av.bounds, to: qrep)
+                        if let png = qrep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-quit.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 if let k = CommandLine.arguments.firstIndex(of: "--settings"), k + 1 < CommandLine.arguments.count {
                     let sw = SettingsWindow(projectDir: NSHomeDirectory())
                     // An unknown tab name threw inside AppKit and crashed the
@@ -629,7 +667,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // The update sheet names what a relaunch is about to end. Only the
         // controller knows which desks have live processes.
         SelfUpdate.runningDesks = { [weak self] in
-            (self?.sessions.filter { $0.value.started }.map(\.key)) ?? []
+            // A held desk carries on through the relaunch, so it isn't named.
+            (self?.sessions.filter { $0.value.started && !$0.value.isHeld }.map(\.key)) ?? []
+        }
+        // Desks still running in their holders from last time come straight
+        // back; the ones that went with a restart of the Mac are offered.
+        DeskSession.keepGlobal = ui.keepDesksRunning
+        if !args.contains("--snapshot") {
+            let heldNow = Set(Holder.held())
+            for d in desks where heldNow.contains(d.name) { openRemotely(d.name, show: false) }
+            restoreOffer = RestoreOffer.desks(wasRunning: ui.runningDesks, names: desks.map(\.name),
+                                              hidden: Set(desks.filter(\.hidden).map(\.name)), runningNow: heldNow)
         }
         // The desk you were on, shown but not started: nothing runs until you
         // ask, so opening the app costs no memory and asks no questions.
@@ -1000,7 +1048,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         guard let i = deskIndex(old) else { return }
         desks[i] = desks[i].renamed(from: old, to: new)
-        if let s = sessions.removeValue(forKey: old) { s.desk.name = new; sessions[new] = s }
+        if let s = sessions.removeValue(forKey: old) { s.desk.name = new; sessions[new] = s; s.followRename(to: new) }
+        Holder.rename(from: old, to: new)
         persist()
         sidebar.build(desks: desks)
         installMenu()
@@ -1125,6 +1174,27 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// The desk shown at launch, or stopped, and not yet started. By name,
     /// not index: the list moves under it.
     var waitingName: String?
+    /// Desks that were running when Coldfall last closed and aren't back.
+    var restoreOffer: [String] = []
+
+    /// Keep UIState.runningDesks current, so a restart of the Mac or a crash
+    /// knows what to offer back. Written only when it changes.
+    func noteRunning() {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        let now = desks.map(\.name).filter { n in sessions[n].map { $0.started || $0.resolving } ?? false }
+        guard now != ui.runningDesks else { return }
+        ui.runningDesks = now
+        ui.save()
+    }
+
+    /// Start every desk on the restore offer, each picking up its
+    /// conversation. In the background: the one on screen stays.
+    @objc func restoreDesks() {
+        let names = restoreOffer
+        restoreOffer = []
+        for n in names { openRemotely(n, show: false) }
+        if let n = waitingName, let i = deskIndex(n) { showWaiting(i) }
+    }
 
     /// Picking a desk. One that's running comes up at once; one that isn't
     /// shows its Start button first, so a stray click starts nothing. Places
@@ -1156,6 +1226,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let hint = NSTextField(labelWithString: "Nothing runs until you press Start, or Return.")
         hint.textColor = Theme.ui.dimText
         var views: [NSView] = [title, start, hint]
+        // What was running before a restart of the Mac, offered back.
+        if let line = RestoreOffer.line(restoreOffer) {
+            let note = NSTextField(wrappingLabelWithString: line)
+            note.textColor = Theme.ui.dimText
+            note.alignment = .center
+            note.preferredMaxLayoutWidth = 420
+            let again = NSButton(title: RestoreOffer.button(restoreOffer), target: self, action: #selector(restoreDesks))
+            again.bezelStyle = .rounded
+            let gap = NSView(); gap.heightAnchor.constraint(equalToConstant: 8).isActive = true
+            views += [gap, note, again]
+        }
         // Over its budget: say so before it starts spending more.
         if let r = lastReport,
            case .over = DeskBudget.status(spent: DeskBudget.spent(by: d, in: r), budget: d.budget),
@@ -1762,7 +1843,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 let r = fresh[i].renamed(from: from, to: to)
                 if r.conversation != fresh[i].conversation { fresh[i] = r; pinned = true }
             }
-            if let s = sessions.removeValue(forKey: from) { sessions[to] = s }
+            if let s = sessions.removeValue(forKey: from) { sessions[to] = s; s.followRename(to: to) }
+            Holder.rename(from: from, to: to)
             if let v = inventoryNews.removeValue(forKey: from) { inventoryNews[to] = v }
             if let v = lastVisited.removeValue(forKey: from) { lastVisited[to] = v }
             if let v = memory.removeValue(forKey: from) { memory[to] = v }
@@ -1935,6 +2017,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.sidebar.tick &+= 1
             self.sidebar.status = map
             self.serveRemote(map)
+            self.noteRunning()
 
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.
@@ -2319,6 +2402,43 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool { true }
+
+    /// The question itself, apart so a snapshot can draw it.
+    func quitAlert(_ held: [String]) -> NSAlert {
+        let t = QuitPrompt.text(desks: held)
+        let alert = NSAlert()
+        alert.messageText = t.title
+        alert.informativeText = t.body
+        alert.addButton(withTitle: t.keep)
+        alert.addButton(withTitle: t.end)
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[2].keyEquivalent = "\u{1b}"
+        return alert
+    }
+
+    /// Quitting with held desks running asks whether they keep going. Keep
+    /// is the default: it's the point of holding them. Nothing to ask when
+    /// no desk is held, or when an update is relaunching Coldfall, which
+    /// keeps them.
+    func applicationShouldTerminate(_ a: NSApplication) -> NSApplication.TerminateReply {
+        let held = desks.map(\.name).filter { n in
+            guard let s = sessions[n], s.started, s.isHeld else { return false }
+            return Holder.isHeld(desk: n)
+        }
+        guard !held.isEmpty, !SelfUpdate.relaunching else { return .terminateNow }
+        switch quitAlert(held).runModal() {
+        case .alertFirstButtonReturn:
+            return .terminateNow
+        case .alertSecondButtonReturn:
+            for n in held { Holder.end(desk: n) }
+            // Ended on purpose: nothing to offer back next time.
+            ui.runningDesks.removeAll { held.contains($0) }
+            ui.save()
+            return .terminateNow
+        default:
+            return .terminateCancel
+        }
+    }
 }
 
 MainActor.assumeIsolated {
@@ -2354,6 +2474,7 @@ extension Notification.Name {
     static let coldfallDesksReloaded = Notification.Name("coldfallDesksReloaded")
     /// Settings changed something the controller keeps in ui.json.
     static let coldfallFreshStartChanged = Notification.Name("coldfallFreshStartChanged")
+    static let coldfallKeepRunningChanged = Notification.Name("coldfallKeepRunningChanged")
     /// Settings asked for the Remove Files dialog, which the controller owns.
     static let coldfallOpenUninstall = Notification.Name("coldfallOpenUninstall")
     static let coldfallConfirmStartChanged = Notification.Name("coldfallConfirmStartChanged")

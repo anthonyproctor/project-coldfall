@@ -19,6 +19,8 @@ Limits.configDir = testSandbox + "/config"
 DoneSignal.logPath = testSandbox + "/share/signals.log"
 ScreenChange.logPath = testSandbox + "/share/logs/green.log"
 RemoteOpen.root = testSandbox + "/share/remote"
+// Short: a unix socket path has to fit in 104 bytes.
+Holder.root = NSTemporaryDirectory() + "cfh\(getpid())"
 /// Whether a real usage cache existed before any test ran. Lets the final
 /// check tell test pollution apart from the user's own data.
 let preexistingCache = FileManager.default.fileExists(
@@ -1301,7 +1303,7 @@ eq("label: acronyms stay", TextStyle.sentence("SSH HOSTS"), "SSH hosts")
 eq("label: apostrophes survive", TextStyle.sentence("WHAT'S FILLING THE CONVERSATIONS  (tool output, estimated)"),
    "What's filling the conversations  (tool output, estimated)")
 eq("label: a date stays as written", TextStyle.sentence("THIS WEEK, SINCE Sep 21"), "This week, since Sep 21")
-eq("label: a product name loses only the shouting", TextStyle.sentence("REMOVE PROJECT COLDFALL"), "Remove project coldfall")
+eq("label: the product's name keeps its capitals", TextStyle.sentence("REMOVE PROJECT COLDFALL"), "Remove Project Coldfall")
 eq("label: empty is empty", TextStyle.sentence(""), "")
 
 // MARK: - agents saying when they're done
@@ -2604,6 +2606,136 @@ do {
     eq("remote: status reads back while the app is alive", RemoteOpen.status(now: now, alive: { _ in true }), st)
     eq("remote: not once the app has gone", RemoteOpen.status(now: now, alive: { _ in false }), nil)
     eq("remote: nor when it has gone quiet", RemoteOpen.status(now: now.addingTimeInterval(60), alive: { _ in true }), nil)
+}
+
+// MARK: - desks that keep running (Holder)
+
+do {
+    let fm = FileManager.default
+    // The wire: frames survive being cut anywhere.
+    let frames = Holder.Wire.encode(.hello, Holder.Wire.hello(cols: 120, rows: 40))
+        + Holder.Wire.encode(.input, Array("ls\r".utf8))
+        + Holder.Wire.encode(.exit, Holder.Wire.status(7))
+    var dec = Holder.Decoder()
+    var got: [(Holder.Kind, [UInt8])] = []
+    for b in frames { got += dec.push([b]) }
+    eq("holder: three frames back from a byte-at-a-time stream", got.count, 3)
+    check("holder: hello carries the size", got.first.flatMap { Holder.Wire.readSize($0.1) }.map { $0.cols == 120 && $0.rows == 40 } == true)
+    eq("holder: input intact", got.count > 1 ? String(decoding: got[1].1, as: UTF8.self) : nil, "ls\r")
+    eq("holder: exit status intact", got.count > 2 ? Holder.Wire.readStatus(got[2].1) : nil, 7)
+    eq("holder: a negative status round-trips", Holder.Wire.readStatus(Holder.Wire.status(-1)), -1)
+    var bad = Holder.Decoder()
+    _ = bad.push([0x00, 0, 0, 0, 1, 9])
+    check("holder: an unknown frame marks the stream broken", bad.broken)
+    var big = Holder.Decoder()
+    _ = big.push([Holder.Kind.output.rawValue, 0x7f, 0xff, 0xff, 0xff])
+    check("holder: an oversized length is refused, not waited for", big.broken)
+
+    // Replay keeps the tail and starts on a clean line once trimmed.
+    var r = Holder.Replay(capacity: 10)
+    r.append(Array("abc".utf8))
+    eq("holder: replay before any trim is everything", String(decoding: r.snapshot, as: UTF8.self), "abc")
+    r.append(Array("\u{1b}[31mred\nnext line\n".utf8))
+    let snap = String(decoding: r.snapshot, as: UTF8.self)
+    check("holder: trimmed replay stays within capacity", r.snapshot.count <= 10)
+    check("holder: and never starts mid escape sequence", !snap.contains("[31m") && !snap.hasPrefix("m"), snap)
+
+    // Paths.
+    let p = Holder.socketPath(desk: "hub", root: "/srv/h")
+    eq("holder: a plain desk name is readable", p, "/srv/h/hub.sock")
+    let odd = Holder.socketPath(desk: "my desk/../x", root: "/srv/h")
+    check("holder: an odd name gets a hash, inside the folder", odd.hasPrefix("/srv/h/d-") && !odd.contains(".."), odd)
+    eq("holder: the hash is stable", odd, Holder.socketPath(desk: "my desk/../x", root: "/srv/h"))
+    let long = Holder.socketPath(desk: String(repeating: "a", count: 90), root: "/srv/h")
+    check("holder: a long name is hashed to fit", Holder.fits(long), long)
+    check("holder: a folder too deep doesn't fit", !Holder.fits(Holder.socketPath(desk: "hub", root: "/" + String(repeating: "x", count: 120))))
+    eq("holder: pid file beside the socket", Holder.pidPath(socket: p), "/srv/h/hub.pid")
+
+    // Which desks keep running.
+    var d = Desk(name: "hub", runtime: "claude")
+    check("holder: a desk follows the setting", d.keepsRunning(global: true) && !d.keepsRunning(global: false))
+    d.keepRunning = false
+    check("holder: a desk can opt out", !d.keepsRunning(global: true))
+    d.keepRunning = true
+    check("holder: or in", d.keepsRunning(global: false))
+    let sh = Desk(name: "sh", runtime: "shell")
+    check("holder: a plain shell desk isn't held unless it asks", !sh.keepsRunning(global: true))
+    try? fm.createDirectory(atPath: testSandbox, withIntermediateDirectories: true)
+    let tomlPath = testSandbox + "/keep.toml"
+    DeskConfig.write([d], to: tomlPath)
+    let toml = (try? String(contentsOfFile: tomlPath, encoding: .utf8)) ?? ""
+    check("holder: keep_running is written", toml.contains("keep_running = true"), toml)
+    eq("holder: and read back", DeskConfig.load(path: tomlPath).first?.keepRunning, true)
+    try? "[desk.a]\nruntime = \"claude\"\n".write(toFile: tomlPath, atomically: true, encoding: .utf8)
+    eq("holder: absent means follow the setting", DeskConfig.load(path: tomlPath).first.map { $0.keepRunning == nil }, true)
+
+    // Quitting.
+    let one = QuitPrompt.text(desks: ["hub"])
+    eq("quit: one desk is named in the title", one.title, "Keep hub running after Coldfall quits?")
+    check("quit: it says what it costs", one.body.contains("400 to 600 MB"))
+    let many = QuitPrompt.text(desks: ["hub", "work", "golf"])
+    eq("quit: several are counted", many.title, "Keep 3 desks running after Coldfall quits?")
+    check("quit: and listed", many.body.hasPrefix("hub, work and golf keep working"), many.body)
+    eq("quit: keep is the first button", many.keep, "Keep Them Running")
+
+    // Offering desks back after a restart.
+    eq("restore: what ran and isn't back, in order, once each",
+       RestoreOffer.desks(wasRunning: ["hub", "gone", "work", "secret", "golf", "hub"], names: ["hub", "work", "golf", "secret"],
+                          hidden: ["secret"], runningNow: ["golf"]), ["hub", "work"])
+    eq("restore: nothing to say for nothing", RestoreOffer.line([]), nil)
+    check("restore: names them", RestoreOffer.line(["hub", "work"])?.contains("hub and work") == true)
+    eq("restore: one button", RestoreOffer.button(["hub"]), "Start hub Again")
+    eq("text: lists join like a person would", TextStyle.list(["a", "b", "c"]), "a, b and c")
+    eq("text: a name keeps its capital in a heading", TextStyle.sentence("WHEN COLDFALL QUITS"), "When Coldfall quits")
+    eq("text: long lists are cut", TextStyle.list(["a", "b", "c", "d"], max: 2), "a, b and 2 more")
+
+    // State: older ui.json files still load.
+    let old = try? JSONDecoder().decode(UIState.self, from: Data(#"{"seenWelcome":true}"#.utf8))
+    check("ui: an older file loads with holding off and nothing remembered",
+          old.map { $0.seenWelcome && !$0.keepDesksRunning && $0.runningDesks.isEmpty } == true)
+
+    // Activity: a reattach's replay is not news.
+    var a = ActivityState()
+    a.setVisible(false, at: Date(timeIntervalSince1970: 0))
+    a.mute(for: 3, at: Date(timeIntervalSince1970: 100))
+    a.noteOutput(at: Date(timeIntervalSince1970: 101))
+    check("activity: replayed output doesn't mark a desk unseen", !a.unseen)
+    a.noteOutput(at: Date(timeIntervalSince1970: 110))
+    check("activity: output after the replay does", a.unseen)
+
+    // The real thing: the holder binary, held, survives its terminal, ends on request.
+    let bin = ((CommandLine.arguments[0] as NSString).deletingLastPathComponent as NSString)
+        .appendingPathComponent("coldfall-holder")
+    if fm.isExecutableFile(atPath: bin) {
+        let root = Holder.root
+        let attach = Process()
+        attach.executableURL = URL(fileURLWithPath: bin)
+        attach.arguments = ["attach", "suite", "--", "/bin/sh", "-c", "echo HELD; sleep 60"]
+        attach.environment = ["COLDFALL_HOLDER_DIR": root, "PATH": "/usr/bin:/bin"]
+        let input = Pipe(), output = Pipe()
+        attach.standardInput = input; attach.standardOutput = output; attach.standardError = FileHandle.nullDevice
+        try? attach.run()
+        var held = false
+        for _ in 0..<60 where !held { usleep(50_000); held = Holder.held(root: root).contains("suite") }
+        check("holder: attach starts a holder for the desk", held)
+        usleep(600_000)    // let the first output arrive before the terminal goes
+        // Coldfall's terminal goes away: the attach exits, the holder doesn't.
+        try? input.fileHandleForWriting.close()
+        attach.waitUntilExit()
+        let out = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        check("holder: output reached the terminal", out.contains("HELD"), out)
+        check("holder: still held after its terminal closed", Holder.isHeld(desk: "suite", root: root))
+        check("holder: knows the held shell's pid", (Holder.heldPid(desk: "suite", root: root) ?? 0) > 0)
+        check("holder: ending it is delivered", Holder.end(desk: "suite", root: root))
+        var gone = false
+        for _ in 0..<120 where !gone { usleep(50_000); gone = !Holder.isHeld(desk: "suite", root: root) }
+        check("holder: and it's gone", gone)
+        check("holder: its files are cleared", Holder.held(root: root).isEmpty
+              && !fm.fileExists(atPath: Holder.socketPath(desk: "suite", root: root)))
+    } else {
+        print("  skip  holder binary not built beside the tests")
+    }
+    try? fm.removeItem(atPath: Holder.root)
 }
 
 // MARK: - the suite must not touch a real home directory

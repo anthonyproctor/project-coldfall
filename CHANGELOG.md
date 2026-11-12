@@ -8,6 +8,22 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Desks can keep running when Coldfall quits.** Turn on "Keep desks running when Coldfall
+  quits" in Settings, Desks, or set `keep_running = true` on one desk in desks.toml. A held
+  desk's agent carries on while Coldfall is closed, updating or crashed, and Coldfall picks it
+  back up when it opens, with its screen as it was. A small `coldfall-holder` process keeps
+  each one; what it keeps for the screen stays in memory and is never written to disk. Off
+  by default. `coldfall-cli holders` lists them, and `coldfall-cli holders end <desk>` ends one.
+- **Quitting asks about held desks.** Keep them running (the default) or end them, with what
+  they cost in memory, about 400 to 600 MB per agent. An update relaunch keeps them without asking.
+- **After a restart of the Mac, Coldfall offers the desks back.** The launch screen names the
+  desks that were running when Coldfall last closed and starts them all with one button, each
+  picking up its conversation.
+
+### Changed
+- Settings headings keep "Coldfall" and "Project Coldfall" capitalized.
+
 ## [0.3.28] - 2026-11-09
 
 The done hook stays put.

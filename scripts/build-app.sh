@@ -23,6 +23,8 @@ cp .build/release/Coldfall "$APP/Contents/MacOS/Coldfall"
 # Ship the headless core alongside it, so `coldfall-cli` is available without a
 # second build.
 cp .build/release/coldfall-cli "$APP/Contents/MacOS/coldfall-cli"
+# Keeps desks running when the app quits (see Holder in ColdfallCore).
+cp .build/release/coldfall-holder "$APP/Contents/MacOS/coldfall-holder"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

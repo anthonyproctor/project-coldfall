@@ -254,7 +254,15 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         let startSwitch = NSButton(checkboxWithTitle: "Show a Start button before starting a desk",
                                    target: self, action: #selector(toggleConfirmStart(_:)))
         startSwitch.state = UIState.load().confirmStart ? .on : .off
+        let keepSwitch = NSButton(checkboxWithTitle: "Keep desks running when Coldfall quits",
+                                  target: self, action: #selector(toggleKeepRunning(_:)))
+        keepSwitch.state = UIState.load().keepDesksRunning ? .on : .off
         let reopen = NSStackView(views: [
+            caps("WHEN COLDFALL QUITS"), keepSwitch,
+            note("Desks you start from now on carry on working while Coldfall is closed or updating, "
+               + "and come back when you open it. Each agent holds about 400 to 600 MB of memory meanwhile, "
+               + "and quitting asks first. A restart of the Mac still ends them; Coldfall then offers "
+               + "to start them again. One desk can choose for itself with keep_running in desks.toml.", width: 350),
             caps("STARTING DESKS"), startSwitch,
             note("Picking a desk that isn't running shows it with a Start button, so a stray click "
                + "starts nothing. Off, a click starts it straight away.", width: 350),
@@ -464,6 +472,10 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func openUninstall() {
         NotificationCenter.default.post(name: .coldfallOpenUninstall, object: nil)
+    }
+
+    @objc private func toggleKeepRunning(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .coldfallKeepRunningChanged, object: sender.state == .on)
     }
 
     @objc private func toggleFreshStart(_ sender: NSButton) {

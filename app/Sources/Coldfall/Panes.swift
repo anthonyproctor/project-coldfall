@@ -157,6 +157,19 @@ final class Pane {
     /// Pane 0 runs the desk's CLI. The rest are shells, and closing one is free.
     let isAgent: Bool
     private(set) var started = false
+    /// Running through a holder, so it outlives Coldfall (see Holder).
+    private(set) var held = false
+    private var heldDesk: String?
+
+    /// How the agent pane starts. `reattach` finds it already running.
+    enum Hold { case none, fresh, reattach }
+
+    /// The holder that ships beside the app, if this bundle has one.
+    static var holderPath: String? {
+        guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return nil }
+        let p = dir.appendingPathComponent("coldfall-holder").path
+        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
+    }
 
     init(isAgent: Bool) {
         self.isAgent = isAgent
@@ -169,6 +182,12 @@ final class Pane {
     /// End this pane's shell and everything running in it. The tree is read
     /// before the terminal lets go of the shell, or there is no root to find.
     func end() {
+        if held, let d = heldDesk {
+            // The holder owns the tree; it ends it the same way, then exits,
+            // and the attach in this terminal goes with it.
+            DispatchQueue.global(qos: .userInitiated).async { Holder.end(desk: d) }
+            return
+        }
         let root = term.process?.shellPid ?? 0
         let tree = root > 0 ? ProcessTree.descendants(of: root, in: ProcessTree.read()) : []
         term.terminate()
@@ -177,23 +196,51 @@ final class Pane {
 
     /// Launch the process. `command` is nil for a shell pane, which just lands
     /// in the directory and waits.
-    func start(desk: Desk, command: String?) {
+    func start(desk: Desk, command: String?, hold: Hold = .none) {
         guard !started else { return }
         started = true
 
-        if let command {
-            // A CLI can take several seconds to boot. Paint something
-            // immediately, written straight to the view rather than through the
-            // pty, so a blank screen never reads as "nothing happened".
-            term.feed(text: "\u{1b}[2J\u{1b}[H"
-                + "\u{1b}[36m●\u{1b}[0m starting \u{1b}[1m\(desk.name)\u{1b}[0m\r\n"
-                + "\u{1b}[2m  \(command)\r\n"
-                + "  in \(desk.resolvedCwd)\u{1b}[0m\r\n\r\n")
+        if hold != .none, let holder = Pane.holderPath {
+            held = true
+            heldDesk = desk.name
+            var env = Pane.environment(for: desk)
+            env.append("COLDFALL_HOLDER_DIR=\(Holder.root)")
+            if hold == .fresh, let command { paintStarting(desk: desk, command: command) }
+            term.startProcess(executable: holder, args: ["attach", desk.name, "--", "/bin/zsh", "-l"],
+                              environment: env)
+            // Already running: it carries on where it was, nothing to type.
+            if hold == .reattach { return }
+            typeLaunch(desk: desk, command: command)
+            return
         }
+
+        if let command { paintStarting(desk: desk, command: command) }
 
         term.startProcess(executable: "/bin/zsh", args: ["-l"],
                           environment: Pane.environment(for: desk))
+        typeLaunch(desk: desk, command: command)
+    }
 
+    /// The held shell's pid when held, else this terminal's own shell.
+    var shellPid: Int32? {
+        if held, let d = heldDesk { return Holder.heldPid(desk: d) }
+        return term.process?.shellPid
+    }
+
+    /// Follow a rename of the desk this pane holds.
+    func renamed(to name: String) { if held { heldDesk = name } }
+
+    /// A CLI can take several seconds to boot. Paint something immediately,
+    /// written straight to the view rather than through the pty, so a blank
+    /// screen never reads as "nothing happened".
+    private func paintStarting(desk: Desk, command: String) {
+        term.feed(text: "\u{1b}[2J\u{1b}[H"
+            + "\u{1b}[36m●\u{1b}[0m starting \u{1b}[1m\(desk.name)\u{1b}[0m\r\n"
+            + "\u{1b}[2m  \(command)\r\n"
+            + "  in \(desk.resolvedCwd)\u{1b}[0m\r\n\r\n")
+    }
+
+    private func typeLaunch(desk: Desk, command: String?) {
         // Land in the desk's directory, then launch its CLI. No `clear` here —
         // wiping the screen would throw away the only feedback there is.
         // Quoted whole: a folder name can hold ; $() or a newline, and only
@@ -369,7 +416,9 @@ final class DeskSession {
     var started: Bool { panes[0].started }
 
     /// Every pane's process id, for measuring the desk's memory.
-    var pids: [Int32] { panes.compactMap { $0.started ? $0.term.process?.shellPid : nil } }
+    var pids: [Int32] { panes.compactMap { $0.started ? $0.shellPid : nil } }
+    /// The agent runs through a holder and will outlive Coldfall.
+    var isHeld: Bool { panes[0].held }
 
     /// End every pane's process. The session is finished after this.
     func terminateAll() {
@@ -390,9 +439,35 @@ final class DeskSession {
     /// shell, not the agent, whatever agentTerm now points at.
     var agentGone = false
 
+    /// Desks keep running when Coldfall quits, unless a desk says otherwise.
+    /// Mirrors UIState.keepDesksRunning; set by the controller.
+    static var keepGlobal = false
+
+    /// How the agent pane should start: back onto a holder that is still
+    /// running, a new holder, or no holder at all.
+    private var hold: Pane.Hold {
+        guard Pane.holderPath != nil else { return .none }
+        let sock = Holder.socketPath(desk: desk.name)
+        guard Holder.fits(sock) else { return .none }
+        if Holder.isAlive(sock) { return .reattach }
+        return desk.keepsRunning(global: DeskSession.keepGlobal) ? .fresh : .none
+    }
+
+    /// The holder's socket moves with a rename; the pane follows it.
+    func followRename(to name: String) { panes[0].renamed(to: name) }
+
+    /// Whether this desk's agent is still running in a holder from before.
+    var canReattach: Bool { hold == .reattach }
+
     func startIfNeeded() {
         guard !started, !resolving, !holding else { return }
         let d = desk
+        if hold == .reattach {
+            // A replay of what it said while Coldfall was closed is not news.
+            activityState.mute(for: 3)
+            startPanes(nil, hold: .reattach)
+            return
+        }
         guard d.resumesItself else { startPanes(d.launchCommand()); return }
         resolving = true
         DispatchQueue.global(qos: .userInitiated).async {
@@ -411,8 +486,8 @@ final class DeskSession {
         startPanes(command)
     }
 
-    private func startPanes(_ command: String) {
-        panes[0].start(desk: desk, command: command)
+    private func startPanes(_ command: String?, hold: Pane.Hold? = nil) {
+        panes[0].start(desk: desk, command: command, hold: hold ?? self.hold)
         for p in panes.dropFirst() { p.start(desk: desk, command: nil) }
     }
 

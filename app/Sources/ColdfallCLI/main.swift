@@ -190,6 +190,15 @@ case "running":
     out(["coldfallRunning": true,
          "desks": st.desks.map { ["name": $0.name, "running": $0.running, "activity": $0.activity] }])
 
+case "holders":
+    // Desks whose agent is held, running whether or not Coldfall is open.
+    // `holders end <desk>` ends one, as End Desk does.
+    if args.count > 2, args[1] == "end" {
+        print(Holder.end(desk: args[2]) ? "Asked \(args[2]) to end." : "\(args[2]) isn't held.")
+    } else {
+        out(Holder.held().map { ["desk": $0, "pid": Holder.heldPid(desk: $0).map(Int.init) ?? 0] as [String: Any] })
+    }
+
 case "hosts":
     out(SSHHosts.all().map { ["alias": $0.alias, "target": $0.blurb, "command": $0.command] })
 
@@ -213,6 +222,7 @@ default:
       hosts              ssh hosts that could become desks
       open <desk> [--show]  start a desk in the running Coldfall, as a click does
       running            which desks the running Coldfall has going, and how each is doing
+      holders [end <desk>]  desks kept running outside the app; end one
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
       limits             remaining quota per vendor, stale entries dropped

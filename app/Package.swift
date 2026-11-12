@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "ColdfallCore", targets: ["ColdfallCore"]),
         .executable(name: "Coldfall", targets: ["Coldfall"]),
         .executable(name: "coldfall-cli", targets: ["ColdfallCLI"]),
+        .executable(name: "coldfall-holder", targets: ["ColdfallHolder"]),
         .executable(name: "coldfall-test", targets: ["ColdfallTests"]),
     ],
     dependencies: [
@@ -38,6 +39,9 @@ let package = Package(
         // Proves the core is genuinely headless, and gives a front end in any
         // language something to shell out to.
         .executableTarget(name: "ColdfallCLI", dependencies: ["ColdfallCore"]),
+        // Keeps a desk's agent running when the app quits (see Holder). Core
+        // only: it runs outside the app and draws nothing.
+        .executableTarget(name: "ColdfallHolder", dependencies: ["ColdfallCore"]),
         // Plain executable, not XCTest. XCTest ships with Xcode, and the whole
         // point of this project building on Command Line Tools alone is that a
         // contributor needs no 15GB download — tests that break that promise

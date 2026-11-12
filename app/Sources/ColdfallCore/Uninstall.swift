@@ -157,6 +157,10 @@ public enum Uninstall {
         // The script lives in the config folder this call was given, which is
         // deleted below anyway. Not DoneSignal.scriptPath: a test passing a
         // temp configRoot deleted the real hook on every run (v0.3.24-0.3.27).
+        // Held desks first: their holders live in the data folder about to go.
+        for d in Holder.endAll(root: (dataRoot as NSString).appendingPathComponent("holders")) {
+            log.append("ended the held desk \(d)")
+        }
         log += DoneSignal.uninstall(desks: desks, home: home,
                                     script: (configRoot as NSString).appendingPathComponent("done-hook.sh"))
         for root in [configRoot, dataRoot] where FileManager.default.fileExists(atPath: root) {

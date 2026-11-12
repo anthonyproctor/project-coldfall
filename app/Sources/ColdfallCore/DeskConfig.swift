@@ -51,6 +51,15 @@ public struct Desk {
     /// order pinned desks have in the file. A hidden desk is not shown
     /// there: hidden wins.
     public var pinned: Bool = false
+    /// Whether this desk's agent keeps running when Coldfall quits (see
+    /// Holder). Nil follows the setting in Settings, Desks; `keep_running`
+    /// in desks.toml turns it on or off for this desk alone.
+    public var keepRunning: Bool?
+    /// Whether this desk is held, given the global setting.
+    public func keepsRunning(global: Bool) -> Bool {
+        guard runtime != "shell" || command != nil else { return keepRunning ?? false }
+        return keepRunning ?? global
+    }
     /// Desks are not a flat list. `study` belongs under `school` next to `mba`.
     /// Ungrouped desks sit at the top, above the first group header.
     public var group: String?
@@ -408,6 +417,7 @@ public enum DeskConfig {
             case "budget":  current?.budget = DeskBudget.parse(val)
             case "hidden":  current?.hidden = val == "true"
             case "pinned":  current?.pinned = val == "true"
+            case "keep_running": current?.keepRunning = val == "true" ? true : (val == "false" ? false : nil)
             case "session": current?.session = UUID(uuidString: val) != nil ? val.lowercased() : nil
             case "cwd":     current?.cwd = val
             case "command": current?.command = val
@@ -556,6 +566,7 @@ public enum DeskConfig {
             if let s = d.session { out += "session = \"\(TomlText.escape(s))\"\n" }
             if d.hidden { out += "hidden = true\n" }
             if d.pinned { out += "pinned = true\n" }
+            if let k = d.keepRunning { out += "keep_running = \(k)\n" }
             if !d.mcpOff.isEmpty {
                 out += "mcp_off = [" + d.mcpOff.map { "\"\(TomlText.escape($0))\"" }.joined(separator: ", ") + "]\n"
             }

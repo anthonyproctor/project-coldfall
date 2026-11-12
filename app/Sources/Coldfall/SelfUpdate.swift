@@ -95,7 +95,12 @@ enum SelfUpdate {
         (installDir as NSString).appendingPathComponent("Project Coldfall.app")
     }
 
+    /// Set while an update relaunches Coldfall: held desks keep running
+    /// without asking.
+    static var relaunching = false
+
     static func relaunch() {
+        relaunching = true
         // Prefer the bundle the build just produced; fall back to the running
         // one only if the build somehow put nothing there.
         let path = FileManager.default.fileExists(atPath: rebuiltBundle)

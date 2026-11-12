@@ -35,6 +35,8 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --budget-demo      # the rail with desks near and over a made-up budget
 ./.build/release/Coldfall --snapshot /tmp/shot.png --prompt-helper    # plus the Write a prompt window, to shot-prompt.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --pin docs         # the rail with that desk pinned to the top
+./.build/release/Coldfall --snapshot /tmp/shot.png --waiting --restore hub,work   # the launch screen offering desks back
+./.build/release/Coldfall --snapshot /tmp/shot.png --quit-prompt hub,work  # the quit question, to shot-quit.png
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```
@@ -61,6 +63,14 @@ context menu cannot be captured in an offscreen snapshot, so its order,
 wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
+
+Held desks (see `Holder` in the core) run through `coldfall-holder`, which
+ships beside the app. To try one end to end without touching a running
+Coldfall, run the built `Coldfall` binary directly with `HOME` and
+`CFFIXED_USER_HOME` pointing at a throwaway folder (short: socket paths must fit
+in 104 bytes), set `COLDFALL_UPDATE_URL` to a dead local address so it never
+counts as an install, open a desk with `coldfall-cli open`, kill that Coldfall,
+and check `coldfall-cli holders` with the same environment.
 
 Snapshots take their theme from the real desks.toml, not from `--desks`. To see
 another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding

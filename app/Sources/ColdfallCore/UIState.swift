@@ -32,6 +32,12 @@ public struct UIState: Codable {
     /// "Move Ready Desks to Top": a desk that is waiting on you rises to the
     /// top of the rail, under any pinned desks, until you have looked at it.
     public var readyOnTop: Bool = true
+    /// Desks keep running when Coldfall quits (see Holder). Off until turned
+    /// on in Settings, Desks; a desk can choose for itself in desks.toml.
+    public var keepDesksRunning: Bool = false
+    /// The desks running when Coldfall last saved, so a restart of the Mac
+    /// or a crash can offer to bring them back (see RestoreOffer).
+    public var runningDesks: [String] = []
 
     public init() {}
 
@@ -61,6 +67,8 @@ public struct UIState: Codable {
         lastDesk = try c.decodeIfPresent(String.self, forKey: .lastDesk)
         confirmStart = try c.decodeIfPresent(Bool.self, forKey: .confirmStart) ?? true
         readyOnTop = try c.decodeIfPresent(Bool.self, forKey: .readyOnTop) ?? true
+        keepDesksRunning = try c.decodeIfPresent(Bool.self, forKey: .keepDesksRunning) ?? false
+        runningDesks = try c.decodeIfPresent([String].self, forKey: .runningDesks) ?? []
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

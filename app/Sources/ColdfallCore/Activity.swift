@@ -115,7 +115,21 @@ public struct ActivityState {
         return text.contains("\u{1b}[13u") || text.contains("\u{1b}[13;1u")
     }
 
+    /// Output before this time is a replay, not news: a desk reattached to
+    /// its holder repaints everything it said while Coldfall was closed.
+    public private(set) var mutedUntil: Date?
+
+    /// Ignore output for a moment, then treat the desk as read.
+    public mutating func mute(for seconds: TimeInterval, at now: Date = Date()) {
+        mutedUntil = now.addingTimeInterval(seconds)
+        unseen = false
+    }
+
     public mutating func noteOutput(at now: Date = Date()) {
+        if let m = mutedUntil {
+            if now < m { lastOutput = now; return }
+            mutedUntil = nil
+        }
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
         lastOutput = now
         if !visible, !signaled { unseen = true }
