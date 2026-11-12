@@ -236,6 +236,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.ui.offerFreshStart = on
             self.ui.save()
         }
+        NotificationCenter.default.addObserver(forName: .coldfallNotifyChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let on = n.object as? Bool else { return }
+            self.ui.notifyDesks = on
+            self.ui.save()
+        }
         NotificationCenter.default.addObserver(forName: .coldfallKeepRunningChanged, object: nil, queue: .main) {
             [weak self] n in
             guard let self, let on = n.object as? Bool else { return }
@@ -332,6 +338,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                                     memory: "132 MB", news: 2)
                 default: sample[d.name] = DeskStatus()
                 }
+            }
+            // `--blocked <desk>`: that desk stopped on a question.
+            if let k = CommandLine.arguments.firstIndex(of: "--blocked"), k + 1 < CommandLine.arguments.count {
+                sample[CommandLine.arguments[k + 1]] = DeskStatus(activity: .blocked, lastOutput: now.addingTimeInterval(-300), running: true)
             }
             // `--show-hidden`: the rail with its hidden desks listed.
             if CommandLine.arguments.contains("--show-hidden") {
@@ -660,6 +670,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         watchPaneClicks()
         watchSystemAppearance()
         watchDeskActivity()
+        notifier.onOpen = { [weak self] d in
+            guard let self, let i = self.deskIndex(d) else { return }
+            self.show(i)
+        }
+        notifier.start()
         watchDeskMemory()
         watchLiveRail()
         watchDeskConfig()
@@ -695,6 +710,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         guard desks.indices.contains(i) else { return }
         let d = desks[i]
         lastVisited[d.name] = Date()
+        notifier.clear(desk: d.name)
         waitingName = nil
         if ui.lastDesk != d.name { ui.lastDesk = d.name; ui.save() }
         let s = sessions[d.name] ?? {
@@ -1335,6 +1351,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         if now.timeIntervalSince(lastRemoteServe) >= 1 {
             lastRemoteServe = now
             for r in RemoteOpen.pending(now: now) {
+                if r.action == "read" || r.action == "send" { serveReadSend(r); continue }
                 let running = Set(sessions.filter { $0.value.started || $0.value.resolving || $0.value.holding }.keys)
                 let a = RemoteOpen.decide(r.desk, names: desks.map(\.name),
                                           hidden: Set(desks.filter(\.hidden).map(\.name)), running: running)
@@ -1351,11 +1368,37 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 switch map[d.name]?.activity {
                 case .working?: act = "working"
                 case .ready?: act = "ready"
+                case .blocked?: act = "blocked"
                 default: act = "quiet"
                 }
                 return RemoteOpen.DeskState(name: d.name, running: s.map { $0.started || $0.resolving } ?? false, activity: act)
             }))
         }
+    }
+
+    /// `coldfall-cli read` and `send`. A send held back by a half-typed
+    /// message stays on the queue and is looked at again each second.
+    func serveReadSend(_ r: RemoteOpen.Request) {
+        let names = desks.map(\.name), hidden = Set(desks.filter(\.hidden).map(\.name))
+        let s = sessions[r.desk]
+        let target = s.map { s in
+            RemoteOpen.Target(running: s.started, agent: !s.agentGone && s.desk.runtime != "shell",
+                              blocked: s.isBlocked, draft: s.holdsDraft)
+        }
+        if r.action == "read" {
+            if let no = RemoteOpen.refuseRead(r.desk, names: names, hidden: hidden, target: target) { RemoteOpen.answer(r, no); return }
+            var a = RemoteOpen.Answer(.read, "")
+            a.text = s?.screenText(lines: r.lines ?? 60)
+            RemoteOpen.answer(r, a)
+            return
+        }
+        let text = r.text ?? ""
+        if let no = RemoteOpen.refuseSend(r.desk, names: names, hidden: hidden, target: target, text: text) {
+            if no.outcome != .draft { RemoteOpen.answer(r, no) }
+            return
+        }
+        s?.typeOnBehalf(RemoteOpen.keystrokes(text))
+        RemoteOpen.answer(r, RemoteOpen.Answer(.sent, "Sent to \(r.desk)."))
     }
 
     /// Start a desk for someone who isn't at the Mac. Like a click, but it
@@ -1411,7 +1454,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         var waiting: [String: Date] = [:], used: [String: Date] = [:]
         for (name, s) in sessions {
-            if case .ready = s.activity, let l = s.lastOutput { waiting[name] = l }
+            if s.activity == .ready || s.activity == .blocked, let l = s.lastOutput { waiting[name] = l }
             if let l = s.lastOutput { used[name] = l }
         }
         for (name, d) in lastVisited { used[name] = max(used[name] ?? .distantPast, d) }
@@ -2007,12 +2050,19 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             var map: [String: DeskStatus] = [:]
             var waiting = 0
+            let front = NSApp.isActive
             for (name, s) in self.sessions where self.desks.contains(where: { $0.name == name }) {
                 s.dropRepaint()
                 let a = s.activity
+                if self.ui.notifyDesks, !CommandLine.arguments.contains("--snapshot") {
+                    let alert = NotifyRule.decide(from: self.lastActivity[name] ?? .quiet, to: a, signaled: s.isSignaled,
+                                                  appActive: front, deskVisible: s === self.visible)
+                    self.notifier.deliver(alert, desk: name, activity: a)
+                }
+                self.lastActivity[name] = a
                 map[name] = DeskStatus(activity: a, lastOutput: s.lastOutput, running: s.started,
                                        memory: self.memory[name], news: self.inventoryNews[name] ?? 0)
-                if case .ready = a { waiting += 1 }
+                if a == .ready || a == .blocked { waiting += 1 }
             }
             self.sidebar.tick &+= 1
             self.sidebar.status = map
@@ -2025,6 +2075,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
     }
     var activityTimer: Timer?
+    /// Each desk's state as of the last tick, to notice it change.
+    var lastActivity: [String: DeskActivity] = [:]
+    let notifier = Notifier()
 
     /// Memory per desk, sampled every five seconds from one `ps` call off the
     /// main thread. Cheap enough to leave on, and it answers "which desk is
@@ -2475,6 +2528,7 @@ extension Notification.Name {
     /// Settings changed something the controller keeps in ui.json.
     static let coldfallFreshStartChanged = Notification.Name("coldfallFreshStartChanged")
     static let coldfallKeepRunningChanged = Notification.Name("coldfallKeepRunningChanged")
+    static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
     /// Settings asked for the Remove Files dialog, which the controller owns.
     static let coldfallOpenUninstall = Notification.Name("coldfallOpenUninstall")
     static let coldfallConfirmStartChanged = Notification.Name("coldfallConfirmStartChanged")

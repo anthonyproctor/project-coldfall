@@ -82,11 +82,10 @@ final class DeskRow: NSView {
     var status = DeskStatus() { didSet { if status != oldValue { restyle() } } }
     /// This desk's week against its budget, if it has one.
     var budget: DeskBudget.Status = .unset { didSet { if budget != oldValue { restyle() } } }
-    /// Spinner frame, advanced by the rail's timer. Turns the glyph only.
+    /// Advanced by the rail's timer, to age the "now" / "2m" label.
     var tick = 0 {
         didSet {
             guard case .working = status.activity else { return }
-            glyph.stringValue = Self.spin[tick % Self.spin.count]
             // The "now" / "2m" label ages without the status changing.
             let t = status.lastOutput.map(Self.ago) ?? ""
             if time.stringValue != t { time.stringValue = t }
@@ -97,11 +96,10 @@ final class DeskRow: NSView {
 
     static let height: CGFloat = 46
 
-    /// Quarter circles rather than braille. Braille dots rendered as a faint
-    /// speck — near invisible in a snapshot of the real rail — and "working" is
-    /// a state you need to be able to see. These carry the same visual weight
-    /// as the ● and ○ beside them, and still read as turning.
-    private static let spin = ["\u{25D0}", "\u{25D3}", "\u{25D1}", "\u{25D2}"]   // ◐◓◑◒
+    /// Working is a still dot in the accent colour, not a spinner. A rail of
+    /// turning spinners is the busiest thing on screen, and it pulls the eye
+    /// away from the one desk that needs you; it also redrew the rail several
+    /// times a second for nothing.
 
     init(desk: Desk) {
         deskName = desk.name
@@ -180,12 +178,15 @@ final class DeskRow: NSView {
         // Status first, so the eye finds "needs you" before anything else.
         let (g, gColor, state): (String, NSColor, String)
         switch status.activity {
+        case .blocked:
+            // Stopped on a question: the one state worth more than green.
+            (g, gColor, state) = ("\u{25C9}", .systemOrange, "needs you")       // ◉
         case .ready:
             // An agent "answered"; a shell just finished what it was running.
             (g, gColor, state) = ("\u{2713}", .systemGreen,
                                   runtime == "shell" ? "done" : "answered")      // ✓
         case .working:
-            (g, gColor, state) = (Self.spin[tick % Self.spin.count], ui.accent, "working")
+            (g, gColor, state) = ("\u{25CF}", ui.accent, "working")           // ●
         case .quiet:
             (g, gColor, state) = status.running
                 ? ("\u{25CF}", ui.dimText, "idle")                            // ●
@@ -196,7 +197,9 @@ final class DeskRow: NSView {
 
         // A finished desk you have not looked at gets a green name as well as
         // a green check: the word is what you scan, not a 12-point glyph.
-        if case .ready = status.activity, !selected {
+        if case .blocked = status.activity, !selected {
+            name.textColor = .systemOrange
+        } else if case .ready = status.activity, !selected {
             name.textColor = .systemGreen
         } else {
             name.textColor = selected ? ui.text : ui.text.withAlphaComponent(0.92)

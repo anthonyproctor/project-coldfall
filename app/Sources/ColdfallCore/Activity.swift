@@ -30,6 +30,9 @@ public enum DeskActivity: Equatable {
     /// Output arrived and then stopped while you were elsewhere. This is the
     /// state worth a badge: an answer is sitting there waiting.
     case ready
+    /// The agent is stopped on a question for you: a permission, a choice.
+    /// More urgent than ready, and it stays until you answer, not just look.
+    case blocked
 }
 
 /// The state machine behind one desk's badge.
@@ -83,11 +86,50 @@ public struct ActivityState {
         signaled = true
         switch event {
         case .notify:
+            needsYou = true
+            needsYouAt = now
             if !visible { unseen = true }
         case .stop:
+            needsYou = false
             if visible { asked = false }           // you watched it finish
             else if asked { unseen = true }
         }
+    }
+
+    /// The agent asked you something and nothing has answered it yet. Looking
+    /// doesn't clear it; a keystroke into the desk, the turn finishing, or the
+    /// agent getting going again (answered from your phone) does.
+    public private(set) var needsYou = false
+    private var needsYouAt: Date?
+    /// Work this long after the question means it was answered somewhere else.
+    public static let answeredElsewhereAfter: TimeInterval = 5
+
+    /// Keys typed into the agent since the last Enter: a message half written.
+    public private(set) var draftOpen = false
+    /// When you last typed a key (not a terminal report).
+    public private(set) var keyAt: Date?
+
+    /// Bytes that are the terminal reporting, not you typing: focus in and
+    /// out, which every desk switch sends.
+    public static func isReport(_ bytes: [UInt8]) -> Bool {
+        bytes == [27, 91, 73] || bytes == [27, 91, 79]          // ESC[I, ESC[O
+    }
+
+    /// You typed into the agent's pane. Enter sends what was there.
+    public mutating func noteTyping(_ bytes: [UInt8], at now: Date = Date()) {
+        guard !ActivityState.isReport(bytes) else { return }
+        keyAt = now
+        needsYou = false
+        draftOpen = !ActivityState.isSubmit(bytes)
+    }
+
+    /// Whether something sent on your behalf would land in the middle of a
+    /// message you are writing. A draft counts for a minute after your last
+    /// key, then it's taken as abandoned.
+    public static let draftHold: TimeInterval = 60
+    public func holdsDraft(at now: Date = Date()) -> Bool {
+        guard draftOpen, let k = keyAt else { return false }
+        return now.timeIntervalSince(k) < ActivityState.draftHold
     }
 
     /// You sent this desk something and haven't yet seen the answer.
@@ -131,6 +173,9 @@ public struct ActivityState {
             mutedUntil = nil
         }
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
+        if needsYou, let q = needsYouAt, now.timeIntervalSince(q) >= ActivityState.answeredElsewhereAfter {
+            needsYou = false
+        }
         lastOutput = now
         if !visible, !signaled { unseen = true }
         if !visible || typedAt.map({ now.timeIntervalSince($0) >= ActivityState.echoGrace }) ?? true {
@@ -157,6 +202,7 @@ public struct ActivityState {
     public mutating func markSeen() {
         if unseen { asked = false }
         unseen = false
+        needsYou = false
     }
 
     public func activity(now: Date = Date()) -> DeskActivity {
@@ -167,6 +213,7 @@ public struct ActivityState {
             if let w = lastWork, now.timeIntervalSince(w) < ActivityState.quietFor { return .working }
             return .quiet
         }
+        if needsYou { return .blocked }
         if let last = lastOutput, now.timeIntervalSince(last) < ActivityState.quietFor { return .working }
         guard lastOutput != nil || signaled else { return .quiet }
         return unseen ? .ready : .quiet
@@ -272,11 +319,14 @@ public enum NeedsYou {
         }
     }
 
-    /// Waiting desks, oldest wait first. Ties go by name so the order holds
-    /// still between ticks.
+    /// Waiting desks: those stopped on a question first, then the rest,
+    /// each oldest wait first. Ties go by name so the order holds still
+    /// between ticks.
     public static func queue(_ entries: [Entry]) -> [String] {
-        entries.filter { $0.activity == .ready }
+        entries.filter { $0.activity == .ready || $0.activity == .blocked }
             .sorted {
+                let qa = $0.activity == .blocked, qb = $1.activity == .blocked
+                if qa != qb { return qa }
                 let a = $0.lastOutput ?? .distantPast, b = $1.lastOutput ?? .distantPast
                 return a != b ? a < b : $0.name < $1.name
             }
@@ -297,5 +347,36 @@ public enum NeedsYou {
         if queue.count == 1 { return "\(queue[0]) needs you" }
         let shown = queue.prefix(limit).joined(separator: ", ")
         return "\(queue.count) need you: \(shown)" + (queue.count > limit ? ", …" : "")
+    }
+}
+
+/// When a desk's change is worth interrupting you for.
+///
+/// Only on the agent's own word (the done hook), never on a guess from output:
+/// a notification that cries wolf gets turned off, and then the real one is
+/// missed. Only for a desk you aren't looking at. A banner when Coldfall is
+/// in the background; a sound alone when it's in front, since the rail
+/// already shows which desk it was.
+public enum NotifyRule {
+    public enum Alert: Equatable { case silent, sound, banner }
+
+    public static func decide(from old: DeskActivity, to new: DeskActivity, signaled: Bool,
+                              appActive: Bool, deskVisible: Bool) -> Alert {
+        guard signaled, !(appActive && deskVisible) else { return .silent }
+        let rises: Bool
+        switch new {
+        case .blocked: rises = old != .blocked
+        case .ready: rises = old != .ready && old != .blocked
+        default: rises = false
+        }
+        guard rises else { return .silent }
+        return appActive ? .sound : .banner
+    }
+
+    /// Title and body. Nothing from the conversation itself: a banner can
+    /// show on a locked screen.
+    public static func text(desk: String, _ a: DeskActivity) -> (title: String, body: String) {
+        a == .blocked ? ("\(desk) needs you", "It's waiting for your answer.")
+                      : ("\(desk) is done", "It finished while you were away.")
     }
 }

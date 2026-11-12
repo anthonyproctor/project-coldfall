@@ -38,18 +38,29 @@ public enum RemoteOpen {
         /// Bring it on screen too, rather than starting it in the background.
         public var show: Bool
         public var time: Double
-        public init(id: String = UUID().uuidString, desk: String, show: Bool = false, time: Double = Date().timeIntervalSince1970) {
+        /// "open" when absent, "read" or "send".
+        public var action: String?
+        /// For send: what to type into the desk.
+        public var text: String?
+        /// For read: how many lines from the bottom.
+        public var lines: Int?
+        public init(id: String = UUID().uuidString, desk: String, show: Bool = false, time: Double = Date().timeIntervalSince1970,
+                    action: String? = nil, text: String? = nil, lines: Int? = nil) {
             self.id = id; self.desk = desk; self.show = show; self.time = time
+            self.action = action; self.text = text; self.lines = lines
         }
     }
 
     public enum Outcome: String, Codable, Equatable {
         case started, alreadyRunning, unknownDesk, hiddenDesk
+        case read, sent, notRunning, notAnAgent, blocked, draft
     }
 
     public struct Answer: Codable, Equatable {
         public var outcome: Outcome
         public var message: String
+        /// For read: the desk's screen as text.
+        public var text: String?
         public init(_ outcome: Outcome, _ message: String) { self.outcome = outcome; self.message = message }
     }
 
@@ -87,6 +98,79 @@ public enum RemoteOpen {
             return Answer(.hiddenDesk, "\(desk) is hidden in Coldfall. Show it there first, then open it.")
         }
         return Answer(.started, "Started \(desk) in Coldfall.")
+    }
+
+    /// What one desk looks like to a read or a send, from the app's side.
+    public struct Target: Equatable {
+        public var running: Bool
+        /// The agent is still in its pane (it hasn't exited to a shell).
+        public var agent: Bool
+        public var blocked: Bool
+        /// You're partway through typing a message into it.
+        public var draft: Bool
+        public init(running: Bool, agent: Bool, blocked: Bool = false, draft: Bool = false) {
+            self.running = running; self.agent = agent; self.blocked = blocked; self.draft = draft
+        }
+    }
+
+    /// Whether a read can go ahead. Nil means yes.
+    public static func refuseRead(_ desk: String, names: [String], hidden: Set<String>, target: Target?) -> Answer? {
+        if let no = unknownOrHidden(desk, names: names, hidden: hidden) { return no }
+        guard let t = target, t.running else {
+            return Answer(.notRunning, "\(desk) isn't running. `coldfall-cli open \(desk)` starts it.")
+        }
+        return nil
+    }
+
+    /// Whether a send can go ahead now. Nil means yes. `.draft` means not
+    /// yet: ask again shortly.
+    ///
+    /// A send types into the desk and presses Enter. On a desk stopped on a
+    /// question that Enter would answer it, so a blocked desk is refused
+    /// outright: answering is the person's call. A plain shell would run the
+    /// text as a command, so only an agent takes a send.
+    public static func refuseSend(_ desk: String, names: [String], hidden: Set<String>, target: Target?, text: String) -> Answer? {
+        if let no = unknownOrHidden(desk, names: names, hidden: hidden) { return no }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return Answer(.notAnAgent, "Nothing to send.")
+        }
+        guard let t = target, t.running else {
+            return Answer(.notRunning, "\(desk) isn't running. `coldfall-cli open \(desk)` starts it, then send again.")
+        }
+        guard t.agent else { return Answer(.notAnAgent, "\(desk) is a shell, not an agent, so nothing was typed into it.") }
+        if t.blocked {
+            return Answer(.blocked, "\(desk) is waiting on a question, and Enter would answer it. Nothing was sent; answer it first.")
+        }
+        if t.draft { return Answer(.draft, "Someone is typing into \(desk); waiting for that message first.") }
+        return nil
+    }
+
+    static func unknownOrHidden(_ desk: String, names: [String], hidden: Set<String>) -> Answer? {
+        guard names.contains(desk) else {
+            let near = names.filter { $0.lowercased() == desk.lowercased() || $0.lowercased().hasPrefix(desk.lowercased()) }
+            let hint = near.isEmpty ? "" : " Did you mean \(near.map { "\"\($0)\"" }.joined(separator: " or "))?"
+            return Answer(.unknownDesk, "There's no desk called \"\(desk)\".\(hint)")
+        }
+        if hidden.contains(desk) { return Answer(.hiddenDesk, "\(desk) is hidden in Coldfall. Show it there first.") }
+        return nil
+    }
+
+    /// The bytes a send types: the text as one paste when it has more than
+    /// one line, so a line break doesn't send half of it, then Enter.
+    public static func keystrokes(_ text: String) -> [UInt8] {
+        let t = text.trimmingCharacters(in: .newlines)
+        let body = t.contains("\n") ? "\u{1b}[200~" + t + "\u{1b}[201~" : t
+        return Array(body.utf8) + [13]
+    }
+
+    /// The last `lines` rows of a terminal buffer, without the blank rows a
+    /// terminal keeps below the cursor.
+    public static func lastLines(_ buffer: String, lines: Int) -> String {
+        var rows = buffer.components(separatedBy: "\n").map { $0.replacingOccurrences(of: "\u{0}", with: " ") }
+            .map { s -> String in var t = s; while t.last == " " { t.removeLast() }; return t }
+        while rows.last?.isEmpty == true { rows.removeLast() }
+        let n = max(1, min(lines, 5000))
+        return rows.suffix(n).joined(separator: "\n")
     }
 
     /// Requests waiting, oldest first. Stale and unreadable ones are deleted.

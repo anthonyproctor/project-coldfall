@@ -196,7 +196,7 @@ final class SidebarView: NSView {
         if let text = NeedsYou.summary(waiting), let first = waiting.first {
             let strip = NeedsYouStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 26))
             strip.autoresizingMask = [.width]
-            strip.configure(text)
+            strip.configure(text, urgent: status[first]?.activity == .blocked)
             strip.onClick = { [weak self] in self?.onJumpToWaiting?(first) }
             strip.onClear = { [weak self] in self?.onClearWaiting?() }
             addSubview(strip)
@@ -583,7 +583,15 @@ final class NeedsYouStrip: NSView {
     @objc private func clearAll() { onClear?() }
     required init?(coder: NSCoder) { fatalError() }
 
-    func configure(_ text: String) { label.stringValue = "● " + text }
+    /// Orange when the first in line is stopped on a question, green when
+    /// it has only finished.
+    func configure(_ text: String, urgent: Bool = false) {
+        label.stringValue = (urgent ? "◉ " : "● ") + text
+        let c: NSColor = urgent ? .systemOrange : .systemGreen
+        label.textColor = c
+        clear.contentTintColor = c
+        layer?.backgroundColor = c.withAlphaComponent(0.14).cgColor
+    }
 
     override func mouseUp(with e: NSEvent) { onClick?() }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }

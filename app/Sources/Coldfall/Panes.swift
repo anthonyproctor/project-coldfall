@@ -385,7 +385,27 @@ final class DeskSession {
     func noteInput(_ bytes: [UInt8], from term: DeskTerminalView?) {
         activityState.noteInput()
         // A shell split beside the agent isn't asking the agent anything.
-        if term === agentTerm, ActivityState.isSubmit(bytes) { activityState.noteAsked() }
+        guard term === agentTerm else { return }
+        activityState.noteTyping(bytes)
+        if ActivityState.isSubmit(bytes) { activityState.noteAsked() }
+    }
+
+    /// Stopped on a question for you (see ActivityState.needsYou).
+    var isBlocked: Bool { activityState.needsYou }
+    /// You're partway through typing a message into the agent.
+    var holdsDraft: Bool { activityState.holdsDraft() }
+    /// Whether the done hook speaks for this desk.
+    var isSignaled: Bool { activityState.signaled }
+
+    /// The agent pane as text, scrollback included, the last `lines` rows.
+    func screenText(lines: Int) -> String {
+        RemoteOpen.lastLines(String(decoding: agentTerm.getTerminal().getBufferAsData(), as: UTF8.self), lines: lines)
+    }
+
+    /// Type into the agent as if from the keyboard. Goes the same road as
+    /// a keystroke, so it counts as asking and a finished turn turns green.
+    func typeOnBehalf(_ bytes: [UInt8]) {
+        agentTerm.send(source: agentTerm, data: bytes[...])
     }
 
     /// The agent terminal's live screen as text, wherever you have scrolled

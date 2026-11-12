@@ -181,6 +181,38 @@ case "open":
     print(a.message)
     exit(a.outcome == .started || a.outcome == .alreadyRunning ? 0 : 1)
 
+case "read":
+    // A desk's screen as text, without opening it. `--lines N` from the
+    // bottom (default 60).
+    let rest = Array(args.dropFirst())
+    guard let name = rest.first(where: { !$0.hasPrefix("--") }) else {
+        print("usage: coldfall-cli read <desk> [--lines N]"); exit(2)
+    }
+    var lines = 60
+    if let k = rest.firstIndex(of: "--lines"), k + 1 < rest.count, let n = Int(rest[k + 1]) { lines = n }
+    guard RemoteOpen.status() != nil else { print("Project Coldfall isn't running. Open the app on the Mac first."); exit(1) }
+    let req = RemoteOpen.Request(desk: name, action: "read", lines: lines)
+    do { try RemoteOpen.submit(req) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); exit(1) }
+    guard let a = RemoteOpen.wait(for: req, timeout: 10) else { print("Coldfall didn't answer within 10 seconds."); exit(1) }
+    if a.outcome == .read, let t = a.text { print(t); exit(0) }
+    print(a.message); exit(1)
+
+case "send":
+    // Type a message into a desk's agent and press Enter, as if typed there.
+    // Waits while someone is partway through typing into that desk, up to a
+    // minute after their last key. Refuses a desk stopped on a question.
+    let rest = Array(args.dropFirst())
+    guard rest.count >= 2 else { print("usage: coldfall-cli send <desk> \"message\""); exit(2) }
+    let name = rest[0], text = rest.dropFirst().joined(separator: " ")
+    guard RemoteOpen.status() != nil else { print("Project Coldfall isn't running. Open the app on the Mac first."); exit(1) }
+    let req = RemoteOpen.Request(desk: name, action: "send", text: text)
+    do { try RemoteOpen.submit(req) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); exit(1) }
+    guard let a = RemoteOpen.wait(for: req, timeout: ActivityState.draftHold + 15) else {
+        print("Coldfall didn't send it within \(Int(ActivityState.draftHold + 15)) seconds, so it was withdrawn. Nothing was typed."); exit(1)
+    }
+    print(a.message)
+    exit(a.outcome == .sent ? 0 : 1)
+
 case "running":
     // What the running Coldfall says about its desks: which are running, and
     // whether each is working or has an answer waiting.
@@ -222,6 +254,8 @@ default:
       hosts              ssh hosts that could become desks
       open <desk> [--show]  start a desk in the running Coldfall, as a click does
       running            which desks the running Coldfall has going, and how each is doing
+      read <desk> [--lines N]  a desk's screen as text, without opening it
+      send <desk> "message"    type a message into a desk's agent and press Enter
       holders [end <desk>]  desks kept running outside the app; end one
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed

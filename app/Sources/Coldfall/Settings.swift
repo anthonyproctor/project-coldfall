@@ -201,6 +201,14 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor
             rtLines.append(note)
         }
+        let notifySwitch = NSButton(checkboxWithTitle: "Tell me when a desk needs me or finishes",
+                                    target: self, action: #selector(toggleNotify(_:)))
+        notifySwitch.state = UIState.load().notifyDesks ? .on : .off
+        rtLines.append(notifySwitch)
+        rtLines.append(note("Only on the agent's own word, so only with the hook above, and only for a desk "
+            + "you aren't looking at. A notification when Coldfall is in the background; a sound when it's "
+            + "in front. Click the notification to go to the desk. A desk stopped on a question shows "
+            + "orange in the list until you answer it."))
         rtLines.append(caps("AGENTS FOUND ON DISK"))
         discoveredStack.orientation = .vertical
         discoveredStack.alignment = .leading
@@ -472,6 +480,10 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func openUninstall() {
         NotificationCenter.default.post(name: .coldfallOpenUninstall, object: nil)
+    }
+
+    @objc private func toggleNotify(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .coldfallNotifyChanged, object: sender.state == .on)
     }
 
     @objc private func toggleKeepRunning(_ sender: NSButton) {

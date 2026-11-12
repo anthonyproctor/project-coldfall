@@ -1410,7 +1410,7 @@ do {
     loop.noteSignal(at: t0.addingTimeInterval(600))
     eq("timer: a turn you didn't ask for isn't green", loop.activity(now: t0.addingTimeInterval(700)), .quiet)
     loop.noteSignal(.notify, at: t0.addingTimeInterval(800))
-    eq("timer: but needing you always is", loop.activity(now: t0.addingTimeInterval(900)), .ready)
+    eq("timer: but needing you always is, as blocked", loop.activity(now: t0.addingTimeInterval(900)), .blocked)
     var asked = ActivityState()
     asked.setVisible(true)
     asked.noteAsked()
@@ -2736,6 +2736,85 @@ do {
         print("  skip  holder binary not built beside the tests")
     }
     try? fm.removeItem(atPath: Holder.root)
+}
+
+// MARK: - needs you, notifications, read and send
+
+do {
+    let t0 = Date(timeIntervalSince1970: 1000)
+    func at(_ s: Double) -> Date { t0.addingTimeInterval(s) }
+
+    // Blocked: a question for you outranks everything and stays until answered.
+    var a = ActivityState()
+    a.setVisible(false, at: at(0))
+    a.noteSignal(.notify, at: at(10))
+    eq("blocked: a question makes the desk blocked", a.activity(now: at(11)), .blocked)
+    a.setVisible(true, at: at(12)); a.setVisible(false, at: at(13))
+    eq("blocked: looking doesn't answer it", a.activity(now: at(20)), .blocked)
+    a.noteTyping(Array("1".utf8), at: at(21))
+    check("blocked: a keystroke into the desk does", !a.needsYou)
+    var b = ActivityState()
+    b.setVisible(false, at: at(0))
+    b.noteSignal(.notify, at: at(10))
+    b.noteOutput(at: at(12))
+    eq("blocked: a repaint right after the question isn't an answer", b.activity(now: at(13)), .blocked)
+    b.noteOutput(at: at(20))
+    check("blocked: work well after it is (answered from the phone)", !b.needsYou)
+    var c = ActivityState()
+    c.noteSignal(.notify, at: at(1)); c.noteSignal(.stop, at: at(2))
+    check("blocked: the turn finishing clears it", !c.needsYou)
+    var d = ActivityState()
+    d.noteSignal(.notify, at: at(1)); d.markSeen()
+    check("blocked: Clear dismisses it", !d.needsYou)
+    eq("blocked: first in the needs-you line, ahead of an older answer",
+       NeedsYou.queue([.init(name: "old", activity: .ready, lastOutput: at(0)),
+                       .init(name: "ask", activity: .blocked, lastOutput: at(50))]), ["ask", "old"])
+
+    // Drafts: a send waits for a message you're halfway through.
+    var e = ActivityState()
+    e.noteTyping(Array("half a tho".utf8), at: at(0))
+    check("draft: keys without Enter hold a send", e.holdsDraft(at: at(5)))
+    check("draft: a minute after the last key it's abandoned", !e.holdsDraft(at: at(61)))
+    e.noteTyping([13], at: at(6))
+    check("draft: Enter sends it, and the hold lifts", !e.holdsDraft(at: at(7)))
+    var f = ActivityState()
+    f.noteTyping([27, 91, 73], at: at(0))
+    check("draft: a focus report isn't typing", !f.holdsDraft(at: at(1)) && f.keyAt == nil)
+
+    // Notifications: on the agent's word, for a desk you aren't watching.
+    typealias N = NotifyRule
+    eq("notify: blocked in the background is a notification", N.decide(from: .working, to: .blocked, signaled: true, appActive: false, deskVisible: false), .banner)
+    eq("notify: done with Coldfall in front is a sound", N.decide(from: .working, to: .ready, signaled: true, appActive: true, deskVisible: false), .sound)
+    eq("notify: nothing for the desk you're looking at", N.decide(from: .working, to: .blocked, signaled: true, appActive: true, deskVisible: true), .silent)
+    eq("notify: nothing on a guess from output", N.decide(from: .working, to: .ready, signaled: false, appActive: false, deskVisible: false), .silent)
+    eq("notify: once per change, not every tick", N.decide(from: .ready, to: .ready, signaled: true, appActive: false, deskVisible: false), .silent)
+    eq("notify: blocked then answered-and-done isn't a second alarm", N.decide(from: .blocked, to: .ready, signaled: true, appActive: false, deskVisible: false), .silent)
+    check("notify: the text holds nothing from the conversation", N.text(desk: "api", .blocked) == ("api needs you", "It's waiting for your answer."))
+
+    // Read and send.
+    let names = ["hub", "api", "notes"], hidden: Set<String> = ["notes"]
+    let live = RemoteOpen.Target(running: true, agent: true)
+    eq("send: goes ahead on a running agent", RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: live, text: "hi"), nil)
+    eq("send: refused on a desk stopped on a question",
+       RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: .init(running: true, agent: true, blocked: true), text: "hi")?.outcome, .blocked)
+    eq("send: waits on a half-typed message",
+       RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: .init(running: true, agent: true, draft: true), text: "hi")?.outcome, .draft)
+    eq("send: never into a shell",
+       RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: .init(running: true, agent: false), text: "ls")?.outcome, .notAnAgent)
+    eq("send: not to a desk that isn't running", RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: nil, text: "hi")?.outcome, .notRunning)
+    eq("send: nor a hidden one", RemoteOpen.refuseSend("notes", names: names, hidden: hidden, target: live, text: "hi")?.outcome, .hiddenDesk)
+    eq("send: nothing to send", RemoteOpen.refuseSend("api", names: names, hidden: hidden, target: live, text: "  ")?.outcome, .notAnAgent)
+    eq("read: goes ahead on a running desk", RemoteOpen.refuseRead("hub", names: names, hidden: hidden, target: live), nil)
+    eq("read: says so when it isn't running", RemoteOpen.refuseRead("hub", names: names, hidden: hidden, target: nil)?.outcome, .notRunning)
+    eq("send: one line is typed, then Enter", RemoteOpen.keystrokes("do x"), Array("do x".utf8) + [13])
+    let multi = RemoteOpen.keystrokes("a\nb")
+    check("send: several lines go as one paste, so Enter sends it once",
+          multi == Array("\u{1b}[200~a\nb\u{1b}[201~".utf8) + [13] && ActivityState.isSubmit(multi))
+    eq("read: the last lines, without the blank rows below", RemoteOpen.lastLines("one\ntwo  \nthree\n\n\n", lines: 2), "two\nthree")
+    let old = try? JSONDecoder().decode(RemoteOpen.Request.self, from: Data(#"{"id":"x","desk":"hub","show":false,"time":1}"#.utf8))
+    check("remote: an open request from an older CLI still reads", old?.action == nil && old?.desk == "hub")
+    let ui = try? JSONDecoder().decode(UIState.self, from: Data("{}".utf8))
+    check("ui: notifications are on unless turned off", ui?.notifyDesks == true)
 }
 
 // MARK: - the suite must not touch a real home directory

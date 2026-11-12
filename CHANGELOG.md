@@ -8,6 +8,26 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Read a desk and send it work from outside the app.** `coldfall-cli read <desk>` prints a
+  desk's screen as text, scrollback included (`--lines N`). `coldfall-cli send <desk> "message"`
+  types it into the desk's agent and presses Enter, as if typed there. A send waits while
+  someone is partway through typing into that desk (up to a minute after their last key), and
+  is refused on a desk stopped on a question, so it can never answer a permission prompt, or
+  on a plain shell, where it would run as a command. With these, an agent driven from a phone
+  can check on any desk and hand it work, Codex desks included.
+- **"Needs you" is its own state.** A desk whose agent stopped on a question (a permission, a
+  choice) shows orange with ◉ and "needs you", sits first in the needs-you line, and stays that
+  way until you answer it, not just look. A finished desk is still green. Needs the done hook.
+- **Notifications.** When a desk you aren't looking at needs you or finishes, a notification
+  if Coldfall is in the background (click it to go there), a sound if it's in front. Only on
+  the agent's own word, never on a guess from output, and nothing from the conversation is
+  shown. Settings, Agents, "Tell me when a desk needs me or finishes".
+
+### Changed
+- A working desk shows a still blue dot instead of a spinner. A rail of spinners pulled the
+  eye away from the one desk that needed you, and redrew the rail several times a second.
+
 ## [0.3.29] - 2026-11-12
 
 Desks that outlive a quit.

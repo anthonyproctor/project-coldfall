@@ -38,6 +38,9 @@ public struct UIState: Codable {
     /// The desks running when Coldfall last saved, so a restart of the Mac
     /// or a crash can offer to bring them back (see RestoreOffer).
     public var runningDesks: [String] = []
+    /// A banner (or, with Coldfall in front, a sound) when a desk you aren't
+    /// looking at needs you or finishes, on the agent's own word.
+    public var notifyDesks: Bool = true
 
     public init() {}
 
@@ -69,6 +72,7 @@ public struct UIState: Codable {
         readyOnTop = try c.decodeIfPresent(Bool.self, forKey: .readyOnTop) ?? true
         keepDesksRunning = try c.decodeIfPresent(Bool.self, forKey: .keepDesksRunning) ?? false
         runningDesks = try c.decodeIfPresent([String].self, forKey: .runningDesks) ?? []
+        notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

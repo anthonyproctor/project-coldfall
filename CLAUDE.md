@@ -37,6 +37,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --pin docs         # the rail with that desk pinned to the top
 ./.build/release/Coldfall --snapshot /tmp/shot.png --waiting --restore hub,work   # the launch screen offering desks back
 ./.build/release/Coldfall --snapshot /tmp/shot.png --quit-prompt hub,work  # the quit question, to shot-quit.png
+./.build/release/Coldfall --snapshot /tmp/shot.png --blocked api      # the rail with that desk stopped on a question
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```
