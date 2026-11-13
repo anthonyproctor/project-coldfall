@@ -44,6 +44,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // Before anything builds a row.
+        DeskRow.compact = ui.compactRail || CommandLine.arguments.contains("--compact")
+        if CommandLine.arguments.contains("--roomy") { DeskRow.compact = false }
         // In the rail's order, so cmd-1..9 match what is on screen even when
         // a group's desks are scattered through the file.
         desks = DeskOrder.grouped(DeskConfig.load())
@@ -150,7 +153,6 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let w = self.window.contentView?.bounds.width ?? frame.width
-            let h = self.window.contentView?.bounds.height ?? frame.height
             self.split.setPosition(240, ofDividerAt: 0)
             // The reader takes about a third, never less than it needs to be
             // readable, never so much that the terminal is squeezed.
@@ -160,9 +162,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             } else {
                 self.readerWidth = readerW    // for when it is shown
             }
-            // Desks get a third of the rail, the tree keeps the rest.
-            let want = self.ui.treeOnTop ? h * 0.5 : min(self.sidebar.contentHeight, h * 0.45)
-            self.rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
+            // Desks first, as much as they need up to 70%; the tree keeps the rest.
+            self.fitRail()
         }
 
         tree.onOpen = { [weak self] url in self?.openReader(url) }
@@ -425,9 +426,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 ui.treeOnTop.toggle()
                 applyRailOrder()
                 window.contentView?.layoutSubtreeIfNeeded()
-                let h = window.contentView?.bounds.height ?? 800
-                let want = ui.treeOnTop ? h * 0.5 : min(sidebar.contentHeight, h * 0.45)
-                rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
+                fitRail()
             }
             // `--update-available <version>`: the title strip's release link.
             if let k = CommandLine.arguments.firstIndex(of: "--update-available"), k + 1 < CommandLine.arguments.count {
@@ -956,6 +955,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         readyUp.target = self
         readyUp.state = ui.readyOnTop ? .on : .off
         deskMenu.addItem(readyUp)
+        let compact = NSMenuItem(title: "Compact Desk List", action: #selector(toggleCompactRail), keyEquivalent: "")
+        compact.target = self
+        compact.state = ui.compactRail ? .on : .off
+        deskMenu.addItem(compact)
         let sortAZ = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortDesks), keyEquivalent: "")
         sortAZ.target = self
         deskMenu.addItem(sortAZ)
@@ -1433,6 +1436,24 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.liveOn = ui.liveRail
         applyLiveOrder(force: true)
         installMenu()
+    }
+
+    /// One line per desk, or two. The rail rebuilds and the split follows.
+    @objc func toggleCompactRail() {
+        ui.compactRail.toggle()
+        ui.save()
+        DeskRow.compact = ui.compactRail
+        refreshRail()
+        fitRail()
+        installMenu()
+    }
+
+    /// The desks get up to 70% of the left column, as much as they need;
+    /// the file tree has the rest. Desks are what you came for.
+    func fitRail() {
+        let h = rail.bounds.height
+        let want = ui.treeOnTop ? h * 0.5 : min(sidebar.contentHeight + 8, h * 0.7)
+        rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
     }
 
     /// "Move Ready Desks to Top". The rail does the moving itself, at calm
@@ -2347,9 +2368,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     @objc func toggleTreePosition() {
         ui.treeOnTop.toggle(); ui.save()
         applyRailOrder()
-        let h = window.contentView?.bounds.height ?? 800
-        let want = ui.treeOnTop ? h * 0.5 : min(sidebar.contentHeight, h * 0.45)
-        rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
+        fitRail()
     }
 
     func toggleGroup(_ g: String) {

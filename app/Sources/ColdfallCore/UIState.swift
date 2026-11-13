@@ -43,6 +43,8 @@ public struct UIState: Codable {
     public var notifyDesks: Bool = true
     /// The inbox page over Tailscale (see Inbox). Off until turned on.
     public var inboxOn: Bool = false
+    /// One line per desk in the rail (View, Compact Desk List).
+    public var compactRail: Bool = true
 
     public init() {}
 
@@ -76,6 +78,7 @@ public struct UIState: Codable {
         runningDesks = try c.decodeIfPresent([String].self, forKey: .runningDesks) ?? []
         notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
         inboxOn = try c.decodeIfPresent(Bool.self, forKey: .inboxOn) ?? false
+        compactRail = try c.decodeIfPresent(Bool.self, forKey: .compactRail) ?? true
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

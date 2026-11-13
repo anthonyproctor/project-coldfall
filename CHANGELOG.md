@@ -8,6 +8,19 @@ opens this file.
 
 ## [Unreleased]
 
+### Changed
+- **A compact desk list.** One line per desk (its state, name and how long ago), so a long
+  list fits without scrolling; the rest (vendor, state, memory, budget, what's new) is in the
+  row's tooltip, and a budget warning or news tints the time. **Desks ▸ Compact Desk List**
+  goes back to two lines.
+- **One set of words for a desk's state:** needs you (orange: a question for you), done
+  (green: finished), working, idle. A finished desk said "answered" in the list and "done"
+  everywhere else; now it's "done" throughout. The line at the top of the list tells the two
+  apart: "api needs you · 3 done".
+- A folded group shows orange when a desk inside needs you, green when one is done.
+- The desk list takes as much of the left column as it needs, up to 70%, ahead of the file
+  tree (it stopped at 45%).
+
 ### Fixed
 From an audit of 0.3.32 (two independent reviews of the code).
 - **A send could reach a bare shell.** After a desk's agent exited or crashed, `coldfall-cli

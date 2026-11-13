@@ -50,7 +50,7 @@ final class DeskRow: NSView {
     /// A small pin at the right of the second line, for a pinned desk.
     var showsPin = false {
         didSet {
-            pinIcon.isHidden = !showsPin
+            pinIcon.isHidden = !showsPin || DeskRow.compact
             subTrailing?.constant = showsPin ? -26 : -10
         }
     }
@@ -96,7 +96,10 @@ final class DeskRow: NSView {
 
     private var hovering = false { didSet { needsDisplay = true } }
 
-    static let height: CGFloat = 46
+    /// One line per desk (dot, name, time), with the rest in the tooltip,
+    /// so a long list fits without scrolling. View, Compact Desk List.
+    static var compact = true
+    static var height: CGFloat { compact ? 30 : 46 }
 
     /// Working is a still dot in the accent colour, not a spinner. A rail of
     /// turning spinners is the busiest thing on screen, and it pulls the eye
@@ -185,8 +188,7 @@ final class DeskRow: NSView {
             (g, gColor, state) = ("\u{25C9}", .systemOrange, "needs you")       // ◉
         case .ready:
             // An agent "answered"; a shell just finished what it was running.
-            (g, gColor, state) = ("\u{2713}", .systemGreen,
-                                  runtime == "shell" ? "done" : "answered")      // ✓
+            (g, gColor, state) = ("\u{2713}", .systemGreen, "done")            // ✓
         case .working:
             (g, gColor, state) = ("\u{25CF}", ui.accent, "working")           // ●
         case .quiet:
@@ -231,7 +233,18 @@ final class DeskRow: NSView {
         case .near:  sub.textColor = .systemOrange
         default:     sub.textColor = status.news > 0 ? ui.accent : ui.dimText
         }
-        var tips: [String] = []
+        // Compact: one line. What the second line said goes in the tooltip,
+        // and a budget warning or news tints the time so it isn't lost.
+        sub.isHidden = DeskRow.compact
+        if DeskRow.compact {
+            pinIcon.isHidden = true
+            switch budget {
+            case .over: time.textColor = .systemRed
+            case .near: time.textColor = .systemOrange
+            default: if status.news > 0 { time.textColor = ui.accent }
+            }
+        }
+        var tips: [String] = DeskRow.compact ? [deskName + ": " + sub.stringValue + (showsPin ? " · pinned" : "")] : []
         if let b = DeskBudget.label(budget) { tips.append("\(deskName): \(b)") }
         if status.news > 0 {
             tips.append("\(status.news) new on this desk: servers, hooks, skills or plugins added since you last looked. "

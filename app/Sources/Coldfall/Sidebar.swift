@@ -197,7 +197,8 @@ final class SidebarView: NSView {
         }
         if !zones.pinned.isEmpty { y += 8 }
 
-        if let text = NeedsYou.summary(waiting), let first = waiting.first {
+        let asking = Set(waiting.filter { status[$0]?.activity == .blocked })
+        if let text = NeedsYou.summary(waiting, blocked: asking), let first = waiting.first {
             let strip = NeedsYouStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 26))
             strip.autoresizingMask = [.width]
             strip.configure(text, urgent: status[first]?.activity == .blocked)
@@ -234,8 +235,9 @@ final class SidebarView: NSView {
                 let h = GroupHeader(frame: NSRect(x: 10, y: y, width: w - 20, height: 20))
                 h.autoresizingMask = [.width]
                 // Folded, a group would hide a waiting desk entirely.
-                let inside = isDown ? 0 : members.filter { waiting.contains($0.element.name) }.count
-                h.configure(title: g, expanded: isDown, waiting: inside)
+                let inside = isDown ? [] : members.filter { waiting.contains($0.element.name) }.map(\.element.name)
+                h.configure(title: g, expanded: isDown, waiting: inside.count,
+                            asking: inside.contains { status[$0]?.activity == .blocked })
                 h.onClick = { [weak self] in self?.onToggleGroup?(g) }
                 h.onRename = { [weak self] in self?.onRenameGroup?(g) }
                 h.onSort = { [weak self] in self?.onSortDesks?() }
@@ -503,13 +505,16 @@ final class GroupHeader: NSView {
     required init?(coder: NSCoder) { fatalError() }
     convenience init() { self.init(frame: .zero) }
 
-    func configure(title: String, expanded: Bool, waiting: Int = 0) {
+    /// Folded, the header carries what its desks would show: orange if one
+    /// is asking you something, green if one has finished.
+    func configure(title: String, expanded: Bool, waiting: Int = 0, asking: Bool = false) {
         let s = NSMutableAttributedString(string: (expanded ? "▾ " : "▸ ") + title, attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: Theme.ui.dimText,
         ])
         if waiting > 0 {
-            s.append(NSAttributedString(string: "  ● \(waiting)", attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.systemGreen,
+            s.append(NSAttributedString(string: (asking ? "  ◉ " : "  ● ") + "\(waiting)", attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: asking ? NSColor.systemOrange : NSColor.systemGreen,
             ]))
         }
         label.attributedStringValue = s

@@ -970,10 +970,13 @@ do {
     eq("cmd-0 goes to the oldest", NeedsYou.next(in: q, current: "golf"), "career")
     eq("and never to the desk already on screen", NeedsYou.next(in: q, current: "career"), "hub")
     eq("nothing waiting, nowhere to go", NeedsYou.next(in: [], current: nil), nil)
-    eq("one desk reads as a sentence", NeedsYou.summary(["career"]), "career needs you")
-    eq("several are counted and named", NeedsYou.summary(q), "3 need you: career, hub, study")
-    eq("a long queue is cut short", NeedsYou.summary(q + ["work"]), "4 need you: career, hub, study, …")
+    eq("one finished desk reads as a sentence", NeedsYou.summary(["career"]), "career is done")
+    eq("several are counted and named", NeedsYou.summary(q), "3 done: career, hub, study")
+    eq("a long queue is cut short", NeedsYou.summary(q + ["work"]), "4 done: career, hub, study, …")
     eq("an empty queue says nothing", NeedsYou.summary([]), nil)
+    eq("a question is 'needs you'", NeedsYou.summary(["api"], blocked: ["api"]), "api needs you")
+    eq("questions and answers are told apart", NeedsYou.summary(["api", "golf", "hub"], blocked: ["api"]), "api needs you · 2 done")
+    eq("several questions are named", NeedsYou.summary(["a", "b", "c"], blocked: ["a", "b", "c"]), "3 need you: a, b, c")
 }
 
 // MARK: - the daily update check

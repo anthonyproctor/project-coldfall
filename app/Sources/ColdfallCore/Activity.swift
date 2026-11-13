@@ -383,13 +383,23 @@ public enum NeedsYou {
         queue.first { $0 != current }
     }
 
-    /// The line at the top of the rail: "career needs you", "3 need you:
-    /// career, hub, money". Nil when nothing is waiting.
-    public static func summary(_ queue: [String], limit: Int = 3) -> String? {
+    /// The line at the top of the rail, in the rail's own words: a desk
+    /// stopped on a question "needs you", a finished one is "done".
+    /// "api needs you", "2 done: golf, hub", "api needs you · 2 done".
+    /// `blocked` says which of the queue are questions. Nil when nothing waits.
+    public static func summary(_ queue: [String], blocked: Set<String> = [], limit: Int = 3) -> String? {
         guard !queue.isEmpty else { return nil }
-        if queue.count == 1 { return "\(queue[0]) needs you" }
-        let shown = queue.prefix(limit).joined(separator: ", ")
-        return "\(queue.count) need you: \(shown)" + (queue.count > limit ? ", …" : "")
+        let asks = queue.filter { blocked.contains($0) }, done = queue.filter { !blocked.contains($0) }
+        func named(_ xs: [String]) -> String { xs.prefix(limit).joined(separator: ", ") + (xs.count > limit ? ", …" : "") }
+        func needs(_ withNames: Bool) -> String {
+            asks.count == 1 ? "\(asks[0]) needs you" : "\(asks.count) need you" + (withNames ? ": " + named(asks) : "")
+        }
+        func dones(_ withNames: Bool) -> String {
+            done.count == 1 && withNames ? "\(done[0]) is done" : "\(done.count) done" + (withNames ? ": " + named(done) : "")
+        }
+        if done.isEmpty { return needs(true) }
+        if asks.isEmpty { return dones(true) }
+        return needs(asks.count <= 2) + " · " + dones(false)
     }
 }
 
