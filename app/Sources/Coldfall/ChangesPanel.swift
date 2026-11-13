@@ -22,6 +22,13 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
     private let clear = NSButton(title: "Clear", target: nil, action: nil)
     private let note = NSTextField(labelWithString: "")
     private let refreshBtn = NSButton()
+    /// Last turn, or everything since the last commit.
+    private let scope = NSSegmentedControl(labels: ["Last turn", "Uncommitted"], trackingMode: .selectOne, target: nil, action: nil)
+    /// The folder as it was when the current turn started (see Changes.snapshot).
+    private var turnBase: String?
+    /// The folder now, for the same comparison.
+    private var turnNow: String?
+    private var lastTurn: Bool { scope.selectedSegment == 0 && turnBase != nil }
 
     private var desk = ""
     private var folder = ""
@@ -112,7 +119,10 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
         note.textColor = ui.dimText
         note.lineBreakMode = .byTruncatingTail
 
-        let head = NSStackView(views: [heading, sub, NSView(), refreshBtn])
+        scope.target = self; scope.action = #selector(scopeChanged)
+        scope.controlSize = .small
+        scope.selectedSegment = 1
+        let head = NSStackView(views: [heading, sub, NSView(), scope, refreshBtn])
         head.orientation = .horizontal
         head.alignment = .firstBaseline
         head.spacing = 10
@@ -155,11 +165,17 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
         updateFoot()
     }
 
-    func open(over window: NSWindow, desk: String, folder: String) {
+    func open(over window: NSWindow, desk: String, folder: String, turnBase: String? = nil) {
         // Comments belong to the desk they were written for.
         if desk != self.desk { comments = [] }
         self.desk = desk
         self.folder = folder
+        self.turnBase = turnBase
+        // What the agent just did is the first thing to look at, when known.
+        scope.setEnabled(turnBase != nil, forSegment: 0)
+        scope.selectedSegment = turnBase != nil ? 0 : 1
+        scope.toolTip = turnBase != nil ? "What changed since your last prompt, or everything since the last commit."
+            : "Last turn shows once you've sent this desk a prompt in this run of Coldfall."
         heading.stringValue = "Changes  ·  \(desk)"
         sub.stringValue = (folder as NSString).abbreviatingWithTildeInPath
         let f = window.frame
@@ -194,14 +210,25 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
 
     // MARK: - reading
 
+    @objc private func scopeChanged() { current = nil; reload() }
+
     @objc private func reload() {
         generation += 1
         let gen = generation, folder = self.folder, keep = current?.path
+        let base = lastTurn ? turnBase : nil
         note.stringValue = "Reading…"
         DispatchQueue.global(qos: .userInitiated).async {
-            let list = Changes.files(in: folder)
+            var now: String?
+            var list: [Changes.File]?
+            if let base {
+                now = Changes.snapshot(in: folder)
+                list = now.flatMap { Changes.files(from: base, to: $0, in: folder) }
+            } else {
+                list = Changes.files(in: folder)
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self, gen == self.generation else { return }
+                self.turnNow = now
                 guard let list else {
                     self.files = []; self.current = nil
                     self.renderFiles()
@@ -212,7 +239,7 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
                 self.files = list
                 self.renderFiles()
                 if let f = list.first(where: { $0.path == keep }) ?? list.first { self.pick(f) }
-                else { self.current = nil; self.render([Changes.Line(.meta, "No changes since the last commit.")]) }
+                else { self.current = nil; self.render([Changes.Line(.meta, self.lastTurn ? "Nothing changed since your last prompt." : "No changes since the last commit.")]) }
                 self.updateFoot()
             }
         }
@@ -223,8 +250,9 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
         renderFiles()
         generation += 1
         let gen = generation, folder = self.folder
+        let pair = lastTurn ? turnBase.flatMap { b in turnNow.map { (b, $0) } } : nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let l = Changes.diff(f, in: folder)
+            let l = pair.map { Changes.diff(f, from: $0.0, to: $0.1, in: folder) } ?? Changes.diff(f, in: folder)
             DispatchQueue.main.async { [weak self] in
                 guard let self, gen == self.generation else { return }
                 self.render(l)

@@ -677,8 +677,13 @@ final class DeskSession {
         activityState.noteInput()
         // A shell split beside the agent isn't asking the agent anything.
         guard term === agentTerm else { return }
+        // A prompt sent to an agent that wasn't mid-question starts a turn.
+        // (Enter on a permission prompt is an answer, part of the same turn.)
+        let startsTurn = ActivityState.isSubmit(bytes) && !activityState.needsYou
+            && (activityState.draftOpen || bytes.count > 1)      // typed then Enter, or sent whole
         activityState.noteTyping(bytes)
         if ActivityState.isSubmit(bytes) { activityState.noteAsked() }
+        if startsTurn { onTurnStart?() }
     }
 
     /// Whether the agent is really there: started, its pane not closed, and
@@ -740,6 +745,11 @@ final class DeskSession {
         // Why it is waiting, kept only while it waits.
         reason = event == .notify ? DeskDetail.reason(message: message, kind: kind) : nil
     }
+    /// You sent the agent a prompt: the moment to remember the folder as
+    /// it was, for "what did this turn change".
+    var onTurnStart: (() -> Void)?
+    /// The folder at the start of the current turn, as a git tree.
+    var turnBase: String?
     /// The agent's own words for why it stopped (hook or OSC 7501).
     private(set) var reason: String?
     /// What the agent's terminal title says it is doing, cleaned up.

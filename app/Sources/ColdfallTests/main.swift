@@ -1476,6 +1476,24 @@ do {
             let dl = Changes.diff(m, in: repo)
             check("git: the change is in the diff", dl.contains(Changes.Line(.added, "TWO", 2)) && dl.contains(Changes.Line(.removed, "two")))
         }
+        eq("turn: name-status reads changes and a rename",
+           Changes.parseNameStatus("M\0a.txt\0A\0b.txt\0R100\0old.txt\0new.txt\0D\0gone.txt\0").map { $0.status + $0.path },
+           ["Ma.txt", "Ab.txt", "Rnew.txt", "Dgone.txt"])
+        let before = Changes.snapshot(in: repo)
+        check("turn: a snapshot is a tree", (before?.count ?? 0) >= 40)
+        eq("turn: taking it leaves the real index alone", Set((Changes.files(in: repo) ?? []).map { $0.status + $0.path }), ["Mf.txt", "?n.txt"])
+        try? "one\nTWO\nthree\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+        try? "made this turn\n".write(toFile: repo + "/turn.txt", atomically: true, encoding: .utf8)
+        let after = Changes.snapshot(in: repo)
+        if let a = before, let b = after {
+            let tf = Changes.files(from: a, to: b, in: repo) ?? []
+            eq("turn: only what changed since the snapshot, new files included", Set(tf.map { $0.status + $0.path }), ["Mf.txt", "Aturn.txt"])
+            if let m = tf.first(where: { $0.path == "f.txt" }) {
+                check("turn: and only that turn's lines", Changes.diff(m, from: a, to: b, in: repo).filter { $0.kind == .added }.map(\.text) == ["three"])
+            }
+            eq("turn: nothing changed, nothing listed", Changes.files(from: b, to: b, in: repo)?.count, 0)
+        } else { check("turn: snapshots were taken", false) }
+        eq("turn: not a repository, no snapshot", Changes.snapshot(in: FileManager.default.temporaryDirectory.path + "/coldfall-none-\(UUID().uuidString)"), nil)
         eq("git: not a repository, no list", Changes.files(in: FileManager.default.temporaryDirectory.path + "/coldfall-none-\(UUID().uuidString)") == nil, true)
         try? FileManager.default.removeItem(atPath: repo)
     }

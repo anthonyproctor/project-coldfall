@@ -9,6 +9,11 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Changes shows the last turn.** Beside *Uncommitted*, **Last turn** lists only what the
+  agent changed since your last prompt, new files included. For a desk that has run for
+  weeks, "what did it just do" is the question. Coldfall remembers the folder when you send
+  a prompt, using a throwaway copy of git's index: your index, branch and files are not
+  touched.
 - **Not This One Yet** (⌃⌘U): the desk on screen goes to the back of the waiting queue,
   still marked, and you go to the next. Work through the finished desks without losing
   the ones you can't answer yet.

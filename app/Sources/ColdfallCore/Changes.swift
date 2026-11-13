@@ -114,13 +114,15 @@ public enum Changes {
 
     /// Run git, read-only, in a folder. Nil when it isn't a repository,
     /// git isn't there, or it took too long.
-    public static func git(_ arguments: [String], in folder: String, timeout: TimeInterval = 8) -> String? {
+    public static func git(_ arguments: [String], in folder: String, timeout: TimeInterval = 8,
+                           extraEnv: [String: String] = [:]) -> String? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         p.arguments = ["-C", folder] + arguments
         var env = ProcessInfo.processInfo.environment
         env["GIT_OPTIONAL_LOCKS"] = "0"
         env["GIT_TERMINAL_PROMPT"] = "0"
+        for (k, v) in extraEnv { env[k] = v }
         p.environment = env
         let out = Pipe(), err = Pipe()
         p.standardOutput = out; p.standardError = err
@@ -129,6 +131,60 @@ public enum Changes {
         let r = Subprocess.drain(p, out: out, err: err, timeout: timeout)
         guard !r.timedOut, p.terminationStatus == 0 || p.terminationStatus == 1 else { return nil }
         return String(decoding: r.out, as: UTF8.self)
+    }
+
+    // MARK: - a turn's changes
+
+    /// The folder as it is right now, as a git tree: every file, tracked or
+    /// not (ignored ones aside). Taken with a throwaway copy of the index,
+    /// so the real index, HEAD and the working files are never touched; the
+    /// only thing written is unreferenced objects, which git clears itself.
+    ///
+    /// Two of these, one when you send a prompt and one now, are what
+    /// "what did this turn change" is the difference between.
+    public static func snapshot(in folder: String) -> String? {
+        guard let real = git(["rev-parse", "--git-path", "index"], in: folder)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !real.isEmpty else { return nil }
+        let realPath = real.hasPrefix("/") ? real : (folder as NSString).appendingPathComponent(real)
+        let tmp = (NSTemporaryDirectory() as NSString).appendingPathComponent("coldfall-index-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(atPath: tmp); try? FileManager.default.removeItem(atPath: tmp + ".lock") }
+        // Starting from the real index lets git skip files it already knows.
+        try? FileManager.default.copyItem(atPath: realPath, toPath: tmp)
+        let env = ["GIT_INDEX_FILE": tmp]
+        guard git(["add", "-A"], in: folder, timeout: 30, extraEnv: env) != nil,
+              let tree = git(["write-tree"], in: folder, timeout: 15, extraEnv: env)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              tree.count >= 40 else { return nil }
+        return tree
+    }
+
+    /// `git diff --name-status -z`: "M", NUL, path, NUL; a rename is
+    /// "R100", NUL, old, NUL, new, NUL.
+    public static func parseNameStatus(_ z: String) -> [File] {
+        var out: [File] = []
+        var parts = z.split(separator: "\0", omittingEmptySubsequences: true).makeIterator()
+        while let code = parts.next() {
+            guard let c = code.first, let path = parts.next() else { break }
+            if c == "R" || c == "C" {
+                guard let to = parts.next() else { break }
+                out.append(File(path: String(to), status: c == "R" ? "R" : "A"))
+            } else {
+                out.append(File(path: String(path), status: c == "A" ? "A" : (c == "D" ? "D" : "M")))
+            }
+        }
+        return out
+    }
+
+    /// What changed between two snapshots.
+    public static func files(from a: String, to b: String, in folder: String) -> [File]? {
+        git(["diff", "--name-status", "-z", a, b], in: folder).map(parseNameStatus)
+    }
+
+    public static func diff(_ file: File, from a: String, to b: String, in folder: String) -> [Line] {
+        guard let text = git(["diff", "--no-color", "--no-ext-diff", a, b, "--", file.path], in: folder) else {
+            return [Line(.meta, "Couldn't read this file's changes.")]
+        }
+        let lines = parseDiff(text)
+        return lines.isEmpty ? [Line(.meta, "No text changes (binary, or only its mode changed).")] : lines
     }
 
     public static func files(in folder: String) -> [File]? {

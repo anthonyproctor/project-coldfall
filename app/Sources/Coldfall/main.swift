@@ -2489,6 +2489,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             var waiting = 0
             let front = NSApp.isActive
             for (name, s) in self.sessions where self.desks.contains(where: { $0.name == name }) {
+                if s.onTurnStart == nil { s.onTurnStart = { [weak self, weak s] in if let s { self?.snapshotTurn(s) } } }
                 s.dropRepaint()
                 let a = s.activity
                 if self.ui.notifyDesks, !CommandLine.arguments.contains("--snapshot") {
@@ -2605,12 +2606,28 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         beside?.setPair(two, key: keyIsBeside, beside: true)
     }
 
+    /// Remember a desk's folder as it is now, at the start of a turn. Off
+    /// the main thread: on a big repository it takes a moment.
+    func snapshotTurn(_ s: DeskSession) {
+        guard s.desk.runtime != "shell", !snapshotting.contains(s.desk.name) else { return }
+        let name = s.desk.name, folder = s.desk.resolvedCwd
+        snapshotting.insert(name)
+        DispatchQueue.global(qos: .utility).async {
+            let tree = Changes.snapshot(in: folder)
+            DispatchQueue.main.async { [weak self, weak s] in
+                self?.snapshotting.remove(name)
+                if let tree { s?.turnBase = tree }
+            }
+        }
+    }
+    var snapshotting: Set<String> = []
+
     /// Changes: what the desk on screen changed in its folder, to read and
     /// comment on.
     @objc func openChanges() {
         if changes.isOpen { changes.close(); return }
         guard let name = waitingName ?? visible?.desk.name, let d = desks.first(where: { $0.name == name }) else { NSSound.beep(); return }
-        changes.open(over: window, desk: d.name, folder: d.resolvedCwd)
+        changes.open(over: window, desk: d.name, folder: d.resolvedCwd, turnBase: sessions[d.name]?.turnBase)
     }
 
     /// Needs You: the desks stopped on a question, to answer from one place.
