@@ -255,7 +255,12 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + "and only with the link below. Works for every desk, Codex ones too. Anyone with the link can type "
             + "into your desks: keep it to yourself, and use New Link if it gets out."))
         if inboxOn {
-            if let ip = Inbox.tailscaleAddresses().first, let t = Inbox.token() {
+            if !Holder.portAnswers(Inbox.defaultPort) {
+                let l = note("Coldfall couldn't open port \(Inbox.defaultPort) for the inbox, so the link wouldn't work. "
+                    + "Another app may be using it; quit that, or turn the inbox off and on again.")
+                l.textColor = .systemOrange
+                updLines.append(l)
+            } else if let ip = Inbox.tailscaleAddresses().first, let t = Inbox.token() {
                 let link = "http://\(ip):\(Inbox.defaultPort)/?t=\(t)"
                 inboxLink = link
                 let field = NSTextField(labelWithString: link)
@@ -563,7 +568,11 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
     /// again on this tab. Not with unsaved desk edits, which that would drop.
     private func rebuildForInbox() {
         guard !dirty else { return }
-        NotificationCenter.default.post(name: .coldfallReopenSettings, object: "General")
+        // A moment for the listener to open its port, so the check above
+        // sees it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NotificationCenter.default.post(name: .coldfallReopenSettings, object: "General")
+        }
     }
 
     @objc private func toggleInbox(_ sender: NSButton) {

@@ -283,7 +283,11 @@ public enum RemoteOpen {
     /// Answer a request and take it off the queue.
     public static func answer(_ r: Request, _ a: Answer) {
         let p = (requests as NSString).appendingPathComponent(r.id + ".answer")
-        if let data = try? JSONEncoder().encode(a) { try? data.write(to: URL(fileURLWithPath: p), options: .atomic) }
+        // An answer can hold a desk's screen: this account only.
+        if let data = try? JSONEncoder().encode(a) {
+            try? data.write(to: URL(fileURLWithPath: p), options: .atomic)
+            chmod(p, 0o600)
+        }
         try? FileManager.default.removeItem(atPath: (requests as NSString).appendingPathComponent(r.id + ".json"))
     }
 
@@ -306,7 +310,9 @@ public enum RemoteOpen {
     }
 
     public static func submit(_ r: Request) throws {
-        try FileManager.default.createDirectory(atPath: requests, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: requests, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        chmod(root, 0o700); chmod(requests, 0o700)
         let data = try JSONEncoder().encode(r)
         // Written under another name and moved in, so the app never reads half a file.
         let tmp = (requests as NSString).appendingPathComponent(r.id + ".tmp")

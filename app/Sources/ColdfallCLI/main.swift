@@ -274,9 +274,11 @@ case "ask":
     let text = words.joined(separator: " ")
     guard let before = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)) else { exit(1) }
     guard before.outcome == .read else { print(before.message); exit(1) }
-    let since = Date().timeIntervalSince1970
     guard let sent = remote(RemoteOpen.Request(desk: name, action: "send", text: text), timeout: ActivityState.draftHold + 15) else { exit(1) }
     guard sent.outcome == .sent else { print(sent.message); exit(1) }
+    // From when it actually went in: a send can wait a minute on a message
+    // being typed there, and that message's answer isn't this one's.
+    let since = Date().timeIntervalSince1970 - 1
     // Give the agent a moment to start before watching for the end.
     Thread.sleep(forTimeInterval: 2)
     let w = waitFor(name, since: since, timeout: timeout)

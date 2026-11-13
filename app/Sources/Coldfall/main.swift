@@ -1159,8 +1159,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         guard let i = deskIndex(old) else { return }
         desks[i] = desks[i].renamed(from: old, to: new)
-        if let s = sessions.removeValue(forKey: old) { s.desk.name = new; sessions[new] = s; s.followRename(to: new) }
-        Holder.rename(from: old, to: new)
+        if let s = sessions.removeValue(forKey: old) {
+            s.desk.name = new; sessions[new] = s
+            if Holder.rename(from: old, to: new) { s.followRename(to: new) }
+        } else { Holder.rename(from: old, to: new) }
         persist()
         sidebar.build(desks: desks)
         installMenu()
@@ -1230,11 +1232,21 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             a.informativeText = "Only a shell pane is left, so there is nothing to wrap up. Stop the desk and start it again."
             a.runModal(); return
         }
+        // The same rules as a send: never into a question (Enter would answer
+        // it), never over a message you're writing, never into a bare shell.
+        let t = s.remoteTarget()
+        if !t.agent || t.blocked || t.draft {
+            let a = NSAlert()
+            a.messageText = t.blocked ? "\(d.name) is waiting on a question" : (t.draft ? "You're writing in \(d.name)" : "\(d.name)'s agent isn't running")
+            a.informativeText = t.blocked ? "Answer it first, then Wrap Up & Stop." :
+                (t.draft ? "Send or clear what you're typing first, then Wrap Up & Stop." : "Only a shell is left, so there's nothing to wrap up. Stop the desk instead.")
+            a.runModal(); return
+        }
         if let i = desks.firstIndex(where: { $0.name == d.name }) { show(i) }
         let sent = Date()
         s.agentTerm.send(txt: Reopen.wrapUpPrompt + "\r")
         var ticks = 0
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+        Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             ticks += 1
             // Gone: stopped some other way in the meantime.
@@ -1480,10 +1492,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func serveReadSend(_ r: RemoteOpen.Request) {
         let names = desks.map(\.name), hidden = Set(desks.filter(\.hidden).map(\.name))
         let s = sessions[r.desk]
-        let target = s.map { s in
-            RemoteOpen.Target(running: s.started, agent: !s.agentGone && s.desk.runtime != "shell",
-                              blocked: s.isBlocked, draft: s.holdsDraft)
-        }
+        let target = s?.remoteTarget()
         if r.action == "read" {
             if let no = RemoteOpen.refuseRead(r.desk, names: names, hidden: hidden, target: target) { RemoteOpen.answer(r, no); return }
             var a = RemoteOpen.Answer(.read, "")
@@ -1536,7 +1545,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     func watchLiveRail() {
         applyLiveOrder(force: true)
-        liveTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.applyLiveOrder() }
+        liveTimer = Timer.inEveryMode(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.applyLiveOrder() }
     }
 
     /// Reorder groups by activity, at a calm moment: not while the pointer
@@ -1576,7 +1585,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         checkOffers()
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
                                                queue: .main) { [weak self] _ in self?.checkOffers() }
-        offerTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.checkOffers() }
+        offerTimer = Timer.inEveryMode(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.checkOffers() }
     }
 
     /// Ask each installed agent its version, once per launch, and say which
@@ -1985,8 +1994,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 let r = fresh[i].renamed(from: from, to: to)
                 if r.conversation != fresh[i].conversation { fresh[i] = r; pinned = true }
             }
-            if let s = sessions.removeValue(forKey: from) { sessions[to] = s; s.followRename(to: to) }
-            Holder.rename(from: from, to: to)
+            if let s = sessions.removeValue(forKey: from) {
+                sessions[to] = s
+                if Holder.rename(from: from, to: to) { s.followRename(to: to) }
+            } else { Holder.rename(from: from, to: to) }
             if let v = inventoryNews.removeValue(forKey: from) { inventoryNews[to] = v }
             if let v = lastVisited.removeValue(forKey: from) { lastVisited[to] = v }
             if let v = memory.removeValue(forKey: from) { memory[to] = v }
@@ -2088,11 +2099,24 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         show(i)
         window.makeKeyAndOrderFront(nil)
-        // Let the CLI finish starting before typing at it.
-        let delay = sessions[desks[i].name]?.started == true ? 0.3 : 3.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.visible?.agentTerm.send(txt: command + "\n")
+        // The desk it was meant for, held now: switching desks in the next
+        // few seconds must not move the command to another one.
+        guard let target = sessions[desks[i].name] else { return }
+        let name = desks[i].name
+        // Let the CLI finish starting before typing at it, and only type
+        // once it's really there: into a bare shell it would run as a command.
+        func attempt(_ left: Int) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (left == 8 ? 0.3 : 1.0)) { [weak self] in
+                guard let self, self.sessions[name] === target else { return }
+                if target.agentAlive() { target.agentTerm.send(txt: command + "\n"); return }
+                if left > 0 { attempt(left - 1); return }
+                let a = NSAlert()
+                a.messageText = "\(name)'s agent didn't come up"
+                a.informativeText = "Nothing was typed. Start the desk, then try again."
+                a.runModal()
+            }
         }
+        attempt(8)
     }
 
     /// Last stop on the responder chain for cmd-z. A text view being edited
@@ -2139,12 +2163,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     let doneSignals: DoneSignal.Reader = { DoneSignal.trim(); return DoneSignal.Reader() }()
 
     func watchDeskActivity() {
-        activityTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
+        activityTimer = Timer.inEveryMode(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             guard let self else { return }
             let said = self.doneSignals.read()
             if !said.isEmpty {
                 for sig in said {
-                    for (name, s) in self.sessions where DoneSignal.fileName(name) == sig.desk { s.noteSignal(sig.event) }
+                    // By the name the desk started under: a rename doesn't
+                    // reach the agent's environment until it restarts.
+                    for (name, s) in self.sessions where DoneSignal.fileName(s.launchName ?? name) == sig.desk { s.noteSignal(sig.event) }
                 }
             }
             var map: [String: DeskStatus] = [:]
@@ -2186,7 +2212,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var memory: [String: String] = [:]
     var memoryTimer: Timer?
     func watchDeskMemory() {
-        memoryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        memoryTimer = Timer.inEveryMode(withTimeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
             // Tailscale can come up after Coldfall, or change address.
             self.applyInbox()

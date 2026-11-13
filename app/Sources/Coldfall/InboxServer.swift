@@ -36,6 +36,13 @@ final class InboxServer {
             p.allowLocalEndpointReuse = true
             guard let l = try? NWListener(using: p) else { continue }
             l.newConnectionHandler = { [weak self] c in self?.serve(c, token: token, allowed: allowed) }
+            // A port someone else holds fails here, not at start: drop the
+            // listener so the next check (every few seconds) tries again.
+            l.stateUpdateHandler = { [weak self, weak l] state in
+                guard case .failed = state, let l else { return }
+                l.cancel()
+                DispatchQueue.main.async { self?.listeners.removeAll { $0 === l } }
+            }
             l.start(queue: queue)
             listeners.append(l)
         }

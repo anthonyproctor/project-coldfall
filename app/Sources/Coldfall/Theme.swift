@@ -274,3 +274,15 @@ enum Theme {
         v.layer?.backgroundColor = color.cgColor
     }
 }
+
+extension Timer {
+    /// A repeating or one-off timer that keeps firing while a menu is open
+    /// or an alert is up. The plain scheduled kind stops in those modes, and
+    /// with it the activity tick, status.json, and every remote request.
+    @discardableResult
+    static func inEveryMode(withTimeInterval i: TimeInterval, repeats: Bool, block: @escaping (Timer) -> Void) -> Timer {
+        let t = Timer(timeInterval: i, repeats: repeats, block: block)
+        RunLoop.main.add(t, forMode: .common)
+        return t
+    }
+}

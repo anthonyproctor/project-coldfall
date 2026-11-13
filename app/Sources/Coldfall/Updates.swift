@@ -26,7 +26,7 @@ final class Updates {
         var s = UpdateState.load()
         if !firstRun, !s.noticeShown { s.noticeShown = true; s.save() }
         // Hourly look at whether a day has passed; the check itself is daily.
-        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
+        timer = Timer.inEveryMode(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.checkIfDue() }
     }
 

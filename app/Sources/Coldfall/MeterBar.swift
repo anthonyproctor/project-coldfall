@@ -56,7 +56,7 @@ final class MeterBar: NSView {
         h.isActive = true
 
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+        timer = Timer.inEveryMode(withTimeInterval: 120, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }

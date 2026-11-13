@@ -83,8 +83,10 @@ public struct ActivityState {
     /// and a desk that turned green for each one was green all day with
     /// nothing to say to you. Needing you always counts, whoever started it.
     public mutating func noteSignal(_ event: DoneSignal.Event = .stop, at now: Date = Date()) {
-        // A reattach replays the screen, status reports and all: old news.
-        if let m = mutedUntil, now < m { return }
+        // A reattach replays the screen, status reports and all. The last
+        // one replayed is kept: it is the program's state as it stands, and
+        // applied once the replay is over (see endMute).
+        if let m = mutedUntil, now < m { pendingSignal = event; return }
         signaled = true
         switch event {
         case .notify:
@@ -114,10 +116,25 @@ public struct ActivityState {
     /// When you last typed a key (not a terminal report).
     public private(set) var keyAt: Date?
 
-    /// Bytes that are the terminal reporting, not you typing: focus in and
-    /// out, which every desk switch sends.
+    /// Bytes that are the terminal answering the program, not you typing:
+    /// focus in and out (every desk switch), cursor position, device
+    /// attributes and status, window size, colour queries (OSC) and DCS
+    /// replies. A program asks; the terminal answers on the same road as
+    /// keystrokes, and none of it is a person.
     public static func isReport(_ bytes: [UInt8]) -> Bool {
-        bytes == [27, 91, 73] || bytes == [27, 91, 79]          // ESC[I, ESC[O
+        guard bytes.count >= 3, bytes[0] == 27 else { return false }
+        switch bytes[1] {
+        case 93, 80: return true                                 // OSC ESC], DCS ESCP
+        case 91:                                                 // CSI ESC[
+            guard let final = bytes.last else { return false }
+            if bytes == [27, 91, 73] || bytes == [27, 91, 79] { return true }   // focus in/out
+            // Replies end in R (cursor), c (attributes), n (status), t
+            // (window), y (mode) or carry a ? or > parameter. Keys don't:
+            // arrows end A-D, function keys ~, kitty keys u.
+            if [82, 99, 110, 116, 121].contains(final) { return true }
+            return bytes.count > 3 && (bytes[2] == 63 || bytes[2] == 62) && final != 117
+        default: return false
+        }
     }
 
     /// You typed into the agent's pane. Enter sends what was there.
@@ -169,7 +186,22 @@ public struct ActivityState {
     /// Ignore output for a moment, then treat the desk as read.
     public mutating func mute(for seconds: TimeInterval, at now: Date = Date()) {
         mutedUntil = now.addingTimeInterval(seconds)
+        pendingSignal = nil
         unseen = false
+    }
+
+    /// The last status reported during a mute.
+    public private(set) var pendingSignal: DoneSignal.Event?
+
+    /// The replay is over: whatever the desk last said about itself stands.
+    /// `logged` is its last word in the done-hook log, for an agent that
+    /// reports that way (a question asked while Coldfall was closed).
+    public mutating func endMute(logged: DoneSignal.Event?, at now: Date = Date()) {
+        mutedUntil = nil
+        let last = pendingSignal ?? logged
+        pendingSignal = nil
+        if last == .notify { noteSignal(.notify, at: now) }
+        else if last == .stop { signaled = true }
     }
 
     public mutating func noteOutput(at now: Date = Date()) {
@@ -178,7 +210,10 @@ public struct ActivityState {
             mutedUntil = nil
         }
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
-        if needsYou, let q = needsYouAt, now.timeIntervalSince(q) >= ActivityState.answeredElsewhereAfter {
+        // Work well after the question, while you weren't looking: it was
+        // answered somewhere else (the phone). Not while you look: switching
+        // to a desk makes its screen redraw, and that's not an answer.
+        if needsYou, !visible, let q = needsYouAt, now.timeIntervalSince(q) >= ActivityState.answeredElsewhereAfter {
             needsYou = false
         }
         lastOutput = now

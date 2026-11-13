@@ -3051,6 +3051,57 @@ do {
     check("inbox: New Link makes a different one", Inbox.resetToken(path: tp) != t1)
 }
 
+// MARK: - audit fixes (11/12)
+
+do {
+    func bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
+    check("report: cursor position isn't typing", ActivityState.isReport(bytes("\u{1b}[12;40R")))
+    check("report: device attributes aren't", ActivityState.isReport(bytes("\u{1b}[?62;22c")))
+    check("report: a colour answer (OSC) isn't", ActivityState.isReport(bytes("\u{1b}]11;rgb:1e1e/1e1e/1e1e\u{1b}\\")))
+    check("report: focus in isn't", ActivityState.isReport([27, 91, 73]))
+    check("report: an arrow key is typing", !ActivityState.isReport(bytes("\u{1b}[A")))
+    check("report: a kitty Enter is typing", !ActivityState.isReport(bytes("\u{1b}[13u")))
+    check("report: a function key is typing", !ActivityState.isReport(bytes("\u{1b}[15~")))
+    var r = ActivityState()
+    r.noteSignal(.notify, at: Date(timeIntervalSince1970: 1))
+    r.noteTyping(bytes("\u{1b}[?62;22c"), at: Date(timeIntervalSince1970: 2))
+    check("report: the terminal answering doesn't answer a question", r.needsYou && !r.holdsDraft(at: Date(timeIntervalSince1970: 3)))
+
+    // A reattach: what the desk said while Coldfall was closed still stands.
+    var a = ActivityState()
+    a.setVisible(false, at: Date(timeIntervalSince1970: 0))
+    a.mute(for: 3, at: Date(timeIntervalSince1970: 10))
+    a.noteSignal(.stop, at: Date(timeIntervalSince1970: 10.5))
+    a.noteSignal(.notify, at: Date(timeIntervalSince1970: 11))
+    check("reattach: replayed reports wait", !a.needsYou)
+    a.endMute(logged: nil, at: Date(timeIntervalSince1970: 14))
+    check("reattach: the last one replayed stands once it's over", a.needsYou)
+    var b = ActivityState()
+    b.mute(for: 3, at: Date(timeIntervalSince1970: 10))
+    b.endMute(logged: .notify, at: Date(timeIntervalSince1970: 14))
+    check("reattach: a question only in the hook's log stands too", b.needsYou)
+    var c = ActivityState()
+    c.mute(for: 3, at: Date(timeIntervalSince1970: 10))
+    c.endMute(logged: .stop, at: Date(timeIntervalSince1970: 14))
+    check("reattach: a finished turn isn't a question", !c.needsYou)
+
+    // Looking at a desk doesn't answer its question.
+    var d = ActivityState()
+    d.setVisible(true, at: Date(timeIntervalSince1970: 0))
+    d.noteSignal(.notify, at: Date(timeIntervalSince1970: 1))
+    d.noteOutput(at: Date(timeIntervalSince1970: 20))
+    check("needs you: a redraw while you look isn't an answer", d.needsYou)
+    d.setVisible(false, at: Date(timeIntervalSince1970: 21))
+    d.noteOutput(at: Date(timeIntervalSince1970: 40))
+    check("needs you: work while you're away is (answered on the phone)", !d.needsYou)
+
+    // The hook's log: a desk's last word.
+    let log = testSandbox + "/signals-test.log"
+    try? "1000 notify hub\n1001 stop work\n1002 stop hub\n1003 notify hub\n".write(toFile: log, atomically: true, encoding: .utf8)
+    eq("signals: a desk's last word", DoneSignal.last(desk: "hub", since: Date(timeIntervalSince1970: 0), path: log)?.event, .notify)
+    eq("signals: only newer than asked", DoneSignal.last(desk: "work", since: Date(timeIntervalSince1970: 1001.5), path: log), nil)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

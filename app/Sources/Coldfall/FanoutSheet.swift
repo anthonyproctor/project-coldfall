@@ -341,7 +341,7 @@ final class FanoutSheet: NSWindowController {
         let now = Date()
         for d in dirs { state[d] = .running; startedAt[d] = now }
         for r in rows { r.check.isEnabled = false }
-        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        ticker = Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.redrawStatuses()
         }
         redrawStatuses()

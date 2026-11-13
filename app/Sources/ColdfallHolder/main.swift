@@ -13,8 +13,10 @@
 //       when the program does.
 //
 // See Holder in ColdfallCore for the why, the wire and the trust boundary.
-// Single threaded on purpose: forkpty in a process with other threads running
-// is asking for trouble, and a poll loop is all this needs.
+// Single threaded while it matters: the program is forked before anything
+// could start a thread, and the loop is a plain poll. Ending a desk reads the
+// process table with Foundation's Process, which may start threads; by then
+// nothing else is forked.
 
 import Foundation
 import ColdfallCore
@@ -60,7 +62,7 @@ func attach() -> Never {
     var fd = Holder.connect(sock)
     if fd == nil {
         Holder.ensureRoot()
-        Holder.clearFiles(socket: sock)
+        // The serve sorts out a leftover socket itself, and only its own.
         startHolder()
         for _ in 0..<100 {
             if let f = Holder.connect(sock) { fd = f; break }
@@ -83,6 +85,7 @@ func attach() -> Never {
     if isTTY { var raw = saved; cfmakeraw(&raw); tcsetattr(STDIN_FILENO, TCSANOW, &raw) }
     func finish(_ code: Int32, _ note: String? = nil) -> Never {
         if isTTY { var s = saved; tcsetattr(STDIN_FILENO, TCSANOW, &s) }
+        for f in [STDIN_FILENO, STDOUT_FILENO] { _ = fcntl(f, F_SETFL, fcntl(f, F_GETFL) & ~O_NONBLOCK) }
         if let note { FileHandle.standardError.write(note.data(using: .utf8)!) }
         exit(code)
     }
@@ -91,38 +94,69 @@ func attach() -> Never {
     signal(SIGWINCH) { _ in var b: UInt8 = 1; _ = write(winchPipe[1], &b, 1) }
     signal(SIGPIPE, SIG_IGN)
 
+    // Both ways queued and non-blocking, like the holder: Coldfall's terminal
+    // and the holder can each be busy without the other waiting on it, and
+    // a side that falls far behind is stopped being read until it catches up.
+    for f in [conn, STDOUT_FILENO, STDIN_FILENO] { _ = fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK) }
+    var toHolder: [UInt8] = [], toScreen: [UInt8] = []
+    let ceiling = 4 << 20
+    func flush(_ fd: Int32, _ q: inout [UInt8]) -> Bool {
+        while !q.isEmpty {
+            let n = q.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+            if n > 0 { q.removeFirst(n); continue }
+            if n < 0, errno == EAGAIN || errno == EINTR { return true }
+            return false
+        }
+        return true
+    }
+    /// Nil: the other end is gone. Empty: nothing right now.
+    func readNow(_ fd: Int32) -> [UInt8]? {
+        var buf = [UInt8](repeating: 0, count: 65536)
+        let n = read(fd, &buf, buf.count)
+        if n > 0 { return Array(buf[0..<n]) }
+        if n < 0, errno == EAGAIN || errno == EINTR { return [] }
+        return nil
+    }
+
     var dec = Holder.Decoder()
-    var fds = [pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0),
-               pollfd(fd: conn, events: Int16(POLLIN), revents: 0),
-               pollfd(fd: winchPipe[0], events: Int16(POLLIN), revents: 0)]
     while true {
-        for i in fds.indices { fds[i].revents = 0 }
+        var fds = [pollfd(fd: STDIN_FILENO, events: toHolder.count < ceiling ? Int16(POLLIN) : 0, revents: 0),
+                   pollfd(fd: conn, events: (toScreen.count < ceiling ? Int16(POLLIN) : 0) | (toHolder.isEmpty ? 0 : Int16(POLLOUT)), revents: 0),
+                   pollfd(fd: winchPipe[0], events: Int16(POLLIN), revents: 0),
+                   pollfd(fd: STDOUT_FILENO, events: toScreen.isEmpty ? 0 : Int16(POLLOUT), revents: 0)]
         if poll(&fds, nfds_t(fds.count), -1) < 0 { if errno == EINTR { continue }; finish(1) }
         if fds[2].revents & Int16(POLLIN) != 0 {
-            _ = readSome(winchPipe[0], max: 64)
+            _ = readNow(winchPipe[0])
             var w = winsize()
             if ioctl(STDIN_FILENO, TIOCGWINSZ, &w) == 0 {
-                writeAll(conn, Holder.Wire.encode(.resize, Holder.Wire.size(cols: w.ws_col, rows: w.ws_row)))
+                toHolder += Holder.Wire.encode(.resize, Holder.Wire.size(cols: w.ws_col, rows: w.ws_row))
             }
         }
         if fds[0].revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 {
             // Coldfall's terminal is gone: leave the holder running.
-            guard let b = readSome(STDIN_FILENO) else { finish(0) }
-            if !writeAll(conn, Holder.Wire.encode(.input, b)) {
-                finish(1, "\r\n[this desk's holder stopped]\r\n")
-            }
+            guard let b = readNow(STDIN_FILENO) else { finish(0) }
+            if !b.isEmpty { toHolder += Holder.Wire.encode(.input, b) }
         }
         if fds[1].revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 {
-            guard let b = readSome(conn) else { finish(1, "\r\n[this desk's holder stopped]\r\n") }
+            guard let b = readNow(conn) else {
+                _ = fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) & ~O_NONBLOCK)
+                writeAll(STDOUT_FILENO, toScreen)
+                finish(1, "\r\n[this desk's holder stopped]\r\n")
+            }
             for (kind, payload) in dec.push(b) {
                 switch kind {
-                case .output: writeAll(STDOUT_FILENO, payload)
-                case .exit: finish(Holder.Wire.readStatus(payload) ?? 0)
+                case .output: toScreen += payload
+                case .exit:
+                    _ = fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) & ~O_NONBLOCK)
+                    writeAll(STDOUT_FILENO, toScreen)
+                    finish(Holder.Wire.readStatus(payload) ?? 0)
                 default: break
                 }
             }
             if dec.broken { finish(1, "\r\n[this desk's holder spoke a version Coldfall can't read]\r\n") }
         }
+        if !flush(conn, &toHolder) { finish(1, "\r\n[this desk's holder stopped]\r\n") }
+        if !flush(STDOUT_FILENO, &toScreen) { finish(0) }
     }
 }
 
@@ -153,13 +187,44 @@ func serve() -> Never {
     signal(SIGHUP, SIG_IGN)
     signal(SIGPIPE, SIG_IGN)
     Holder.ensureRoot()
-    if Holder.isAlive(sock) { exit(0) }          // someone is already holding it
-    Holder.clearFiles(socket: sock)
-
     // A socket path macOS can't take would be cut short; refuse instead.
     guard Holder.fits(sock) else { exit(1) }
 
-    // The program first, before anything could start a thread.
+    // Claim the socket before starting anything. Two attaches at once (a
+    // click and a launch-time reopen) both start a serve; only one binds,
+    // and the other goes away before it has started a second agent.
+    if Holder.isAlive(sock) { exit(0) }
+    let lfd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard lfd >= 0 else { exit(1) }
+    _ = fcntl(lfd, F_SETFD, FD_CLOEXEC)          // not into the agent
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    let path = Array(sock.utf8)
+    withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+        for (i, b) in path.enumerated() { raw[i] = b }
+        raw[path.count] = 0
+    }
+    func bindIt() -> Int32 {
+        withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(lfd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+    }
+    if bindIt() != 0 {
+        // A socket file nobody answers on is left over from a holder that
+        // died. Only then is it ours to remove.
+        guard errno == EADDRINUSE, !Holder.isAlive(sock) else { exit(0) }
+        unlink(sock)
+        guard bindIt() == 0 else { exit(0) }
+    }
+    guard listen(lfd, 4) == 0 else { unlink(sock); exit(1) }
+    chmod(sock, 0o600)
+    // Which file is ours, so leaving never removes one that a renamed or
+    // newer desk has put at this path since.
+    var st = stat()
+    let mine: ino_t = stat(sock, &st) == 0 ? st.st_ino : 0
+    func ours() -> Bool { var s2 = stat(); return mine != 0 && stat(sock, &s2) == 0 && s2.st_ino == mine }
+
+    // Now the program. No threads have started yet.
     var ws = winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
     var master: Int32 = -1
     var cargs = program.map { strdup($0) } + [nil]
@@ -168,34 +233,26 @@ func serve() -> Never {
         execve(program[0], &cargs, environ)
         _exit(127)
     }
-    guard child > 0 else { exit(1) }
-
-    // Listen.
-    let lfd = socket(AF_UNIX, SOCK_STREAM, 0)
-    var addr = sockaddr_un()
-    addr.sun_family = sa_family_t(AF_UNIX)
-    let path = Array(sock.utf8)
-    withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-        for (i, b) in path.enumerated() { raw[i] = b }
-        raw[path.count] = 0
-    }
-    let bound = withUnsafePointer(to: &addr) {
-        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(lfd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-    }
-    guard bound == 0, listen(lfd, 4) == 0 else { kill(child, SIGHUP); exit(1) }
-    chmod(sock, 0o600)
+    guard child > 0 else { if ours() { unlink(sock) }; exit(1) }
+    // Neither side may block the other: writes queue, and go when there's room.
+    _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL) | O_NONBLOCK)
     try? "\(child)\n".write(toFile: Holder.pidPath(socket: sock), atomically: true, encoding: .utf8)
     try? "\(desk)\n".write(toFile: Holder.namePath(socket: sock), atomically: true, encoding: .utf8)
 
     var replay = Holder.Replay()
     var attaches = 0
+    /// Keys waiting for room in the program's input.
+    var toProgram: [UInt8] = []
 
     /// A connection: the attached terminal once it has said hello, or a
     /// passer-by (a liveness check, an end request) until then. Only a hello
     /// takes over the terminal, so checking on a holder never cuts off the
     /// Coldfall attached to it.
-    struct Conn { var fd: Int32; var dec = Holder.Decoder(); var attached = false }
+    struct Conn { var fd: Int32; var dec = Holder.Decoder(); var attached = false; var out: [UInt8] = [] }
     var conns: [Conn] = []
+    /// A terminal this far behind isn't reading; it's let go rather than
+    /// holding the program's output in memory.
+    let maxBehind = 8 << 20
 
     func status(_ st: Int32) -> Int32 {
         // WIFEXITED / WEXITSTATUS / WTERMSIG, which Swift doesn't import as macros.
@@ -203,10 +260,14 @@ func serve() -> Never {
         return sig == 0 ? (st >> 8) & 0xff : 128 + sig
     }
     func done(_ code: Int32) -> Never {
-        for c in conns where c.attached { writeAll(c.fd, Holder.Wire.encode(.exit, Holder.Wire.status(code))) }
-        for c in conns { close(c.fd) }
+        let bye = Holder.Wire.encode(.exit, Holder.Wire.status(code))
+        for c in conns where c.attached && c.fd >= 0 {
+            _ = fcntl(c.fd, F_SETFL, fcntl(c.fd, F_GETFL) & ~O_NONBLOCK)
+            writeAll(c.fd, c.out + bye)
+        }
+        for c in conns where c.fd >= 0 { close(c.fd) }
         close(lfd)
-        Holder.clearFiles(socket: sock)
+        if ours() { Holder.clearFiles(socket: sock) }
         exit(0)
     }
     func reap() -> Int32? {
@@ -217,11 +278,44 @@ func serve() -> Never {
         var w = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         _ = ioctl(master, TIOCSWINSZ, &w)
     }
+    /// Write what fits without waiting; keep the rest. False if the fd is gone.
+    func flush(_ fd: Int32, _ q: inout [UInt8]) -> Bool {
+        while !q.isEmpty {
+            let n = q.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+            if n > 0 { q.removeFirst(n); continue }
+            if n < 0, errno == EAGAIN || errno == EINTR { return true }
+            return false
+        }
+        return true
+    }
+    func queue(_ i: Int, _ bytes: [UInt8]) {
+        guard conns[i].fd >= 0 else { return }
+        conns[i].out += bytes
+        if conns[i].out.count > maxBehind || !flush(conns[i].fd, &conns[i].out) { close(conns[i].fd); conns[i].fd = -1 }
+    }
+    /// End the desk: every process under the shell asked to stop, the shell
+    /// hung up, and whatever is left a few seconds later killed. Done here,
+    /// in order, so the exit status that goes back is the real one.
+    func endDesk() -> Never {
+        let tree = ProcessTree.descendants(of: child, in: ProcessTree.read())
+        let others = tree.filter { $0 != child }
+        let born = Dictionary(uniqueKeysWithValues: tree.map { ($0, ProcessTree.startTime($0)) })
+        for p in others { kill(p, SIGTERM) }
+        kill(child, SIGHUP)
+        close(master)
+        var code: Int32?
+        for _ in 0..<30 where code == nil { usleep(100_000); code = reap() }
+        for p in tree where kill(p, 0) == 0 {
+            if let b = born[p] ?? nil, ProcessTree.startTime(p) == b { kill(p, SIGKILL) }
+        }
+        if code == nil { for _ in 0..<10 where code == nil { usleep(100_000); code = reap() } }
+        done(code ?? 129)
+    }
 
     while true {
         var fds = [pollfd(fd: lfd, events: Int16(POLLIN), revents: 0),
-                   pollfd(fd: master, events: Int16(POLLIN), revents: 0)]
-        fds += conns.map { pollfd(fd: $0.fd, events: Int16(POLLIN), revents: 0) }
+                   pollfd(fd: master, events: Int16(POLLIN) | (toProgram.isEmpty ? 0 : Int16(POLLOUT)), revents: 0)]
+        fds += conns.map { pollfd(fd: $0.fd, events: Int16(POLLIN) | ($0.out.isEmpty ? 0 : Int16(POLLOUT)), revents: 0) }
         let r = poll(&fds, nfds_t(fds.count), 1000)
         if r < 0 { if errno == EINTR { continue }; break }
         if r == 0 { if let c = reap() { done(c) }; continue }
@@ -233,18 +327,22 @@ func serve() -> Never {
                 if getpeereid(c, &uid, &gid) == 0, uid == getuid(), conns.count < 16 {
                     var one: Int32 = 1
                     setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+                    _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) | O_NONBLOCK)
+                    _ = fcntl(c, F_SETFD, FD_CLOEXEC)
                     conns.append(Conn(fd: c))
                 } else { close(c) }
             }
         }
+        if fds[1].revents & Int16(POLLOUT) != 0, !flush(master, &toProgram) { toProgram = [] }
         if fds[1].revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 {
-            if let b = readSome(master) {
+            var buf = [UInt8](repeating: 0, count: 65536)
+            let n = read(master, &buf, buf.count)
+            if n > 0 {
+                let b = Array(buf[0..<n])
                 replay.append(b)
                 let frame = Holder.Wire.encode(.output, b)
-                for i in conns.indices where conns[i].attached {
-                    if !writeAll(conns[i].fd, frame) { close(conns[i].fd); conns[i].fd = -1 }
-                }
-            } else {
+                for i in conns.indices where conns[i].attached { queue(i, frame) }
+            } else if n == 0 || (errno != EAGAIN && errno != EINTR) {
                 // The program's side closed: collect it and pass the status on.
                 for _ in 0..<20 { if let c = reap() { done(c) }; usleep(50_000) }
                 done(0)
@@ -252,11 +350,20 @@ func serve() -> Never {
         }
         // Connections, matched to the poll entries taken above.
         for (i, pf) in fds.dropFirst(2).enumerated() where i < conns.count && conns[i].fd >= 0 {
+            if pf.revents & Int16(POLLOUT) != 0, !flush(conns[i].fd, &conns[i].out) { close(conns[i].fd); conns[i].fd = -1; continue }
             guard pf.revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 else { continue }
-            guard let b = readSome(conns[i].fd) else { close(conns[i].fd); conns[i].fd = -1; continue }
-            for (kind, payload) in conns[i].dec.push(b) {
+            var buf = [UInt8](repeating: 0, count: 65536)
+            let n = read(conns[i].fd, &buf, buf.count)
+            if n < 0, errno == EAGAIN || errno == EINTR { continue }
+            guard n > 0 else { close(conns[i].fd); conns[i].fd = -1; continue }
+            for (kind, payload) in conns[i].dec.push(Array(buf[0..<n])) {
                 switch kind {
                 case .hello:
+                    // A Coldfall speaking another version of the wire is let go
+                    // rather than misread.
+                    guard payload.count >= 8,
+                          (UInt32(payload[0]) << 24 | UInt32(payload[1]) << 16 | UInt32(payload[2]) << 8 | UInt32(payload[3])) == Holder.protocolVersion
+                    else { close(conns[i].fd); conns[i].fd = -1; break }
                     // This one is Coldfall's terminal now; an older one is let go.
                     for j in conns.indices where j != i && conns[j].attached { close(conns[j].fd); conns[j].fd = -1 }
                     conns[i].attached = true
@@ -271,25 +378,25 @@ func serve() -> Never {
                     var off = 0
                     while off < snap.count, conns[i].fd >= 0 {
                         let end = min(snap.count, off + 256 * 1024)
-                        if !writeAll(conns[i].fd, Holder.Wire.encode(.output, Array(snap[off..<end]))) { close(conns[i].fd); conns[i].fd = -1 }
+                        queue(i, Holder.Wire.encode(.output, Array(snap[off..<end])))
                         off = end
                     }
                 case .input:
-                    if conns[i].attached { writeAll(master, payload) }
+                    // Queued, never blocking: a big paste while the program is
+                    // busy writing can't wedge the two against each other.
+                    if conns[i].attached, toProgram.count + payload.count <= 8 << 20 {
+                        toProgram += payload
+                        if !flush(master, &toProgram) { toProgram = [] }
+                    }
                 case .resize:
                     if conns[i].attached, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 { setSize(s.cols, s.rows) }
                 case .end:
-                    // The same as Coldfall ending a desk it owned: every process
-                    // in the tree asked to stop, the rest killed after a grace.
-                    let tree = ProcessTree.descendants(of: child, in: ProcessTree.read())
-                    ProcessTree.end(tree.isEmpty ? [child] : tree)
-                    close(master)
-                    Thread.sleep(forTimeInterval: 3.5)
-                    done(reap() ?? 129)
+                    endDesk()
                 default: break
                 }
+                if conns[i].fd < 0 { break }
             }
-            if conns[i].dec.broken { close(conns[i].fd); conns[i].fd = -1 }
+            if conns[i].fd >= 0, conns[i].dec.broken { close(conns[i].fd); conns[i].fd = -1 }
         }
         conns.removeAll { $0.fd < 0 }
     }

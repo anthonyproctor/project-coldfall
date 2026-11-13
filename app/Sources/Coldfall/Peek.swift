@@ -94,7 +94,7 @@ final class PeekPanel: NSObject {
         if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
         panel.makeKeyAndOrderFront(nil)
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh(force: false) }
+        timer = Timer.inEveryMode(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh(force: false) }
     }
 
     /// New text in, kept at the bottom unless you've scrolled up to read.

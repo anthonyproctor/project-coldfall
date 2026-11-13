@@ -108,6 +108,20 @@ public enum Holder {
         return fd
     }
 
+    /// Whether something accepts TCP connections on this port on loopback.
+    public static func portAnswers(_ port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var a = sockaddr_in()
+        a.sin_family = sa_family_t(AF_INET)
+        a.sin_port = port.bigEndian
+        a.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &a) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        } == 0
+    }
+
     /// Whether a holder answers on this socket.
     public static func isAlive(_ path: String) -> Bool {
         guard let fd = connect(path) else { return false }
@@ -168,14 +182,22 @@ public enum Holder {
     /// Follow a desk rename: the socket and the files beside it move to the
     /// new name's paths. A unix socket keeps working when renamed, so the
     /// held agent never notices.
-    public static func rename(from old: String, to new: String, root: String = Holder.root) {
+    /// Returns whether the held desk now answers at the new name.
+    @discardableResult
+    public static func rename(from old: String, to new: String, root: String = Holder.root) -> Bool {
         let a = socketPath(desk: old, root: root), b = socketPath(desk: new, root: root)
-        guard a != b, isAlive(a), !FileManager.default.fileExists(atPath: b) else { return }
+        guard a != b, isAlive(a) else { return false }
+        // Something left at the new path that nobody answers on is debris.
+        if FileManager.default.fileExists(atPath: b) {
+            guard !isAlive(b) else { return false }
+            clearFiles(socket: b)
+        }
         let fm = FileManager.default
         try? fm.moveItem(atPath: a, toPath: b)
         try? fm.moveItem(atPath: pidPath(socket: a), toPath: pidPath(socket: b))
         try? fm.removeItem(atPath: namePath(socket: a))
         try? "\(new)\n".write(toFile: namePath(socket: b), atomically: true, encoding: .utf8)
+        return isAlive(b)
     }
 
     /// End every holder under a root. For a full uninstall.

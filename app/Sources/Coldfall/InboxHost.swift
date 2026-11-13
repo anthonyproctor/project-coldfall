@@ -25,12 +25,7 @@ extension Controller: InboxHost {
                               agent: running && !(s?.agentGone ?? true) && d.runtime != "shell")
     }
 
-    private func inboxTarget(_ name: String) -> RemoteOpen.Target? {
-        sessions[name].map { s in
-            RemoteOpen.Target(running: s.started, agent: !s.agentGone && s.desk.runtime != "shell",
-                              blocked: s.isBlocked, draft: s.holdsDraft)
-        }
-    }
+    private func inboxTarget(_ name: String) -> RemoteOpen.Target? { sessions[name]?.remoteTarget() }
 
     func inboxSend(_ name: String, text: String) -> RemoteOpen.Answer {
         let hidden = Set(desks.filter(\.hidden).map(\.name))
@@ -42,7 +37,8 @@ extension Controller: InboxHost {
     }
 
     func inboxPress(_ name: String, keys: [UInt8]) -> RemoteOpen.Answer {
-        guard let s = sessions[name], s.started, !s.agentGone else { return RemoteOpen.Answer(.notRunning, "\(name) isn't running.") }
+        if desks.first(where: { $0.name == name })?.hidden == true { return RemoteOpen.Answer(.hiddenDesk, "\(name) is hidden in Coldfall.") }
+        guard let s = sessions[name], s.agentAlive() else { return RemoteOpen.Answer(.notRunning, "\(name) isn't running.") }
         guard s.isBlocked else { return RemoteOpen.Answer(.notAsking, "\(name) isn't asking anything right now.") }
         s.typeOnBehalf(keys)
         return RemoteOpen.Answer(.pressed, "Pressed.")

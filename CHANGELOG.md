@@ -8,6 +8,28 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+From an audit of 0.3.32 (two independent reviews of the code).
+- **A send could reach a bare shell.** After a desk's agent exited or crashed, `coldfall-cli
+  send`, `ask`, the inbox, Wrap Up and commands run in a desk could type into the shell left
+  behind, where text runs as a command. Each now checks the agent is really running under the
+  desk first; closing the agent's own pane counts as it being gone.
+- **"Needs you" could go stale.** A question asked while Coldfall was closed now shows when a
+  held desk comes back; a renamed desk keeps reporting; switching to a desk (which makes it
+  redraw) no longer counts as answering; and the terminal's own replies to the agent no
+  longer count as you typing. Wrap Up follows the send rules too.
+- **A command meant for one desk could land in another** if you switched desks in the second
+  before it was typed.
+- **The holder could stall** on a big paste while the agent printed a lot; both sides now
+  queue instead of waiting. Two holders can no longer start for one desk, a holder only ever
+  removes its own socket, a desk renamed while held stays reachable, and ending a held desk
+  takes under a second and reports how it ended.
+- Timers now keep running while a dialog is open, so `coldfall-cli wait`/`ask` and the inbox
+  don't see Coldfall as gone. `ask` times from when its message went in. Two pastes in the
+  same second no longer overwrite each other's file. Answers to `coldfall-cli read` are
+  readable by your account only. Settings says so when the inbox's port is taken. Stopping
+  a desk no longer reads the process table on the main thread.
+
 ## [0.3.32] - 2026-11-13
 
 Every desk from your phone, and agents that wait for each other.

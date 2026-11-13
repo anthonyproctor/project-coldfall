@@ -47,8 +47,16 @@ final class DeskTerminalView: LocalProcessTerminalView {
     }
 
     override func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        onInput?(Array(data))
+        if !quiet { onInput?(Array(data)) }
         super.send(source: source, data: data)
+    }
+
+    /// Typed by Coldfall itself (a desk's launch line): not you, not a question.
+    private var quiet = false
+    func sendQuietly(_ text: String) {
+        quiet = true
+        send(txt: text)
+        quiet = false
     }
 
     // MARK: - getting a file INTO the conversation
@@ -100,12 +108,15 @@ final class DeskTerminalView: LocalProcessTerminalView {
 
         let dir = NSString(string: "~/.local/share/coldfall/pasted").expandingTildeInPath
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"
+        // Down to the millisecond, plus a few random letters: two pastes or
+        // drops in the same second each keep their own file.
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss-SSS"
+        let tag = String(UUID().uuidString.prefix(4)).lowercased()
         // Keep the original name's extension; drop macOS's narrow no-break
         // spaces and ordinary spaces so the pasted path needs no escaping.
         let ext = url.pathExtension.isEmpty ? "" : "." + url.pathExtension
         let dest = URL(fileURLWithPath: dir)
-            .appendingPathComponent("dropped-\(f.string(from: Date()))\(ext)")
+            .appendingPathComponent("dropped-\(f.string(from: Date()))-\(tag)\(ext)")
         do {
             try FileManager.default.copyItem(at: url, to: dest)
             return dest
@@ -148,9 +159,12 @@ final class DeskTerminalView: LocalProcessTerminalView {
 
         let dir = NSString(string: "~/.local/share/coldfall/pasted").expandingTildeInPath
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"
+        // Down to the millisecond, plus a few random letters: two pastes or
+        // drops in the same second each keep their own file.
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss-SSS"
+        let tag = String(UUID().uuidString.prefix(4)).lowercased()
         let path = (dir as NSString)
-            .appendingPathComponent("pasted-\(f.string(from: Date())).png")
+            .appendingPathComponent("pasted-\(f.string(from: Date()))-\(tag).png")
         guard (try? png.write(to: URL(fileURLWithPath: path))) != nil else { return nil }
         return path
     }
@@ -195,14 +209,27 @@ final class Pane {
     func end() {
         if held, let d = heldDesk {
             // The holder owns the tree; it ends it the same way, then exits,
-            // and the attach in this terminal goes with it.
-            DispatchQueue.global(qos: .userInitiated).async { Holder.end(desk: d) }
+            // and the attach in this terminal goes with it. If the holder
+            // can't be reached, the tree is ended directly, so nothing runs
+            // on unseen to be started a second time.
+            let shell = Holder.heldPid(desk: d)
+            let t = term
+            DispatchQueue.global(qos: .userInitiated).async {
+                if Holder.end(desk: d) { return }
+                if let p = shell { ProcessTree.end(ProcessTree.descendants(of: p, in: ProcessTree.read())) }
+                DispatchQueue.main.async { t.terminate() }
+            }
             return
         }
+        // The process table is read off the main thread; the terminal lets go
+        // of the shell only after, or there'd be no tree to find.
         let root = term.process?.shellPid ?? 0
-        let tree = root > 0 ? ProcessTree.descendants(of: root, in: ProcessTree.read()) : []
-        term.terminate()
-        ProcessTree.end(tree)
+        let t = term
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tree = root > 0 ? ProcessTree.descendants(of: root, in: ProcessTree.read()) : []
+            DispatchQueue.main.async { t.terminate() }
+            ProcessTree.end(tree)
+        }
     }
 
     /// Launch the process. `command` is nil for a shell pane, which just lands
@@ -238,7 +265,7 @@ final class Pane {
         return term.process?.shellPid
     }
 
-    /// Follow a rename of the desk this pane holds.
+    /// Follow a rename of the desk this pane holds, once its socket moved.
     func renamed(to name: String) { if held { heldDesk = name } }
 
     /// A CLI can take several seconds to boot. Paint something immediately,
@@ -259,7 +286,7 @@ final class Pane {
         let dir = Shell.quote(desk.resolvedCwd)
         let line = command.map { "cd \(dir) && \($0)\n" } ?? "cd \(dir)\n"
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            self?.term.send(txt: line)
+            self?.term.sendQuietly(line)
         }
     }
 
@@ -401,6 +428,20 @@ final class DeskSession {
         if ActivityState.isSubmit(bytes) { activityState.noteAsked() }
     }
 
+    /// Whether the agent is really there: started, its pane not closed, and
+    /// something still running under the pane's shell. An agent that exited
+    /// (or crashed) leaves a bare shell, and typing into that runs commands.
+    /// Reads the process table: call it for an action, not on a timer.
+    func agentAlive() -> Bool {
+        guard started, !agentGone, desk.runtime != "shell", let root = panes[0].shellPid else { return false }
+        return ProcessTree.descendants(of: root, in: ProcessTree.read()).count > 1
+    }
+
+    /// What a send, an ask or the inbox may do with this desk right now.
+    func remoteTarget() -> RemoteOpen.Target {
+        RemoteOpen.Target(running: started, agent: agentAlive(), blocked: isBlocked, draft: holdsDraft)
+    }
+
     /// Stopped on a question for you (see ActivityState.needsYou).
     var isBlocked: Bool { activityState.needsYou }
     /// You're partway through typing a message into the agent.
@@ -492,13 +533,24 @@ final class DeskSession {
     /// Whether this desk's agent is still running in a holder from before.
     var canReattach: Bool { hold == .reattach }
 
+    /// The name the desk was started under. The agent's CLAUDE_DESK, and so
+    /// its done signals, keep it through a rename until the desk restarts.
+    private(set) var launchName: String?
+
     func startIfNeeded() {
         guard !started, !resolving, !holding else { return }
         let d = desk
         if hold == .reattach {
-            // A replay of what it said while Coldfall was closed is not news.
+            // A replay of what it said while Coldfall was closed is not news,
+            // but where it stands once the replay is over is: a question it
+            // asked meanwhile is still waiting.
             activityState.mute(for: 3)
             startPanes(nil, hold: .reattach)
+            let name = d.name
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in
+                let logged = DoneSignal.last(desk: name, since: Date().addingTimeInterval(-86_400))?.event
+                self?.activityState.endMute(logged: logged)
+            }
             return
         }
         guard d.resumesItself else { startPanes(d.launchCommand()); return }
@@ -520,6 +572,7 @@ final class DeskSession {
     }
 
     private func startPanes(_ command: String?, hold: Pane.Hold? = nil) {
+        launchName = desk.name
         panes[0].start(desk: desk, command: command, hold: hold ?? self.hold)
         for p in panes.dropFirst() { p.start(desk: desk, command: nil) }
     }
@@ -548,6 +601,9 @@ final class DeskSession {
     func closeFocused() -> Bool {
         guard panes.count > 1 else { return false }
         let p = panes.remove(at: focused)
+        // Closing the agent's own pane leaves only shells: nothing may be
+        // sent "to the agent" from now on, or it would run as a command.
+        if p.isAgent { agentGone = true }
         p.end()
         p.box.removeFromSuperview()
         focused = min(focused, panes.count - 1)

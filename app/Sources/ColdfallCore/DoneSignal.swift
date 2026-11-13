@@ -87,6 +87,15 @@ public enum DoneSignal {
     }
 
     /// Keep the log small: when it passes `max` bytes, keep the last half.
+    /// A desk's last word in the log, newer than `since`. For a desk that
+    /// comes back from its holder: what it said while Coldfall was closed.
+    public static func last(desk: String, since: Date, path: String = DoneSignal.logPath) -> Signal? {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let name = fileName(desk)
+        return text.split(separator: "\n").reversed().lazy.compactMap { parse($0) }
+            .first { $0.desk == name && $0.at > since }
+    }
+
     public static func trim(path: String = DoneSignal.logPath, max: Int = 256 * 1024) {
         guard let d = FileManager.default.contents(atPath: path), d.count > max else { return }
         var tail = d.suffix(max / 2)
