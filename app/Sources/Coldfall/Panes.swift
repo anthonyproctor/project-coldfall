@@ -762,6 +762,8 @@ final class DeskSession {
     var activity: DeskActivity { activityState.activity() }
     /// When this desk last wrote anything, for the rail's "2m".
     var lastOutput: Date? { activityState.lastOutput }
+    /// When a key last went into the agent.
+    var lastKey: Date? { activityState.keyAt }
     var focusedPane: Pane { panes[min(focused, panes.count - 1)] }
     var started: Bool { panes[0].started }
 

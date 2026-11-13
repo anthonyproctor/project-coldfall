@@ -156,6 +156,19 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                 rtLines.append(row)
             }
         }
+        let sleepPop = NSPopUpButton(frame: .zero, pullsDown: false)
+        for m in Hibernate.choices {
+            sleepPop.addItem(withTitle: Hibernate.label(m))
+            sleepPop.lastItem?.tag = m
+        }
+        sleepPop.selectItem(withTag: UIState.load().sleepIdleMinutes)
+        sleepPop.target = self; sleepPop.action = #selector(pickSleep(_:))
+        rtLines.append(contentsOf: [
+            caps("IDLE DESKS"), sleepPop,
+            note("Sleeps a desk that has finished, been read, and sat untouched this long. Its memory "
+               + "comes back, its row shows a moon, and opening it picks the conversation up. Never one "
+               + "that's working, asking or on screen. Jobs the agent left running end with it.", width: 350)
+        ] as [NSView])
         rtLines.append(caps("LIVE PLAN LIMITS"))
         let limitsBtn = NSButton(title: Limits.recorderInstalled ? "Claude recorder installed ✓" : "Turn on live limits for Claude",
                                  target: self, action: #selector(installLimits))
@@ -607,6 +620,10 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func toggleNotify(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallNotifyChanged, object: sender.state == .on)
+    }
+
+    @objc private func pickSleep(_ sender: NSPopUpButton) {
+        NotificationCenter.default.post(name: .coldfallSleepChanged, object: sender.selectedTag())
     }
 
     @objc private func toggleKeepRunning(_ sender: NSButton) {

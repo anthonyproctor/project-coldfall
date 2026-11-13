@@ -327,6 +327,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.ui.notifyDesks = on
             self.ui.save()
         }
+        NotificationCenter.default.addObserver(forName: .coldfallSleepChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let m = n.object as? Int else { return }
+            self.ui.sleepIdleMinutes = m
+            self.ui.save()
+        }
         NotificationCenter.default.addObserver(forName: .coldfallKeepRunningChanged, object: nil, queue: .main) {
             [weak self] n in
             guard let self, let on = n.object as? Bool else { return }
@@ -453,6 +459,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             if let k = CommandLine.arguments.firstIndex(of: "--blocked"), k + 1 < CommandLine.arguments.count {
                 sample[CommandLine.arguments[k + 1]] = DeskStatus(activity: .blocked, lastOutput: now.addingTimeInterval(-300), running: true,
                                                                   detail: "wants to use Bash")
+            }
+            // `--asleep <desk>`: that desk put to sleep (the moon on its row).
+            if let k = CommandLine.arguments.firstIndex(of: "--asleep"), k + 1 < CommandLine.arguments.count {
+                sample[CommandLine.arguments[k + 1]] = DeskStatus(asleep: true)
             }
             // `--show-hidden`: the rail with its hidden desks listed.
             if CommandLine.arguments.contains("--show-hidden") {
@@ -930,6 +940,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         defer { if let old = swapIn, old !== visible { mountBeside(old) } }
         lastVisited[d.name] = Date()
         if !steppingHistory { history.visit(d.name) }
+        if ui.sleeping.contains(d.name) { ui.sleeping.removeAll { $0 == d.name }; ui.save() }
         notifier.clear(desk: d.name)
         waitingName = nil
         if ui.lastDesk != d.name { ui.lastDesk = d.name; ui.save() }
@@ -2503,6 +2514,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                        detail: s.started ? s.detailLine : nil)
                 if a == .ready || a == .blocked { waiting += 1 }
             }
+            // Asleep: no session, but the row should say why it isn't running.
+            // Awake again, however it was started: no longer asleep.
+            if self.ui.sleeping.contains(where: { self.sessions[$0]?.started == true }) {
+                self.ui.sleeping.removeAll { self.sessions[$0]?.started == true }
+                self.ui.save()
+            }
+            for n in self.ui.sleeping where map[n] == nil { map[n] = DeskStatus(asleep: true) }
+            if self.sidebar.tick % 85 == 0 { self.sleepIdleDesks() }
             self.sidebar.tick &+= 1
             // Context and branch move slowly: every five seconds or so.
             if self.sidebar.tick % 14 == 0 { self.visible?.refreshHeaders() }
@@ -2604,6 +2623,28 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let two = beside != nil
         visible?.setPair(two, key: !keyIsBeside)
         beside?.setPair(two, key: keyIsBeside, beside: true)
+    }
+
+    /// Put to sleep every desk that has earned it (see Hibernate). Checked
+    /// every half minute; off unless Settings names a time.
+    func sleepIdleDesks() {
+        guard ui.sleepIdleMinutes > 0, !CommandLine.arguments.contains("--snapshot") else { return }
+        let now = Date(), after = TimeInterval(ui.sleepIdleMinutes * 60)
+        for d in desks {
+            guard let s = sessions[d.name], s !== visible, s !== beside, !(peek.isOpen && peek.desk == d.name) else { continue }
+            let f = Hibernate.Facts(runtime: d.runtime, resumes: d.resumesItself, running: s.started, visible: s.isVisible,
+                                    activity: s.activity, lastOutput: s.lastOutput, lastKey: s.lastKey,
+                                    panes: s.panes.count, draft: s.holdsDraft)
+            guard Hibernate.shouldSleep(f, now: now, after: after) else { continue }
+            if !ui.sleeping.contains(d.name) { ui.sleeping.append(d.name) }
+            // Ended the way Stop Desk ends it, but not a "stopped" desk to
+            // reopen: it is still yours, just resting.
+            sessions.removeValue(forKey: d.name)
+            memory.removeValue(forKey: d.name)
+            s.terminateAll()
+        }
+        ui.sleeping.removeAll { n in !desks.contains { $0.name == n } }
+        ui.save()
     }
 
     /// Remember a desk's folder as it is now, at the start of a turn. Off
@@ -3179,6 +3220,7 @@ extension Notification.Name {
     /// Settings changed something the controller keeps in ui.json.
     static let coldfallFreshStartChanged = Notification.Name("coldfallFreshStartChanged")
     static let coldfallKeepRunningChanged = Notification.Name("coldfallKeepRunningChanged")
+    static let coldfallSleepChanged = Notification.Name("coldfallSleepChanged")
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
     static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
     static let coldfallReopenSettings = Notification.Name("coldfallReopenSettings")

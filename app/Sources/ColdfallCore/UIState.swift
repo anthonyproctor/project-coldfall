@@ -14,6 +14,10 @@ public struct UIState: Codable {
     public var liveRail: Bool = false
     /// The Desks section by priority (needs you, done, working, idle) rather than by group.
     public var desksByPriority: Bool = false
+    /// Minutes of nothing before an idle, finished desk is put to sleep; 0 is never.
+    public var sleepIdleMinutes: Int = 0
+    /// Desks Coldfall put to sleep, shown with a moon until opened again.
+    public var sleeping: [String] = []
     /// Agents whose "add a desk" offer was waved off with Not now.
     public var dismissedOffers: [String] = []
     /// Whether reopening a big, idle conversation asks about starting fresh
@@ -69,6 +73,8 @@ public struct UIState: Codable {
         meterHidden     = try c.decodeIfPresent(Bool.self, forKey: .meterHidden) ?? false
         liveRail        = try c.decodeIfPresent(Bool.self, forKey: .liveRail) ?? false
         desksByPriority = try c.decodeIfPresent(Bool.self, forKey: .desksByPriority) ?? false
+        sleepIdleMinutes = try c.decodeIfPresent(Int.self, forKey: .sleepIdleMinutes) ?? 0
+        sleeping = try c.decodeIfPresent([String].self, forKey: .sleeping) ?? []
         dismissedOffers = try c.decodeIfPresent([String].self, forKey: .dismissedOffers) ?? []
         offerFreshStart = try c.decodeIfPresent(Bool.self, forKey: .offerFreshStart) ?? true
         wrappedUp = try c.decodeIfPresent([String: Double].self, forKey: .wrappedUp) ?? [:]

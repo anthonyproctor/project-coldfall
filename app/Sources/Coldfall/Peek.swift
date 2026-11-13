@@ -19,7 +19,7 @@ final class PeekPanel: NSObject {
     private let scroll = NSScrollView()
     private var timer: Timer?
     private weak var session: DeskSession?
-    private var desk = ""
+    private(set) var desk = ""
     /// Go to the desk being peeked at.
     var onGo: ((String) -> Void)?
 

@@ -822,7 +822,7 @@ final class GroupRow: NSView {
         avatar.layer?.backgroundColor = GroupRow.colour(n).cgColor
         let marks = desks.map(Mark.init)
         let asking = marks.filter { $0 == .needsYou }.count
-        let running = marks.filter { $0 != .none }.count
+        let running = marks.filter { $0 != .none && $0 != .asleep }.count
         if asking > 0 {
             mark.mark = .needsYou
             mark.pillText = asking == 1 ? "1 needs you" : "\(asking) need you"

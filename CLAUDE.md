@@ -44,6 +44,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --beside api   # that desk with another next to it
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --feed   # Needs You with that desk's question, to shot-feed.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --changes          # the Changes window with a made-up diff, to shot-changes.png
+./.build/release/Coldfall --snapshot /tmp/shot.png --asleep docs       # that desk put to sleep (the moon on its row)
 ./.build/release/Coldfall --snapshot /tmp/shot.png --by-priority      # the Desks section by priority instead of by group
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships

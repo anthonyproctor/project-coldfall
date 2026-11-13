@@ -11,10 +11,10 @@ import ColdfallCore
 ///
 /// A desk that isn't running has no mark.
 enum Mark: Equatable {
-    case needsYou, working, done, idle, none
+    case needsYou, working, done, idle, asleep, none
 
     init(_ s: DeskStatus) {
-        guard s.running else { self = .none; return }
+        guard s.running else { self = s.asleep ? .asleep : .none; return }
         switch s.activity {
         case .blocked: self = .needsYou
         case .working: self = .working
@@ -79,6 +79,18 @@ final class MarkView: NSView {
             let p = NSBezierPath(ovalIn: NSRect(x: c.x - 3.6, y: c.y - 3.6, width: 7.2, height: 7.2))
             p.lineWidth = 1.3
             Theme.ui.dimText.withAlphaComponent(0.8).setStroke(); p.stroke()
+        case .asleep:
+            // A small moon: put to sleep, and it wakes where it left off.
+            let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
+            if let moon = NSImage(systemSymbolName: "moon.fill", accessibilityDescription: "Asleep")?.withSymbolConfiguration(cfg) {
+                let tinted = NSImage(size: moon.size, flipped: false) { r in
+                    moon.draw(in: r)
+                    Theme.ui.dimText.set()
+                    r.fill(using: .sourceAtop)
+                    return true
+                }
+                tinted.draw(in: NSRect(x: c.x - moon.size.width / 2, y: c.y - moon.size.height / 2, width: moon.size.width, height: moon.size.height))
+            }
         case .none: break
         }
     }

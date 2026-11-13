@@ -1548,6 +1548,37 @@ do {
         eq("notice: a permission request needs you", TerminalNotice.event("Claude needs your permission to use Bash"), .notify)
         eq("notice: anything else is a finished turn", TerminalNotice.event("Turn complete"), .stop)
     }
+    do {
+        let now = Date(timeIntervalSince1970: 100_000)
+        var f = Hibernate.Facts(runtime: "claude", resumes: true, running: true, visible: false, activity: .quiet,
+                                lastOutput: now.addingTimeInterval(-3600), lastKey: now.addingTimeInterval(-4000), panes: 1, draft: false)
+        check("sleep: done, seen and untouched for long enough", Hibernate.shouldSleep(f, now: now, after: 1800))
+        check("sleep: off means never", !Hibernate.shouldSleep(f, now: now, after: 0))
+        check("sleep: not yet long enough", !Hibernate.shouldSleep(f, now: now, after: 7200))
+        var g = f; g.visible = true
+        check("sleep: never the desk on screen", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.activity = .ready
+        check("sleep: never an answer you haven't read", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.activity = .blocked
+        check("sleep: never one that's asking", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.activity = .working
+        check("sleep: never one that's working", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.resumes = false
+        check("sleep: never one that can't be brought back", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.runtime = "shell"
+        check("sleep: never a shell", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.panes = 2
+        check("sleep: never with a shell split beside it", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.draft = true
+        check("sleep: never with a message half typed", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.lastKey = now.addingTimeInterval(-60)
+        check("sleep: a key pressed since counts as use", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        g = f; g.lastOutput = nil
+        check("sleep: never one that hasn't spoken yet", !Hibernate.shouldSleep(g, now: now, after: 1800))
+        f.running = false
+        check("sleep: nothing to do for one that isn't running", !Hibernate.shouldSleep(f, now: now, after: 1800))
+        eq("sleep: labels", Hibernate.choices.map(Hibernate.label), ["Never", "After 15 minutes", "After 30 minutes", "After 1 hour", "After 2 hours", "After 4 hours"])
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

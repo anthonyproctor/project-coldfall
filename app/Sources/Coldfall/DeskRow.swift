@@ -27,6 +27,8 @@ struct DeskStatus: Equatable {
     /// The dim text beside the name: why it is waiting, or what it says
     /// it is doing (see DeskDetail).
     var detail: String?
+    /// Put to sleep by Coldfall: not running, and it resumes when opened.
+    var asleep = false
 }
 
 final class DeskRow: NSView {
@@ -217,6 +219,7 @@ final class DeskRow: NSView {
         case .working: state = "working"
         case .done: state = "done"
         case .idle: state = "idle"
+        case .asleep: state = "asleep, opens where it left off"
         case .none: state = "not started"
         }
         var parts: [String] = [runtime == "shell" ? "shell" : label + (isDefault ? " home" : ""), state]

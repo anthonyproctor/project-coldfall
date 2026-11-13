@@ -9,6 +9,12 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Sleep idle desks.** **Settings ▸ Agents ▸ Idle desks** (off until you pick a time): a
+  desk that has finished, been read, and sat untouched that long is put to sleep. Its
+  processes end and its memory comes back, its row shows a moon, and opening it picks the
+  conversation up. Only desks Coldfall knows how to resume; never one that is working,
+  asking, on screen, half typed into, or has a shell split open. A timer or job the agent
+  left running ends with it.
 - **Changes shows the last turn.** Beside *Uncommitted*, **Last turn** lists only what the
   agent changed since your last prompt, new files included. For a desk that has run for
   weeks, "what did it just do" is the question. Coldfall remembers the folder when you send
