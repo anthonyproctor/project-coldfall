@@ -8,6 +8,8 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.34] - 2026-11-13
+
 A new window layout, after Herdr's: groups, tabs, and panes as cards.
 
 ### Added
@@ -897,7 +899,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.33...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.34...HEAD
+[0.3.34]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.33...v0.3.34
 [0.3.33]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.32...v0.3.33
 [0.3.32]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...v0.3.32
 [0.3.31]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...v0.3.31
