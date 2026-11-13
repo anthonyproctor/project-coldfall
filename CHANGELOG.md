@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.41] - 2026-11-13
+
+Ghostty's terminal as a choice, and a record of why Coldfall stopped.
+
 ### Added
 - **Ghostty's terminal, as a choice.** **Settings ▸ General ▸ Terminal** switches desks you
   start from now on between the classic terminal (SwiftTerm, still the default) and Ghostty's,
@@ -16,7 +20,6 @@ opens this file.
   A Ghostty desk always runs through Coldfall's holder (that is where its state comes from),
   so quitting asks whether to keep it running; a shell split beside it shows no activity
   mark. Desks already running keep the terminal they have.
-
 - **Coldfall records why it stopped.** Each start and each exit is one line in
   `~/.local/share/coldfall/exit.log`: a quit and what you answered, the last window closing,
   or a signal and which process sent it. A held desk's end is recorded the same way in
@@ -28,11 +31,6 @@ opens this file.
   at that moment: it follows the window, and a desk opened beside it, like any other.
 - A desk whose agent has exited (leaving a shell split) no longer goes on saying
   "needs you".
-- More groundwork for Ghostty's terminal, still off in every release. A held desk can now be
-  drawn by Ghostty with its state known: the desk's holder gives Coldfall a copy of the
-  agent's output and of the keys typed (starting with what it remembers, so a late listener
-  learns the desk's last word), and the same rules as every other desk turn that into
-  working, needs you and done. Tried with `--ghostty-held` in a `COLDFALL_GHOSTTY=1` build.
 
 ## [0.3.40] - 2026-11-13
 
@@ -1072,7 +1070,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...HEAD
+[0.3.41]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...v0.3.41
 [0.3.40]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...v0.3.40
 [0.3.39]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...v0.3.39
 [0.3.38]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...v0.3.38

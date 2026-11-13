@@ -75,15 +75,23 @@ wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
 
-Ghostty's terminal is being brought in beside SwiftTerm and is off in every
-normal build. `scripts/ghostty-kit.sh` builds the library into `app/Vendor/`
-(needs Zig and Apple's Metal toolchain); `COLDFALL_GHOSTTY=1 swift build -c release`
-then links it, and `./.build/release/Coldfall --ghostty-demo` opens one Ghostty
+Ghostty's terminal is a second engine beside SwiftTerm, chosen in Settings
+(General, Terminal; SwiftTerm is the default). `scripts/ghostty-kit.sh` builds
+the library into `app/Vendor/` (needs Zig and Apple's Metal toolchain).
+`scripts/build-app.sh` links it whenever the library is there, so release
+builds carry it; a plain `swift build` does not unless you say
+`COLDFALL_GHOSTTY=1 swift build -c release`, and CI never does. Code for it is
+under `#if COLDFALL_GHOSTTY`, not `canImport`. `COLDFALL_TERMINAL=ghostty`
+overrides the setting for one run. With the library linked, `./.build/release/Coldfall --ghostty-demo` opens one Ghostty
 terminal in a window, with no desks. `--ghostty-held <program>` runs that program
 as a held desk drawn by Ghostty and prints its state as it changes (set
 `COLDFALL_HOLDER_DIR` to a short throwaway folder first); with
-`COLDFALL_GHOSTTY_SELFTEST=1` it answers the program's question and quits. A build without that variable, and so every
-release, has none of it.
+`COLDFALL_GHOSTTY_SELFTEST=1` it answers the program's question and quits.
+
+Each start and exit of the app is one line in `~/.local/share/coldfall/exit.log`
+(a quit and its answer, the last window closing, or a signal and who sent it);
+a held desk's end is in `holders/holders.log`. Read these first when someone
+says Coldfall "crashed" and there is no crash report.
 
 Held desks (see `Holder` in the core) run through `coldfall-holder`, which
 ships beside the app. To try one end to end without touching a running
