@@ -17,6 +17,12 @@ opens this file.
   so quitting asks whether to keep it running; a shell split beside it shows no activity
   mark. Desks already running keep the terminal they have.
 
+- **Coldfall records why it stopped.** Each start and each exit is one line in
+  `~/.local/share/coldfall/exit.log`: a quit and what you answered, the last window closing,
+  or a signal and which process sent it. A held desk's end is recorded the same way in
+  `holders/holders.log`. An app that is told to stop leaves no crash report, so until now
+  "it just disappeared" had no answer.
+
 ### Fixed
 - A desk opened from the CLI or the phone and then shown no longer keeps the size it had
   at that moment: it follows the window, and a desk opened beside it, like any other.

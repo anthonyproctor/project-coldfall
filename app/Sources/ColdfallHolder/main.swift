@@ -257,7 +257,21 @@ func serve() -> Never {
         let sig = st & 0x7f
         return sig == 0 ? (st >> 8) & 0xff : 128 + sig
     }
+    /// One line in the holders' log: what happened to this desk, and when.
+    func record(_ what: String) {
+        let f = ISO8601DateFormatter()
+        f.timeZone = .current
+        let line = "\(f.string(from: Date())) \(desk) (holder pid \(getpid())) \(what)\n"
+        let path = (Holder.root as NSString).appendingPathComponent("holders.log")
+        if let fh = FileHandle(forWritingAtPath: path) {
+            fh.seekToEndOfFile(); fh.write(Data(line.utf8)); try? fh.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+    var recordedEnd = false
     func done(_ code: Int32) -> Never {
+        if !recordedEnd { recordedEnd = true; record("its program exited with status \(code)") }
         // A last word to the terminal, but never a wait on one that has
         // stopped reading: half a second, then it's dropped.
         let bye = Holder.Wire.encode(.exit, Holder.Wire.status(code))
@@ -414,6 +428,12 @@ func serve() -> Never {
                 case .resize:
                     if conns[i].attached, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 { setSize(s.cols, s.rows) }
                 case .end:
+                    // Who asked, for the record: a desk that vanishes
+                    // should be explainable afterwards.
+                    var peer: pid_t = 0
+                    var len = socklen_t(MemoryLayout<pid_t>.size)
+                    getsockopt(conns[i].fd, SOL_LOCAL, LOCAL_PEERPID, &peer, &len)
+                    record("ended by request from pid \(peer)")
                     endDesk()
                 default: break
                 }

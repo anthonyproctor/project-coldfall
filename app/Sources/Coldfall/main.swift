@@ -1002,6 +1002,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Desks still running in their holders from last time come straight
         // back; the ones that went with a restart of the Mac are offered.
         DeskSession.keepGlobal = ui.keepDesksRunning
+        if !CommandLine.arguments.contains("--snapshot") { ExitLog.install() }
         // COLDFALL_TERMINAL overrides the setting for one run, for trying it.
         Pane.wantsGhostty = (ProcessInfo.processInfo.environment["COLDFALL_TERMINAL"] ?? ui.terminal) == "ghostty"
             && !CommandLine.arguments.contains("--snapshot")
@@ -3424,7 +3425,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sessions.removeValue(forKey: entry.key)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool {
+        ExitLog.note("the last window closed: quitting follows")
+        return true
+    }
 
     /// The question itself, apart so a snapshot can draw it.
     func quitAlert(_ held: [String]) -> NSAlert {
@@ -3448,11 +3452,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let s = sessions[n], s.started, s.isHeld else { return false }
             return Holder.isHeld(desk: n)
         }
-        guard !held.isEmpty, !SelfUpdate.relaunching else { return .terminateNow }
+        guard !held.isEmpty, !SelfUpdate.relaunching else {
+            ExitLog.leaving(SelfUpdate.relaunching ? "quit to relaunch after an update" : "quit, no held desks to ask about")
+            return .terminateNow
+        }
+        ExitLog.note("quit asked for, \(held.count) held desks: showing the keep or end question")
         switch quitAlert(held).runModal() {
         case .alertFirstButtonReturn:
+            ExitLog.leaving("quit: desks kept running")
             return .terminateNow
         case .alertSecondButtonReturn:
+            ExitLog.leaving("quit: \(held.count) held desks ended, by the answer to the question")
             for n in held { Holder.end(desk: n) }
             // Ended on purpose: nothing to offer back next time.
             ui.runningDesks.removeAll { held.contains($0) }
