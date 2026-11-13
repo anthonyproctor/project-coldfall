@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.32] - 2026-11-13
+
+Every desk from your phone, and agents that wait for each other.
+
 ### Added
 - **An inbox for your phone and other computers.** Settings, General, "Reach every desk from
   your phone or another computer" serves a small page over Tailscale: your desks grouped as
@@ -799,7 +803,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.32...HEAD
+[0.3.32]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...v0.3.32
 [0.3.31]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...v0.3.31
 [0.3.30]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...v0.3.29

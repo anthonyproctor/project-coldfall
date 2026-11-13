@@ -408,6 +408,9 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <p>Quitting then asks whether to keep them running or end them. Keeping them is the default; each agent holds about 400 to 600 MB of memory while Coldfall is closed. <code>coldfall-cli holders</code> lists them, and <code>coldfall-cli holders end &lt;desk&gt;</code> ends one.</p>
     <h3>From your phone, or another computer</h3>
     <p>Ask any running desk to open, check on or hand work to another. It uses <code>coldfall-cli open &lt;desk&gt;</code>, <code>coldfall-cli read &lt;desk&gt;</code> (the desk's screen as text) and <code>coldfall-cli send &lt;desk&gt; "message"</code> (typed in and sent, as if by you). A send waits while you're halfway through typing into that desk, and never goes to a desk waiting on a question, so it can't answer a permission prompt for you.</p>
+    <h3>The inbox: every desk from your phone</h3>
+    <p>Turn on <strong>Settings ▸ General ▸ Reach every desk from your phone or another computer</strong> and scan the QR code. You get a small page listing your desks by what they need: tap one for its live screen, a box to send it a message, or keys to answer a question it's waiting on. It works for every desk, Codex ones too, from any browser on your Tailscale network, and nothing else can reach it. Anyone with the link can type into your desks, so keep it to yourself; <strong>New Link</strong> replaces it.</p>
+    <p>An agent can also hand another desk work and wait for the answer: <code>coldfall-cli ask &lt;desk&gt; "message"</code> sends it, waits for the desk to finish, and prints its reply. <code>coldfall-cli wait &lt;desk&gt;</code> just waits.</p>
     <h3>After a restart of the Mac</h3>
     <p>A restart ends every desk. Coldfall remembers which ones were running, and the next time it opens it offers them back with one button. Each picks up its conversation.</p>
 
