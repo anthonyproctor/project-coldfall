@@ -54,6 +54,8 @@ public enum RemoteOpen {
     public enum Outcome: String, Codable, Equatable {
         case started, alreadyRunning, unknownDesk, hiddenDesk
         case read, sent, notRunning, notAnAgent, blocked, draft
+        /// The inbox pressed keys in a desk's question; or it wasn't asking one.
+        case pressed, notAsking
     }
 
     public struct Answer: Codable, Equatable {

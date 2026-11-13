@@ -244,6 +244,49 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             of: " You can turn this off any time in Settings.", with: "")
             + " The server's code is in the repo under server/."))
 
+        updLines.append(caps("INBOX FOR YOUR PHONE"))
+        let inboxOn = UIState.load().inboxOn
+        let inboxSwitch = NSButton(checkboxWithTitle: "Reach every desk from your phone or another computer",
+                                   target: self, action: #selector(toggleInbox(_:)))
+        inboxSwitch.state = inboxOn ? .on : .off
+        updLines.append(inboxSwitch)
+        updLines.append(note("A small page listing your desks: what each is doing, its screen, and a box to send it "
+            + "a message, or keys to answer a question. Over Tailscale only, so just your own devices can reach it, "
+            + "and only with the link below. Works for every desk, Codex ones too. Anyone with the link can type "
+            + "into your desks: keep it to yourself, and use New Link if it gets out."))
+        if inboxOn {
+            if let ip = Inbox.tailscaleAddresses().first, let t = Inbox.token() {
+                let link = "http://\(ip):\(Inbox.defaultPort)/?t=\(t)"
+                inboxLink = link
+                let field = NSTextField(labelWithString: link)
+                field.isSelectable = true
+                field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                field.lineBreakMode = .byTruncatingMiddle
+                field.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+                let copy = NSButton(title: "Copy Link", target: self, action: #selector(copyInboxLink))
+                copy.bezelStyle = .rounded
+                let fresh = NSButton(title: "New Link", target: self, action: #selector(newInboxLink))
+                fresh.bezelStyle = .rounded
+                fresh.toolTip = "Makes a new secret. The old link stops working on every device."
+                let row = NSStackView(views: [copy, fresh])
+                row.spacing = 8
+                updLines.append(field)
+                updLines.append(row)
+                if let qr = SettingsWindow.qr(link) {
+                    let iv = NSImageView(image: qr)
+                    iv.widthAnchor.constraint(equalToConstant: 132).isActive = true
+                    iv.heightAnchor.constraint(equalToConstant: 132).isActive = true
+                    updLines.append(iv)
+                    updLines.append(note("Scan it with your phone's camera, on the same Tailscale account."))
+                }
+            } else {
+                let l = note("Tailscale isn't connected on this Mac, so the inbox has nowhere to listen. "
+                    + "Open Tailscale and sign in; the link appears here.")
+                l.textColor = .systemOrange
+                updLines.append(l)
+            }
+        }
+
         updLines.append(caps("SHORTCUTS"))
         let keysBtn = NSButton(title: "Edit Shortcuts…", target: self, action: #selector(editShortcuts))
         keysBtn.bezelStyle = .rounded
@@ -512,6 +555,44 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             try? "{\n  \"Run a Command…\": \"cmd+shift+p\"\n}\n".write(toFile: p, atomically: true, encoding: .utf8)
         }
         NSWorkspace.shared.open(URL(fileURLWithPath: p))
+    }
+
+    private var inboxLink: String?
+
+    /// Settings is built once; to show the link (or take it away), open it
+    /// again on this tab. Not with unsaved desk edits, which that would drop.
+    private func rebuildForInbox() {
+        guard !dirty else { return }
+        NotificationCenter.default.post(name: .coldfallReopenSettings, object: "General")
+    }
+
+    @objc private func toggleInbox(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .coldfallInboxChanged, object: sender.state == .on)
+        rebuildForInbox()
+    }
+
+    @objc private func copyInboxLink() {
+        guard let l = inboxLink else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(l, forType: .string)
+    }
+
+    @objc private func newInboxLink() {
+        _ = Inbox.resetToken()
+        NotificationCenter.default.post(name: .coldfallInboxChanged, object: nil)
+        rebuildForInbox()
+    }
+
+    /// A QR code for the link, drawn crisp.
+    static func qr(_ text: String) -> NSImage? {
+        guard let f = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        f.setValue(Data(text.utf8), forKey: "inputMessage")
+        f.setValue("M", forKey: "inputCorrectionLevel")
+        guard let img = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 6, y: 6)) else { return nil }
+        let rep = NSCIImageRep(ciImage: img)
+        let ns = NSImage(size: rep.size)
+        ns.addRepresentation(rep)
+        return ns
     }
 
     @objc private func toggleNotify(_ sender: NSButton) {

@@ -9,6 +9,18 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **An inbox for your phone and other computers.** Settings, General, "Reach every desk from
+  your phone or another computer" serves a small page over Tailscale: your desks grouped as
+  needs you, done, working and idle; tap one for its live screen and a box to send it a
+  message, or keys (1, 2, 3, arrows, Return, Esc) to answer a question it's waiting on. Every
+  desk, Codex ones too, from any browser on your tailnet. Scan the QR code in Settings, or
+  copy the link.
+
+  It listens only on this Mac's Tailscale address and loopback, never the home network; it
+  answers nothing without the secret in the link (kept in `~/.config/coldfall/inbox-token`,
+  replaceable with New Link); it checks the Host it was reached by and refuses changes that
+  don't come from the page itself; and agent output is only ever shown as text. Off by
+  default.
 - **Hand a desk work and wait for the answer.** `coldfall-cli wait <desk>` returns when the
   desk's turn ends or it needs you (exit 0 done, 2 needs you, 3 still working after
   `--timeout`, default ten minutes). `coldfall-cli ask <desk> "message"` sends it, waits, and

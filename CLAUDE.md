@@ -75,6 +75,11 @@ in 104 bytes), set `COLDFALL_UPDATE_URL` to a dead local address so it never
 counts as an install, open a desk with `coldfall-cli open`, kill that Coldfall,
 and check `coldfall-cli holders` with the same environment.
 
+The inbox (see `Inbox` in the core) can be tried the same way with `"inboxOn":true`
+in the throwaway ui.json: curl `http://127.0.0.1:47100/?t=<inbox-token>` for the
+cookie, then the `/api/*` routes with `X-Coldfall: 1` on POSTs. A Mac can't reach
+its own Tailscale address, so the tailnet side is only checkable from another device.
+
 Snapshots take their theme from the real desks.toml, not from `--desks`. To see
 another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding
 `.config/coldfall/desks.toml` with `[theme] mode = "light"`.

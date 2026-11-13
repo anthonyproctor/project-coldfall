@@ -242,6 +242,25 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.ui.offerFreshStart = on
             self.ui.save()
         }
+        NotificationCenter.default.addObserver(forName: .coldfallReopenSettings, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self else { return }
+            let frame = self.settings?.window?.frame
+            self.settings?.close()
+            self.openSettings()
+            if let f = frame { self.settings?.window?.setFrame(f, display: true) }
+            if let tab = n.object as? String,
+               let item = self.settings?.tabs?.tabViewItems.first(where: { ($0.identifier as? String) == tab }) {
+                self.settings?.tabs?.selectTabViewItem(item)
+            }
+        }
+        NotificationCenter.default.addObserver(forName: .coldfallInboxChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self else { return }
+            if let on = n.object as? Bool { self.ui.inboxOn = on; self.ui.save() }
+            self.inboxServer?.stop()
+            self.applyInbox()
+        }
         NotificationCenter.default.addObserver(forName: .coldfallNotifyChanged, object: nil, queue: .main) {
             [weak self] n in
             guard let self, let on = n.object as? Bool else { return }
@@ -705,6 +724,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.show(i)
         }
         notifier.start()
+        applyInbox()
         watchDeskMemory()
         watchLiveRail()
         watchDeskConfig()
@@ -2157,6 +2177,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// Each desk's state as of the last tick, to notice it change.
     var lastActivity: [String: DeskActivity] = [:]
     let notifier = Notifier()
+    var inboxServer: InboxServer?
     let peek = PeekPanel()
 
     /// Memory per desk, sampled every five seconds from one `ps` call off the
@@ -2167,6 +2188,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func watchDeskMemory() {
         memoryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
+            // Tailscale can come up after Coldfall, or change address.
+            self.applyInbox()
             let roots = self.sessions.mapValues(\.pids)
             // Nothing running: nothing to show, rather than the last numbers.
             guard !roots.isEmpty else { self.memory = [:]; return }
@@ -2623,6 +2646,8 @@ extension Notification.Name {
     static let coldfallFreshStartChanged = Notification.Name("coldfallFreshStartChanged")
     static let coldfallKeepRunningChanged = Notification.Name("coldfallKeepRunningChanged")
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
+    static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
+    static let coldfallReopenSettings = Notification.Name("coldfallReopenSettings")
     /// Settings asked for the Remove Files dialog, which the controller owns.
     static let coldfallOpenUninstall = Notification.Name("coldfallOpenUninstall")
     static let coldfallConfirmStartChanged = Notification.Name("coldfallConfirmStartChanged")

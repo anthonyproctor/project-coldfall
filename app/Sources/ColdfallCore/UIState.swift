@@ -41,6 +41,8 @@ public struct UIState: Codable {
     /// A banner (or, with Coldfall in front, a sound) when a desk you aren't
     /// looking at needs you or finishes, on the agent's own word.
     public var notifyDesks: Bool = true
+    /// The inbox page over Tailscale (see Inbox). Off until turned on.
+    public var inboxOn: Bool = false
 
     public init() {}
 
@@ -73,6 +75,7 @@ public struct UIState: Codable {
         keepDesksRunning = try c.decodeIfPresent(Bool.self, forKey: .keepDesksRunning) ?? false
         runningDesks = try c.decodeIfPresent([String].self, forKey: .runningDesks) ?? []
         notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
+        inboxOn = try c.decodeIfPresent(Bool.self, forKey: .inboxOn) ?? false
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

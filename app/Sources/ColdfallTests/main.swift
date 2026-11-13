@@ -2961,6 +2961,96 @@ do {
        RemoteOpen.reply(before: "a\nb\nc" + foot, after: "x\ny\nz" + foot), "x\ny\nz")
 }
 
+// MARK: - inbox
+
+final class FakeInboxHost: InboxHost {
+    var sent: [(String, String)] = [], pressed: [(String, [UInt8])] = [], opened: [String] = []
+    var blocked = Set<String>()
+    func inboxRows() -> [Inbox.Row] {
+        [Inbox.Row(name: "idle", group: nil, runtime: "claude", running: true, activity: "quiet", lastOutput: 50),
+         Inbox.Row(name: "asks", group: "work", runtime: "claude", running: true, activity: "blocked", lastOutput: 10),
+         Inbox.Row(name: "off", group: nil, runtime: "codex", running: false, activity: "quiet", lastOutput: nil),
+         Inbox.Row(name: "done", group: nil, runtime: "codex", running: true, activity: "ready", lastOutput: 20)]
+    }
+    func inboxDesk(_ name: String, lines: Int) -> Inbox.DeskView? {
+        name == "nope" ? nil : Inbox.DeskView(text: "<b>screen</b> of \(name)", running: true, activity: "quiet", runtime: "claude", agent: true)
+    }
+    func inboxSend(_ name: String, text: String) -> RemoteOpen.Answer { sent.append((name, text)); return .init(.sent, "Sent.") }
+    func inboxPress(_ name: String, keys: [UInt8]) -> RemoteOpen.Answer {
+        guard blocked.contains(name) else { return .init(.notAsking, "not asking") }
+        pressed.append((name, keys)); return .init(.pressed, "Pressed.")
+    }
+    func inboxOpen(_ name: String) -> RemoteOpen.Answer { opened.append(name); return .init(.started, "Started.") }
+}
+
+do {
+    let tok = String(repeating: "k", count: 43)
+    let hosts = ["100.101.102.103", "127.0.0.1", "localhost"]
+    func req(_ m: String, _ target: String, host: String = "100.101.102.103:47100", cookie: String? = "cf_inbox=" + String(repeating: "k", count: 43),
+             header: Bool = true, body: String = "") -> Inbox.Request {
+        var raw = "\(m) \(target) HTTP/1.1\r\nHost: \(host)\r\n"
+        if let c = cookie { raw += "Cookie: \(c)\r\n" }
+        if header { raw += "X-Coldfall: 1\r\n" }
+        raw += "Content-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        guard case .request(let r) = Inbox.parse(Data(raw.utf8)) else { return Inbox.Request(method: "BAD", path: "") }
+        return r
+    }
+    let h = FakeInboxHost()
+    func respond(_ r: Inbox.Request) -> Inbox.Response { Inbox.respond(r, token: tok, allowedHosts: hosts, host: h) }
+
+    eq("inbox: half a request waits for the rest", Inbox.parse(Data("GET / HTTP/1.1\r\nHost: x\r\n".utf8)), .incomplete)
+    eq("inbox: a body not all here yet waits", Inbox.parse(Data("POST /a HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc".utf8)), .incomplete)
+    eq("inbox: junk is refused", Inbox.parse(Data("hello\r\n\r\n".utf8)), .bad)
+    eq("inbox: a huge body is refused", Inbox.parse(Data("POST / HTTP/1.1\r\nContent-Length: 999999999\r\n\r\n".utf8)), .bad)
+    eq("inbox: query read", req("GET", "/api/read?desk=a%20b&lines=5").query["desk"], "a b")
+
+    eq("inbox: another Host is refused (no DNS rebinding)", respond(req("GET", "/", host: "evil.example")).status, 403)
+    eq("inbox: no secret, nothing", respond(req("GET", "/api/desks", cookie: nil)).status, 401)
+    eq("inbox: a wrong secret, nothing", respond(req("GET", "/api/desks", cookie: "cf_inbox=" + String(repeating: "x", count: 43))).status, 401)
+    let first = respond(req("GET", "/?t=" + tok, cookie: nil))
+    eq("inbox: the link's secret becomes a cookie", first.status, 302)
+    check("inbox: a private, same-site cookie", first.header("Set-Cookie")?.contains("HttpOnly; SameSite=Strict") == true)
+    eq("inbox: and the secret leaves the address bar", first.header("Location"), "/")
+    eq("inbox: a change without the page's header is refused", respond(req("POST", "/api/send", header: false, body: #"{"desk":"a","text":"hi"}"#)).status, 403)
+    check("inbox: refused changes did nothing", h.sent.isEmpty)
+
+    let page = respond(req("GET", "/"))
+    eq("inbox: the page", page.status, 200)
+    check("inbox: with a strict content policy", page.header("Content-Security-Policy")?.contains("default-src 'none'") == true)
+    let html = String(decoding: page.body, as: UTF8.self)
+    check("inbox: agent output only ever as text", !html.contains("innerHTML") && html.contains("textContent"))
+    check("inbox: never cached, never framed", String(decoding: page.serialize(), as: UTF8.self).contains("Cache-Control: no-store")
+          && String(decoding: page.serialize(), as: UTF8.self).contains("X-Frame-Options: DENY"))
+
+    let desks = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/desks")).body) as? [String: Any])?["desks"] as? [[String: Any]]
+    eq("inbox: needs you, done, working, idle, not started", desks?.compactMap { $0["name"] as? String }, ["asks", "done", "idle", "off"])
+    let read = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/read?desk=x")).body) as? [String: Any])
+    eq("inbox: a screen reads back as text", read?["text"] as? String, "<b>screen</b> of x")
+    eq("inbox: no such desk", respond(req("GET", "/api/read?desk=nope")).status, 404)
+    _ = respond(req("POST", "/api/send", body: #"{"desk":"idle","text":"go"}"#))
+    check("inbox: a send reaches the desk", h.sent.first.map { $0 == ("idle", "go") } == true)
+    eq("inbox: a key it doesn't press", respond(req("POST", "/api/keys", body: #"{"desk":"asks","key":"ctrl-c"}"#)).status, 400)
+    _ = respond(req("POST", "/api/keys", body: #"{"desk":"idle","key":"1"}"#))
+    check("inbox: keys only for a desk asking a question (the host decides)", h.pressed.isEmpty)
+    h.blocked = ["asks"]
+    _ = respond(req("POST", "/api/keys", body: #"{"desk":"asks","key":"down"}"#))
+    check("inbox: an arrow, as the terminal sends it", h.pressed.first.map { $0.0 == "asks" && $0.1 == [27, 91, 66] } == true)
+    _ = respond(req("POST", "/api/open", body: #"{"desk":"off"}"#))
+    eq("inbox: open starts a desk", h.opened, ["off"])
+    eq("inbox: a wrong method", respond(req("DELETE", "/api/desks")).status, 405)
+    eq("inbox: an unknown path", respond(req("GET", "/etc/passwd")).status, 404)
+
+    check("inbox: Tailscale's range", Inbox.isTailscale("100.102.175.106") && Inbox.isTailscale("100.64.0.1")
+          && !Inbox.isTailscale("100.128.0.1") && !Inbox.isTailscale("192.168.1.10"))
+    let tp = testSandbox + "/inbox-token"
+    let t1 = Inbox.token(path: tp)
+    check("inbox: a long random secret", (t1?.count ?? 0) >= 40)
+    eq("inbox: kept between runs", Inbox.token(path: tp), t1)
+    let perm = (try? FileManager.default.attributesOfItem(atPath: tp))?[.posixPermissions] as? Int
+    eq("inbox: readable by this account only", perm, 0o600)
+    check("inbox: New Link makes a different one", Inbox.resetToken(path: tp) != t1)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the
