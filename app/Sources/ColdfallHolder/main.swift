@@ -161,14 +161,21 @@ func startHolder() {
     for target: Int32 in [0, 1, 2] {
         posix_spawn_file_actions_addopen(&fa, target, "/dev/null", target == 0 ? O_RDONLY : O_WRONLY, 0)
     }
-    let argv = [me, "serve", desk, "--"] + program
+    // Through a shell that backgrounds it and exits at once, so the holder
+    // belongs to launchd from its first moment rather than to this attach
+    // (and through it to Coldfall). A holder left under the app was part of
+    // the app's process tree: anything that ended that tree, a cleanup
+    // script or a force quit, took every held desk with it, which is the
+    // one thing a holder exists to prevent.
+    let argv = ["/bin/sh", "-c", "\"$0\" \"$@\" &", me, "serve", desk, "--"] + program
     var cargs = argv.map { strdup($0) } + [nil]
     var pid: pid_t = 0
-    _ = posix_spawn(&pid, me, &fa, &attr, &cargs, environ)
+    let rc = posix_spawn(&pid, "/bin/sh", &fa, &attr, &cargs, environ)
     for p in cargs { free(p) }
     posix_spawn_file_actions_destroy(&fa)
     posix_spawnattr_destroy(&attr)
-    // Not waited for: it outlives us. It reparents to launchd when we exit.
+    // The shell is gone as soon as it has started the holder: collect it.
+    if rc == 0, pid > 0 { var st: Int32 = 0; while waitpid(pid, &st, 0) < 0 && errno == EINTR {} }
 }
 
 // MARK: - serve

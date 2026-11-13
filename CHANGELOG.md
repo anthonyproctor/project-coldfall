@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- **A held desk is no longer part of Coldfall's process tree.** Its holder used to start as
+  a child of the app, so anything that ended that tree (a cleanup script that walks up from
+  a tool server, a force quit) ended every held desk along with Coldfall. The holder now
+  belongs to the system from the moment it starts.
+
 ## [0.3.41] - 2026-11-13
 
 Ghostty's terminal as a choice, and a record of why Coldfall stopped.
