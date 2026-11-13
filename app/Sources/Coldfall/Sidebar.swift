@@ -17,6 +17,8 @@ final class SidebarView: NSView {
     var onMarkUnreadDesk: ((Int) -> Void)?
     var onColorDesk: ((Int, String?) -> Void)?
     var onBesideDesk: ((Int) -> Void)?
+    /// Desks put off in the waiting queue, and when (see NeedsYou.queue).
+    var deferred: [String: Date] = [:]
     /// The Desks section by priority: every running desk, across groups,
     /// under Needs you, Done, Working, Idle. Off, it lists the selected group.
     var byPriority = false { didSet { if byPriority != oldValue, let d = lastDesks { build(desks: d) } } }
@@ -126,9 +128,16 @@ final class SidebarView: NSView {
     var status: [String: DeskStatus] = [:] {
         didSet {
             for r in rows.values { r.status = status[r.deskName] ?? DeskStatus() }
-            let q = NeedsYou.queue(status.map {
+            var q = NeedsYou.queue(status.map {
                 NeedsYou.Entry(name: $0.key, activity: $0.value.activity, lastOutput: $0.value.lastOutput)
-            })
+            }, deferred: deferred)
+            let kept = NeedsYou.prune(deferred, queue: q)
+            if kept.count != deferred.count {
+                deferred = kept
+                q = NeedsYou.queue(status.map {
+                    NeedsYou.Entry(name: $0.key, activity: $0.value.activity, lastOutput: $0.value.lastOutput)
+                }, deferred: deferred)
+            }
             // The line and the header counts change the layout, so a change
             // in who is waiting rebuilds. Not mid-drag: that would pull the
             // row out from under the pointer. The next tick catches up.

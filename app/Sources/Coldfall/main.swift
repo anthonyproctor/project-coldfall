@@ -929,6 +929,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         defer { if let old = swapIn, old !== visible { mountBeside(old) } }
         lastVisited[d.name] = Date()
+        if !steppingHistory { history.visit(d.name) }
         notifier.clear(desk: d.name)
         waitingName = nil
         if ui.lastDesk != d.name { ui.lastDesk = d.name; ui.save() }
@@ -1109,6 +1110,23 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let waitingItem = NSMenuItem(title: "Go to Desk That Needs You", action: #selector(jumpToWaiting), keyEquivalent: "0")
         waitingItem.target = self
         deskMenu.addItem(waitingItem)
+        let dfItem = NSMenuItem(title: "Not This One Yet", action: #selector(deferDesk), keyEquivalent: "u")
+        dfItem.keyEquivalentModifierMask = [.command, .control]
+        dfItem.target = self
+        dfItem.toolTip = "Puts this desk at the back of the waiting queue, still marked, and goes to the next."
+        deskMenu.addItem(dfItem)
+        let bk = NSMenuItem(title: "Back", action: #selector(goBack), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        bk.keyEquivalentModifierMask = [.command, .control]
+        bk.target = self
+        deskMenu.addItem(bk)
+        let fw = NSMenuItem(title: "Forward", action: #selector(goForward), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        fw.keyEquivalentModifierMask = [.command, .control]
+        fw.target = self
+        deskMenu.addItem(fw)
+        let ro = NSMenuItem(title: "Reopen Stopped Desk", action: #selector(reopenStopped), keyEquivalent: "t")
+        ro.keyEquivalentModifierMask = [.command, .shift]
+        ro.target = self
+        deskMenu.addItem(ro)
         let chItem = NSMenuItem(title: "Changes…", action: #selector(openChanges), keyEquivalent: "g")
         chItem.keyEquivalentModifierMask = [.command, .shift]
         chItem.target = self
@@ -1261,6 +1279,41 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         guard let name = NeedsYou.next(in: sidebar.waiting, current: visible?.desk.name) else { NSSound.beep(); return }
         showDesk(named: name)
     }
+    /// "Not this one yet": the desk on screen goes to the back of the
+    /// waiting queue, still marked, and you go to the next one.
+    @objc func deferDesk() {
+        guard let s = visible else { NSSound.beep(); return }
+        let name = s.desk.name
+        sidebar.deferred[name] = Date()
+        // Keep it in the queue: looking at it would otherwise have read it.
+        if !s.isBlocked { s.markUnread() }
+        let rest = sidebar.waiting.filter { $0 != name }
+        guard let next = rest.first(where: { sidebar.deferred[$0] == nil }) ?? rest.first else { NSSound.beep(); return }
+        showDesk(named: next)
+    }
+
+    // MARK: - back, forward, reopen
+
+    var history = VisitHistory()
+    var closedDesks = ClosedDesks()
+    /// Going back or forward mustn't itself count as a new visit.
+    var steppingHistory = false
+    @objc func goBack() { stepHistory(-1) }
+    @objc func goForward() { stepHistory(1) }
+    func stepHistory(_ d: Int) {
+        guard let n = history.step(d, exists: { [desks] n in desks.contains { $0.name == n && !$0.hidden } }) else { NSSound.beep(); return }
+        steppingHistory = true
+        showDesk(named: n)
+        steppingHistory = false
+    }
+    /// Start again the desk you stopped last.
+    @objc func reopenStopped() {
+        guard let n = closedDesks.reopen(exists: { [desks] n in desks.contains { $0.name == n } },
+                                         running: { [sessions] n in sessions[n]?.started == true }),
+              let i = deskIndex(n) else { NSSound.beep(); return }
+        show(i)
+    }
+
     func showDesk(named name: String) {
         if let i = desks.firstIndex(where: { $0.name == name }) { open(i) }
     }
@@ -1618,6 +1671,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Out of the table first, so the exit callbacks find nothing to tidy.
         sessions.removeValue(forKey: d.name)
         memory.removeValue(forKey: d.name)
+        closedDesks.closed(d.name)
         s.terminateAll()
         if beside === s { mountBeside(nil) }
         if visible === s {

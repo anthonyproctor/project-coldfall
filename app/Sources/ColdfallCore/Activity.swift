@@ -391,15 +391,31 @@ public enum NeedsYou {
     /// Waiting desks: those stopped on a question first, then the rest,
     /// each oldest wait first. Ties go by name so the order holds still
     /// between ticks.
-    public static func queue(_ entries: [Entry]) -> [String] {
+    ///
+    /// `deferred`: desks you put off ("not this one yet"), and when. They go
+    /// to the back, in the order you put them off, so working through the
+    /// queue reaches everything else first and comes back to them.
+    public static func queue(_ entries: [Entry], deferred: [String: Date] = [:]) -> [String] {
         entries.filter { $0.activity == .ready || $0.activity == .blocked }
             .sorted {
+                switch (deferred[$0.name], deferred[$1.name]) {
+                case let (x?, y?): return x != y ? x < y : $0.name < $1.name
+                case (_?, nil): return false
+                case (nil, _?): return true
+                default: break
+                }
                 let qa = $0.activity == .blocked, qb = $1.activity == .blocked
                 if qa != qb { return qa }
                 let a = $0.lastOutput ?? .distantPast, b = $1.lastOutput ?? .distantPast
                 return a != b ? a < b : $0.name < $1.name
             }
             .map(\.name)
+    }
+
+    /// Deferrals still worth keeping: only for desks still in the queue.
+    /// A desk you dealt with starts fresh the next time it waits.
+    public static func prune(_ deferred: [String: Date], queue: [String]) -> [String: Date] {
+        deferred.filter { queue.contains($0.key) }
     }
 
     /// Where cmd-0 goes from `current`: the oldest waiting desk. The desk on

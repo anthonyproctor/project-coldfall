@@ -32,12 +32,22 @@ final class DeskTerminalView: LocalProcessTerminalView {
     var onInput: (([UInt8]) -> Void)?
     /// The program reported its status over OSC 7501 (see ProgramStatus).
     var onStatus: ((ProgramStatus.Report) -> Void)?
+    /// A plain terminal notification (OSC 9, 99, 777), as its message.
+    var onNotice: ((String) -> Void)?
 
     /// Listen for OSC 7501. Called once the terminal exists.
     func listenForStatus() {
         getTerminal().registerOscHandler(code: 7501) { [weak self] data in
             guard let r = ProgramStatus.parse(String(decoding: data, as: UTF8.self)) else { return }
             self?.onStatus?(r)
+        }
+        // Plain terminal notifications, from agents that speak neither the
+        // hook nor 7501 (see TerminalNotice).
+        for code in [9, 99, 777] {
+            getTerminal().registerOscHandler(code: code) { [weak self] data in
+                guard let m = TerminalNotice.message(code: code, payload: String(decoding: data, as: UTF8.self)) else { return }
+                self?.onNotice?(m)
+            }
         }
     }
 
@@ -914,6 +924,12 @@ final class DeskSession {
             p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
         }
         // The agent's own word about itself, as the done hook would say it.
+        agentTerm.onNotice = { [weak self] m in
+            // The agent's own hook or 7501 says it better; this is for
+            // agents with neither.
+            guard let s = self, !s.isSignaled else { return }
+            s.noteSignal(TerminalNotice.event(m), message: m)
+        }
         agentTerm.onStatus = { [weak self] r in
             guard let s = self else { return }
             if let e = ProgramStatus.event(r) { s.noteSignal(e, message: r.message, kind: r.kind) }

@@ -8,6 +8,17 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Not This One Yet** (⌃⌘U): the desk on screen goes to the back of the waiting queue,
+  still marked, and you go to the next. Work through the finished desks without losing
+  the ones you can't answer yet.
+- **Back and Forward** (⌃⌘← / ⌃⌘→) through the desks you've been on, like a browser.
+- **Reopen Stopped Desk** (⇧⌘T) starts again the desk you stopped last.
+- **Any agent's terminal notification counts.** A program that sends a plain terminal
+  notification (OSC 9, 99 or 777) now marks its desk: Needs you when it reads like a
+  question or a request, done otherwise. For agents with neither Coldfall's hook nor
+  OSC 7501; where one of those speaks for the desk, it wins.
+
 ## [0.3.39] - 2026-11-13
 
 Two desks side by side.

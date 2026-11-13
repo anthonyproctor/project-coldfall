@@ -1497,6 +1497,39 @@ do {
                                 canMakeDefault: false, hasInventory: true, hasMcp: true)
         check("menu: a desk can be given a colour", cm.contains { $0.action == .color })
     }
+    do {
+        typealias E = NeedsYou.Entry
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let es = [E(name: "a", activity: .ready, lastOutput: t0), E(name: "b", activity: .ready, lastOutput: t0.addingTimeInterval(10)),
+                  E(name: "c", activity: .blocked, lastOutput: t0.addingTimeInterval(20))]
+        eq("defer: without any, the usual order", NeedsYou.queue(es), ["c", "a", "b"])
+        eq("defer: a put-off desk goes to the back", NeedsYou.queue(es, deferred: ["c": t0]), ["a", "b", "c"])
+        eq("defer: two put off keep the order you put them off in",
+           NeedsYou.queue(es, deferred: ["c": t0.addingTimeInterval(5), "a": t0]), ["b", "a", "c"])
+        eq("defer: forgotten once the desk stops waiting", NeedsYou.prune(["a": t0, "z": t0], queue: ["a", "b"]).keys.sorted(), ["a"])
+
+        var h = VisitHistory()
+        h.visit("a"); h.visit("b"); h.visit("c"); h.visit("c")
+        eq("history: back one", h.step(-1), "b")
+        eq("history: and again", h.step(-1), "a")
+        eq("history: nothing before the first", h.step(-1), nil)
+        eq("history: forward again", h.step(1), "b")
+        h.visit("d")
+        eq("history: a new visit drops what was forward", h.step(1), nil)
+        eq("history: back skips a desk that is gone", h.step(-1, exists: { $0 != "b" }), "a")
+        var cl = ClosedDesks()
+        cl.closed("a"); cl.closed("b")
+        eq("reopen: the last one stopped", cl.reopen(exists: { _ in true }, running: { _ in false }), "b")
+        eq("reopen: then the one before, unless it's running again", cl.reopen(exists: { _ in true }, running: { $0 == "a" }), nil)
+
+        eq("notice: OSC 9 is the message", TerminalNotice.message(code: 9, payload: "Build finished"), "Build finished")
+        eq("notice: OSC 9;4 is progress, not a message", TerminalNotice.message(code: 9, payload: "4;1;40"), nil)
+        eq("notice: OSC 777 has a title and a body", TerminalNotice.message(code: 777, payload: "notify;Codex;Approve the command?"), "Codex: Approve the command?")
+        eq("notice: OSC 99 after its metadata", TerminalNotice.message(code: 99, payload: "i=1:d=0;Turn complete"), "Turn complete")
+        eq("notice: a question needs you", TerminalNotice.event("Codex: Approve the command?"), .notify)
+        eq("notice: a permission request needs you", TerminalNotice.event("Claude needs your permission to use Bash"), .notify)
+        eq("notice: anything else is a finished turn", TerminalNotice.event("Turn complete"), .stop)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)
