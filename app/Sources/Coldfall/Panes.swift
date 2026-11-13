@@ -513,8 +513,8 @@ final class DeskSession {
     /// shell, not the agent, whatever agentTerm now points at.
     var agentGone = false
 
-    /// Desks keep running when Coldfall quits, unless a desk says otherwise.
-    /// Mirrors UIState.keepDesksRunning; set by the controller.
+    /// Settings' "Keep desks running when Coldfall quits" (off unless turned
+    /// on); a desk's own keep_running wins. Mirrors UIState.keepDesksRunning.
     static var keepGlobal = false
 
     /// How the agent pane should start: back onto a holder that is still
@@ -530,8 +530,6 @@ final class DeskSession {
     /// The holder's socket moves with a rename; the pane follows it.
     func followRename(to name: String) { panes[0].renamed(to: name) }
 
-    /// Whether this desk's agent is still running in a holder from before.
-    var canReattach: Bool { hold == .reattach }
 
     /// The name the desk was started under. The agent's CLAUDE_DESK, and so
     /// its done signals, keep it through a rename until the desk restarts.
@@ -623,12 +621,6 @@ final class DeskSession {
         focus((focused + delta + panes.count) % panes.count)
     }
 
-    /// Focus whichever pane owns this terminal. Used when a click lands in one.
-    func focusPane(owning term: TerminalView) -> Bool {
-        guard let i = panes.firstIndex(where: { $0.term === term }) else { return false }
-        focus(i)
-        return true
-    }
 
     func drop(term: TerminalView) {
         guard let i = panes.firstIndex(where: { $0.term === term }) else { return }

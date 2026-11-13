@@ -30,7 +30,7 @@ From an audit of 0.3.32 (two independent reviews of the code).
   readable by your account only. Settings says so when the inbox's port is taken. Stopping
   a desk no longer reads the process table on the main thread.
 
-## [0.3.32] - 2026-11-13
+## [0.3.32] - 2026-11-12
 
 Every desk from your phone, and agents that wait for each other.
 
@@ -54,7 +54,7 @@ Every desk from your phone, and agents that wait for each other.
   doesn't report for itself counts as done once its output has been quiet for ten seconds,
   and `wait` says that was a guess.
 
-## [0.3.31] - 2026-11-13
+## [0.3.31] - 2026-11-12
 
 Everything from the keyboard, and a look without switching.
 

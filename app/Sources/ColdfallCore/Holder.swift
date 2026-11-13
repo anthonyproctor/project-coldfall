@@ -344,9 +344,10 @@ public enum QuitPrompt {
     }
 }
 
-/// After a restart of the Mac (or a crash), the desks that were running are
-/// gone. Coldfall remembers which ones they were and offers to start them
-/// again, each picking up its conversation.
+/// When Coldfall opens and desks that were running last time aren't (a
+/// restart of the Mac, a crash, or an ordinary quit of desks that weren't
+/// kept running), it offers to start them again, each picking up its
+/// conversation. Ending them on purpose with End Them leaves nothing to offer.
 public enum RestoreOffer {
     /// The desks to offer: those that were running last time, still in the
     /// list, not hidden, and not already back (held, or started).

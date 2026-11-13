@@ -232,7 +232,8 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         rtLines.append(caps("AGENT MAIL"))
         let box = Mailbox.load()
         rtLines.append(note("Threads are appended to \((box.dir as NSString).abbreviatingWithTildeInPath)."
-            + (box.runner != nil ? " Using your own runner: \(box.runner!)." : " Using the built-in handoff.")))
+            + " Using the built-in handoff."
+            + (box.runner != nil ? " The runner = line in bridge.toml is ignored." : "")))
 
         var updLines: [NSView] = [caps("UPDATES")]
         let upd = UpdateState.load()

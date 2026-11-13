@@ -128,7 +128,8 @@ public struct Desk {
         if let c = command, !c.isEmpty { return c }
         switch runtime {
         case "shell":
-            return command ?? "exec $SHELL -l"
+            // `command = ""` is no command: a plain login shell.
+            return "exec $SHELL -l"
         case "claude":
             var parts = ["claude"]
             if let a = claudeAccount() { parts = ["CLAUDE_CONFIG_DIR=" + Shell.quote(a.path()), "claude"] }

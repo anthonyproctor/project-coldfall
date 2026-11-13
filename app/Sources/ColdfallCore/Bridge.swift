@@ -126,7 +126,8 @@ public enum Bridge {
 /// One append-only thread between two runtimes.
 public struct Mailbox {
     public var dir: String
-    /// Optional: an existing runner script (a user who already built one).
+    /// A `runner =` line from an older bridge.toml. Never used: the handoff
+    /// is always the built-in one. Kept only so Settings can say so.
     public var runner: String?
     /// The directory the RESPONDER runs in. This is a privacy boundary, not a
     /// convenience: read-only blocks writes, not reads, so the other vendor can
@@ -164,7 +165,6 @@ public struct Mailbox {
                        legacyInbound: kv["inbound"])
     }
 
-    public var usesLegacyRunner: Bool { runner != nil && legacyOutbound != nil }
 
     public func threadPath(_ a: String, _ b: String) -> String {
         if let o = legacyInbound { return (dir as NSString).appendingPathComponent(o) }
@@ -253,26 +253,6 @@ public struct Mailbox {
             }
             append(reply, who: rt.name, to: path)
             DispatchQueue.main.async { completion(.success(reply)) }
-        }
-    }
-
-    /// Hand off to a user's own runner script instead.
-    public func runRunner(completion: @escaping (String) -> Void) {
-        guard let runner else { completion("no runner configured"); return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            p.arguments = ["-lc", runner]
-            p.currentDirectoryURL = URL(fileURLWithPath: dir)
-            var env = ProcessInfo.processInfo.environment
-            env["CLAUDECODE"] = ""; env["CLAUDE_CODE_ENTRYPOINT"] = ""
-            p.environment = env
-            let out = Pipe(); p.standardOutput = out; p.standardError = out
-            p.standardInput = FileHandle.nullDevice
-            do { try p.run() } catch { DispatchQueue.main.async { completion("\(error)") }; return }
-            let d = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            DispatchQueue.main.async { completion(String(data: d, encoding: .utf8) ?? "") }
         }
     }
 }

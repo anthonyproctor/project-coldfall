@@ -171,11 +171,7 @@ public enum RemoteOpen {
     /// What to do with a request, given the desks there are. Pure, so the
     /// rules are tested rather than trusted.
     public static func decide(_ desk: String, names: [String], hidden: Set<String>, running: Set<String>) -> Answer {
-        guard names.contains(desk) else {
-            let near = names.filter { $0.lowercased() == desk.lowercased() || $0.lowercased().hasPrefix(desk.lowercased()) }
-            let hint = near.isEmpty ? "" : " Did you mean \(near.map { "\"\($0)\"" }.joined(separator: " or "))?"
-            return Answer(.unknownDesk, "There's no desk called \"\(desk)\".\(hint)")
-        }
+        if !names.contains(desk), let no = unknownOrHidden(desk, names: names, hidden: hidden) { return no }
         if running.contains(desk) { return Answer(.alreadyRunning, "\(desk) is already running.") }
         if hidden.contains(desk) {
             return Answer(.hiddenDesk, "\(desk) is hidden in Coldfall. Show it there first, then open it.")

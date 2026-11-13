@@ -331,7 +331,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       <li><strong>Point each desk at its own folder.</strong> The agent reads and writes there, and its memory files there apply.</li>
       <li><strong>Group them.</strong> Desks with the same <code>group</code> fold together. Drag desks and whole groups into the order you like, or right-click and sort A to Z.</li>
       <li><strong>Pin the ones you live in.</strong> Right-click, Pin to Top. A pinned desk stays at the very top of the rail, above everything else, and cmd-1 goes to the first one.</li>
-      <li><strong>Let finished desks come to you.</strong> When a desk is waiting on you it turns green and rises to the top, under your pinned desks, then goes back to its place once you've looked at it. Rows only move while the pointer is away from the rail, so nothing jumps under a click. Right-click the rail to turn <strong>Move Ready Desks to Top</strong> off.</li>
+      <li><strong>Let finished desks come to you.</strong> When a desk needs you it turns orange (a question) or green (finished) and rises to the top, under your pinned desks, then goes back to its place once you've looked at it. Rows only move while the pointer is away from the rail, so nothing jumps under a click. Right-click the rail to turn <strong>Move Ready Desks to Top</strong> off.</li>
       <li><strong>Hide what you're not using.</strong> Right-click, Hide Desk. It stays in the file and comes back with one click.</li>
     </ul>
     <h3>Two Claude plans</h3>
@@ -411,8 +411,8 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <h3>The inbox: every desk from your phone</h3>
     <p>Turn on <strong>Settings ▸ General ▸ Reach every desk from your phone or another computer</strong> and scan the QR code. You get a small page listing your desks by what they need: tap one for its live screen, a box to send it a message, or keys to answer a question it's waiting on. It works for every desk, Codex ones too, from any browser on your Tailscale network, and nothing else can reach it. Anyone with the link can type into your desks, so keep it to yourself; <strong>New Link</strong> replaces it.</p>
     <p>An agent can also hand another desk work and wait for the answer: <code>coldfall-cli ask &lt;desk&gt; "message"</code> sends it, waits for the desk to finish, and prints its reply. <code>coldfall-cli wait &lt;desk&gt;</code> just waits.</p>
-    <h3>After a restart of the Mac</h3>
-    <p>A restart ends every desk. Coldfall remembers which ones were running, and the next time it opens it offers them back with one button. Each picks up its conversation.</p>
+    <h3>After a restart of the Mac, or a quit</h3>
+    <p>A restart ends every desk, and so does quitting for desks that aren't kept running. Coldfall remembers which ones were running, and the next time it opens it offers them back with one button. Each picks up its conversation.</p>
 
     <h2 id="lean">Keep desks lean</h2>
     <p>Plugins, skills and MCP servers pile up, and some run on every session or every tool call. Right-click a desk and choose <strong>What This Desk Has</strong> to see what it loads: servers, skills, plugins and hooks, read from the vendor's own files. Anything new since you last looked is marked, and the desk's row says "2 new" until you've checked.</p>

@@ -343,10 +343,6 @@ public enum ScreenChange {
         kept.append(entry)
         try? (kept.suffix(100).joined(separator: "\n") + "\n").write(toFile: logPath, atomically: true, encoding: .utf8)
     }
-
-    public static func meaningful(before: [String], after: [String], footer: Int = footerRows) -> Bool {
-        !newLines(before: before, after: after, footer: footer).isEmpty
-    }
 }
 
 /// The desks waiting on you, gathered in one place.

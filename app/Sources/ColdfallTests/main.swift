@@ -1729,13 +1729,13 @@ do {
     var ok = 0
     // whatever byte the 512K window lands on, the last turn is found
     for tail in [512 * 1024, 512 * 1024 + 1, 512 * 1024 + 2, 512 * 1024 + 3, 100_000] {
-        if Reopen.lastContext(path, tail: tail) == 602_003 { ok += 1 }
+        if Reopen.lastTurn(path, tail: tail)?.tokens == 602_003 { ok += 1 }
     }
     eq("tail: found from any cut point", ok, 5)
     // the record is further back than the tail: read further, once
     lines.append(contentsOf: Array(repeating: #"{"type":"user","message":{"content":"\#(String(repeating: "z", count: 2000))"}}"#, count: 400))
     try? lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
-    eq("tail: a huge trailing tool result doesn't hide the last turn", Reopen.lastContext(path, tail: 64 * 1024), 602_003)
+    eq("tail: a huge trailing tool result doesn't hide the last turn", Reopen.lastTurn(path, tail: 64 * 1024)?.tokens, 602_003)
     try? fm.removeItem(atPath: path)
 }
 
@@ -2471,19 +2471,19 @@ do {
 do {
     let left = ["> fix the build", "", "Done. Tests pass.", "", "╭────╮", "│ >  │", "╰────╯", "  ctx 40%", "  ? for shortcuts", "", ""]
     var repaint = left; repaint[7] = "  ctx 41%"
-    check("repaint: status line ticking is not news", !ScreenChange.meaningful(before: left, after: repaint))
-    check("repaint: an identical screen is not news", !ScreenChange.meaningful(before: left, after: left.map { $0 + "  " }))
+    check("repaint: status line ticking is not news", ScreenChange.newLines(before: left, after: repaint).isEmpty)
+    check("repaint: an identical screen is not news", ScreenChange.newLines(before: left, after: left.map { $0 + "  " }).isEmpty)
     var reply = left; reply[3] = "Also pushed it."
-    check("repaint: a new line above the input box is news", ScreenChange.meaningful(before: left, after: reply))
+    check("repaint: a new line above the input box is news", !ScreenChange.newLines(before: left, after: reply).isEmpty)
     // A notice under the input box pushes everything up a row. Nothing new
     // was said, and this is what turned read desks green after a while.
     let pushed = Array(left.dropFirst()) + ["  ✓ Update installed · Restart to apply"]
-    check("repaint: rows pushed up by a notice below are not news", !ScreenChange.meaningful(before: left, after: pushed))
+    check("repaint: rows pushed up by a notice below are not news", ScreenChange.newLines(before: left, after: pushed).isEmpty)
     let shifted = Array(left.dropFirst()) + [""]
-    check("repaint: the same lines, moved, are not news", !ScreenChange.meaningful(before: left, after: shifted))
+    check("repaint: the same lines, moved, are not news", ScreenChange.newLines(before: left, after: shifted).isEmpty)
     var timer = left; timer[2] = "Done. Tests pass in 12s."
     var timer2 = left; timer2[2] = "Done. Tests pass in 13s."
-    check("repaint: a number ticking in the text is not news", !ScreenChange.meaningful(before: timer, after: timer2))
+    check("repaint: a number ticking in the text is not news", ScreenChange.newLines(before: timer, after: timer2).isEmpty)
     var answer = left; answer[0] = "> fix the build"; answer[1] = "Fixed two imports."
     eq("repaint: a new line anywhere above the footer is news, and is named",
        ScreenChange.newLines(before: left, after: answer), ["Fixed two imports."])
@@ -2497,7 +2497,7 @@ do {
     ScreenChange.logPath = realLog
     try? FileManager.default.removeItem(at: logDir)
     let grown = ["> fix the build", "Done. Tests pass.", "Also pushed it."] + Array(left.suffix(from: 4))
-    check("repaint: a reply that scrolled the screen is still news", ScreenChange.meaningful(before: left, after: grown))
+    check("repaint: a reply that scrolled the screen is still news", !ScreenChange.newLines(before: left, after: grown).isEmpty)
 }
 
 // MARK: - clearing needs-you, and desks that stay removed

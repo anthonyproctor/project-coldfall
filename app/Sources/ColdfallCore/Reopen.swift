@@ -70,15 +70,10 @@ public enum Reopen {
         return ConversationInfo(path: path, tokens: last.tokens, lastUsed: m, model: last.model)
     }
 
-    /// The size of the last turn in a transcript: fresh input plus what was
-    /// read from and written to cache. Read from the END of the file, since a
-    /// long conversation's transcript runs to tens of megabytes and only its
-    /// last turn matters here.
-    public static func lastContext(_ path: String, tail: Int = 512 * 1024) -> Int? {
-        lastTurn(path, tail: tail)?.tokens
-    }
-
-    /// The last turn's size and model.
+    /// The last turn's size (fresh input plus what was read from and written
+    /// to cache) and model. Read from the END of the file, since a long
+    /// conversation's transcript runs to tens of megabytes and only its last
+    /// turn matters here.
     public static func lastTurn(_ path: String, tail: Int = 512 * 1024) -> (tokens: Int, model: String)? {
         guard let h = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? h.close() }
