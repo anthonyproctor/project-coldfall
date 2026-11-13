@@ -268,3 +268,55 @@ public enum DoneSignal {
         return log
     }
 }
+
+/// OSC 7501, the Program Status Protocol: a program in a terminal says what
+/// it is doing, in one escape sequence, instead of a terminal guessing from
+/// its screen. Herdr reads it; any agent that speaks it reports to Coldfall
+/// too, the same way the done hook does, with no hook to install.
+///
+///     ESC ] 7501 ; state=blocked:kind=permission:app=… ESC \
+///
+/// Fields are `key=value`, joined by `:`. `title` and `msg` are base64. A
+/// report with an `id` is about something inside the program (a subtask);
+/// only the program's own report, without one, speaks for the desk.
+public enum ProgramStatus {
+    public struct Report: Equatable {
+        /// idle, working, done, blocked, error or clear.
+        public var state: String
+        public var kind: String?
+        public var id: String
+        public var app: String
+        public var title: String
+        public var message: String
+    }
+
+    static let states: Set<String> = ["idle", "working", "done", "blocked", "error", "clear"]
+
+    /// The payload after "7501;". Nil for anything that isn't a valid report.
+    public static func parse(_ payload: String) -> Report? {
+        var f: [String: String] = [:]
+        for part in payload.split(separator: ":", omittingEmptySubsequences: true) {
+            guard let eq = part.firstIndex(of: "=") else { continue }
+            f[String(part[..<eq])] = String(part[part.index(after: eq)...])
+        }
+        guard let state = f["state"], states.contains(state) else { return nil }
+        func text(_ k: String) -> String {
+            guard let v = f[k], !v.isEmpty else { return "" }
+            return Data(base64Encoded: v).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        }
+        return Report(state: state, kind: f["kind"], id: f["id"] ?? "", app: f["app"] ?? "",
+                      title: text("title"), message: text("msg"))
+    }
+
+    /// What a report means for the desk, in the done hook's terms. Nil when
+    /// it changes nothing: a subtask's record, working (output already says
+    /// so), idle, or clear.
+    public static func event(_ r: Report) -> DoneSignal.Event? {
+        guard r.id.isEmpty else { return nil }
+        switch r.state {
+        case "blocked", "error": return .notify
+        case "done": return .stop
+        default: return nil
+        }
+    }
+}

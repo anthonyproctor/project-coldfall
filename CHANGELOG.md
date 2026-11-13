@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Agents that speak OSC 7501 report to Coldfall without a hook.** The Program Status
+  Protocol (also read by Herdr) lets a program say it's blocked, errored or done in one escape
+  sequence. Coldfall treats blocked and error as "needs you" and done as finished, exactly as
+  the done hook does, so any agent that adopts it turns orange or green on its own word.
+
 ## [0.3.30] - 2026-11-12
 
 Know which desk needs you, and reach it from anywhere.

@@ -83,6 +83,8 @@ public struct ActivityState {
     /// and a desk that turned green for each one was green all day with
     /// nothing to say to you. Needing you always counts, whoever started it.
     public mutating func noteSignal(_ event: DoneSignal.Event = .stop, at now: Date = Date()) {
+        // A reattach replays the screen, status reports and all: old news.
+        if let m = mutedUntil, now < m { return }
         signaled = true
         switch event {
         case .notify:

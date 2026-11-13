@@ -30,6 +30,16 @@ final class DeskTerminalView: LocalProcessTerminalView {
     var onOutput: (() -> Void)?
     /// Something was sent into the desk: a keystroke, a paste, a drop.
     var onInput: (([UInt8]) -> Void)?
+    /// The program reported its status over OSC 7501 (see ProgramStatus).
+    var onStatus: ((ProgramStatus.Report) -> Void)?
+
+    /// Listen for OSC 7501. Called once the terminal exists.
+    func listenForStatus() {
+        getTerminal().registerOscHandler(code: 7501) { [weak self] data in
+            guard let r = ProgramStatus.parse(String(decoding: data, as: UTF8.self)) else { return }
+            self?.onStatus?(r)
+        }
+    }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
@@ -175,6 +185,7 @@ final class Pane {
         self.isAgent = isAgent
         term = DeskTerminalView(frame: .zero)
         term.translatesAutoresizingMaskIntoConstraints = false
+        if isAgent { term.listenForStatus() }
         Theme.apply(to: term)
         box = PaneBox(term: term)
     }
@@ -576,6 +587,10 @@ final class DeskSession {
         for p in panes {
             p.term.onOutput = { [weak self] in self?.noteOutput() }
             p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
+        }
+        // The agent's own word about itself, as the done hook would say it.
+        agentTerm.onStatus = { [weak self] r in
+            if let e = ProgramStatus.event(r) { self?.noteSignal(e) }
         }
     }
 

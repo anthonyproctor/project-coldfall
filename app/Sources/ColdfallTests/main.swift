@@ -2817,6 +2817,30 @@ do {
     check("ui: notifications are on unless turned off", ui?.notifyDesks == true)
 }
 
+// MARK: - OSC 7501, the Program Status Protocol
+
+do {
+    let msg = Data("Allow edit?".utf8).base64EncodedString()
+    let r = ProgramStatus.parse("state=blocked:kind=permission:app=codex:msg=\(msg)")
+    eq("7501: a blocked report reads", r?.state, "blocked")
+    eq("7501: with its kind", r?.kind, "permission")
+    eq("7501: and its message decoded", r?.message, "Allow edit?")
+    eq("7501: blocked means it needs you", r.flatMap(ProgramStatus.event), .notify)
+    eq("7501: error does too", ProgramStatus.parse("state=error").flatMap(ProgramStatus.event), .notify)
+    eq("7501: done is a finished turn", ProgramStatus.parse("state=done").flatMap(ProgramStatus.event), .stop)
+    eq("7501: working changes nothing (output says it)", ProgramStatus.parse("state=working:progress=40").flatMap(ProgramStatus.event), nil)
+    eq("7501: a subtask's record doesn't speak for the desk", ProgramStatus.parse("state=blocked:id=sub1").flatMap(ProgramStatus.event), nil)
+    eq("7501: an unknown state is ignored", ProgramStatus.parse("state=dancing"), nil)
+    eq("7501: so is junk", ProgramStatus.parse("hello"), nil)
+    var a = ActivityState()
+    a.setVisible(false, at: Date(timeIntervalSince1970: 0))
+    a.mute(for: 3, at: Date(timeIntervalSince1970: 10))
+    a.noteSignal(.notify, at: Date(timeIntervalSince1970: 11))
+    check("7501: a replayed report on reattach isn't news", !a.needsYou)
+    a.noteSignal(.notify, at: Date(timeIntervalSince1970: 20))
+    check("7501: a new one after is", a.needsYou)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the
