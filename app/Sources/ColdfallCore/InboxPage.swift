@@ -60,6 +60,8 @@ textarea{flex:1;min-height:46px;max-height:30vh;resize:vertical;background:var(-
 const $ = id => document.getElementById(id);
 const labels = {blocked:"Needs you", ready:"Done", working:"Working", quiet:"Idle", off:"Not started"};
 let current = null, timer = null, stuckToBottom = true;
+// Each desk's half-written message, kept when you go to another desk.
+const drafts = {};
 
 function api(path, body) {
   const o = body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json","X-Coldfall":"1"}, body:JSON.stringify(body)};
@@ -98,7 +100,10 @@ function refreshList() {
 
 function refreshDesk() {
   if (!current) return;
-  api("/api/read?desk=" + encodeURIComponent(current) + "&lines=300").then(r => {
+  const asked = current;
+  api("/api/read?desk=" + encodeURIComponent(asked) + "&lines=300").then(r => {
+    // An answer for the desk you've since left belongs to nobody.
+    if (asked !== current) return;
     const sc = $("screen");
     stuckToBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
     if (sc.textContent !== (r.text || "")) sc.textContent = r.text || "";
@@ -115,7 +120,9 @@ function refreshDesk() {
 
 function show() {
   const m = location.hash.match(/^#desk=(.+)$/);
+  if (current) drafts[current] = $("msg").value;
   current = m ? decodeURIComponent(m[1]) : null;
+  $("msg").value = (current && drafts[current]) || "";
   $("list").classList.toggle("hidden", !!current);
   $("detail").classList.toggle("hidden", !current);
   $("back").style.display = current ? "inline" : "none";
@@ -128,19 +135,19 @@ function show() {
 
 for (const [label, key] of [["1","1"],["2","2"],["3","3"],["↑","up"],["↓","down"],["Return","enter"],["Esc","esc"]]) {
   const b = document.createElement("button"); b.textContent = label;
-  b.onclick = () => api("/api/keys", {desk: current, key}).then(r => { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 400); });
+  b.onclick = () => { const desk = current; api("/api/keys", {desk, key}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 400); } }); };
   $("keys").appendChild(b);
 }
 $("send").onclick = () => {
-  const text = $("msg").value;
-  if (!text.trim()) return;
-  $("note").textContent = "Sending…";
-  api("/api/send", {desk: current, text}).then(r => {
-    $("note").textContent = r.message || "";
-    if (r.outcome === "sent") { $("msg").value = ""; setTimeout(refreshDesk, 600); }
+  const desk = current, text = $("msg").value;
+  if (!desk || !text.trim()) return;
+  $("note").textContent = "Sending to " + desk + "…";
+  api("/api/send", {desk, text}).then(r => {
+    if (r.outcome === "sent") { drafts[desk] = ""; if (current === desk) $("msg").value = ""; }
+    if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 600); }
   }).catch(e => { $("note").textContent = e.message; });
 };
-$("open").onclick = () => api("/api/open", {desk: current}).then(r => { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 1500); });
+$("open").onclick = () => { const desk = current; api("/api/open", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 1500); } }); };
 $("back").onclick = () => { location.hash = ""; };
 window.addEventListener("hashchange", show);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) show(); });

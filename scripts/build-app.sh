@@ -9,15 +9,29 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../app"
-APP="${1:-$HOME/Applications}/Project Coldfall.app"
+DEST="${1:-$HOME/Applications}/Project Coldfall.app"
+# Assembled here and moved into place only once it's whole: a failed build or
+# copy leaves the installed app exactly as it was.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+APP="$STAGE/Project Coldfall.app"
 VERSION="$(git -C .. describe --tags --always 2>/dev/null || echo 0.1.0)"
 SOURCE_ROOT="$(cd .. && pwd)"
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "building…"
-swift build -c release 2>&1 | grep -vE "build database|^\[" || true
+# A build that didn't finish stops here. (SwiftPM can report a build-database
+# error after a complete build on a synced folder; "Build complete!" is what
+# counts.)
+LOG="$STAGE/build.log"
+if swift build -c release >"$LOG" 2>&1 || grep -q "Build complete!" "$LOG"; then
+  grep -vE "build database|^\[" "$LOG" || true
+else
+  grep -vE "^\[" "$LOG" | tail -30
+  echo "build failed; the installed app is untouched"
+  exit 1
+fi
 
-rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Coldfall "$APP/Contents/MacOS/Coldfall"
 # Ship the headless core alongside it, so `coldfall-cli` is available without a
@@ -82,6 +96,9 @@ else
   echo "  run ./scripts/make-signing-cert.sh once to stop that."
 fi
 
+rm -rf "$DEST"
+mv "$APP" "$DEST"
+APP="$DEST"
 echo "built $APP"
 echo "  open it:    open '$APP'"
 echo "  cli:        '$APP/Contents/MacOS/coldfall-cli' usage"

@@ -59,6 +59,22 @@ public enum Holder {
         (socket as NSString).deletingPathExtension + ".pid"
     }
 
+    /// The lock a holder keeps for its whole life (see serve).
+    public static func lockPath(socket: String) -> String {
+        (socket as NSString).deletingPathExtension + ".lock"
+    }
+
+    /// The name the held agent reports under (its CLAUDE_DESK at start).
+    public static func launchPath(socket: String) -> String {
+        (socket as NSString).deletingPathExtension + ".launch"
+    }
+
+    /// What a held desk's agent calls itself, which a rename doesn't change.
+    public static func launchName(desk: String, root: String = Holder.root) -> String? {
+        (try? String(contentsOfFile: launchPath(socket: socketPath(desk: desk, root: root)), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// The desk a socket belongs to, recorded beside it so a hashed name can
     /// be listed.
     public static func namePath(socket: String) -> String {
@@ -155,7 +171,9 @@ public enum Holder {
 
     /// Remove a socket and the files beside it.
     public static func clearFiles(socket: String) {
-        for p in [socket, pidPath(socket: socket), namePath(socket: socket)] {
+        // Not the lock: removing a lock file another process holds is how
+        // two of them end up thinking they have it.
+        for p in [socket, pidPath(socket: socket), namePath(socket: socket), launchPath(socket: socket)] {
             try? FileManager.default.removeItem(atPath: p)
         }
     }
@@ -195,6 +213,7 @@ public enum Holder {
         let fm = FileManager.default
         try? fm.moveItem(atPath: a, toPath: b)
         try? fm.moveItem(atPath: pidPath(socket: a), toPath: pidPath(socket: b))
+        try? fm.moveItem(atPath: launchPath(socket: a), toPath: launchPath(socket: b))
         try? fm.removeItem(atPath: namePath(socket: a))
         try? "\(new)\n".write(toFile: namePath(socket: b), atomically: true, encoding: .utf8)
         return isAlive(b)

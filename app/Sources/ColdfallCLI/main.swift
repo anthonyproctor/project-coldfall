@@ -27,7 +27,12 @@ func remote(_ r: RemoteOpen.Request, timeout: TimeInterval = 10) -> RemoteOpen.A
     guard RemoteOpen.status() != nil else { print("Project Coldfall isn't running. Open the app on the Mac first."); return nil }
     do { try RemoteOpen.submit(r) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); return nil }
     guard let a = RemoteOpen.wait(for: r, timeout: timeout) else {
-        print("Coldfall didn't answer within \(Int(timeout)) seconds, so the request was withdrawn."); return nil
+        // Taken but not answered: it may have been acted on. Say so rather
+        // than promise it wasn't, so nobody retries into a duplicate.
+        print(RemoteOpen.taken(r)
+              ? "Coldfall took the request but didn't answer within \(Int(timeout)) seconds. It may have gone through; check before trying again."
+              : "Coldfall didn't get to it within \(Int(timeout)) seconds, so it was withdrawn. Nothing was done.")
+        return nil
     }
     return a
 }
@@ -244,7 +249,10 @@ case "send":
     let req = RemoteOpen.Request(desk: name, action: "send", text: text)
     do { try RemoteOpen.submit(req) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); exit(1) }
     guard let a = RemoteOpen.wait(for: req, timeout: ActivityState.draftHold + 15) else {
-        print("Coldfall didn't send it within \(Int(ActivityState.draftHold + 15)) seconds, so it was withdrawn. Nothing was typed."); exit(1)
+        print(RemoteOpen.taken(req)
+              ? "Coldfall took the message but didn't confirm it. It may have been typed; read the desk before sending again."
+              : "Coldfall didn't send it within \(Int(ActivityState.draftHold + 15)) seconds, so it was withdrawn. Nothing was typed.")
+        exit(1)
     }
     print(a.message)
     exit(a.outcome == .sent ? 0 : 1)
@@ -272,18 +280,23 @@ case "ask":
         timeout = t; words.removeSubrange(k...(k + 1))
     }
     let text = words.joined(separator: " ")
-    guard let before = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)) else { exit(1) }
-    guard before.outcome == .read else { print(before.message); exit(1) }
+    // A desk mid-turn finishes that turn first: its end isn't this answer.
+    if let d = RemoteOpen.status()?.desks.first(where: { $0.name == name }), d.activity == "working" {
+        print("\(name) is busy; waiting for it to finish before asking.")
+        let first = waitFor(name, since: Date().timeIntervalSince1970 - 2, timeout: timeout)
+        guard first.code == 0 else { exit(first.code) }
+    }
     guard let sent = remote(RemoteOpen.Request(desk: name, action: "send", text: text), timeout: ActivityState.draftHold + 15) else { exit(1) }
     guard sent.outcome == .sent else { print(sent.message); exit(1) }
-    // From when it actually went in: a send can wait a minute on a message
-    // being typed there, and that message's answer isn't this one's.
-    let since = Date().timeIntervalSince1970 - 1
+    // The screen and the moment the message went in, as the app saw them:
+    // nothing before that (a draft's own answer, an earlier turn) counts.
+    let baseline = sent.text ?? ""
+    let since = sent.at ?? Date().timeIntervalSince1970
     // Give the agent a moment to start before watching for the end.
     Thread.sleep(forTimeInterval: 2)
     let w = waitFor(name, since: since, timeout: timeout)
     if let after = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)), let t = after.text {
-        let reply = RemoteOpen.reply(before: before.text ?? "", after: t)
+        let reply = RemoteOpen.reply(before: baseline, after: t)
         print("")
         print(reply.isEmpty ? RemoteOpen.lastLines(t, lines: 40) : reply)
     }
@@ -341,7 +354,9 @@ default:
       usage [--days N]   consumption by vendor and by desk (default: this week)
       formats            where every file Project Coldfall reads or writes lives
 
-    Everything is JSON on stdout. A front end in any language can use this
+    Listings are JSON on stdout; open, send, read, ask, wait and holders end
+    print a line of plain text (read and ask print the desk's text), and say
+    how it went in the exit status. A front end in any language can use this
     instead of reimplementing the core.
     """)
 }

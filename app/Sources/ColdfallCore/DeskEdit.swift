@@ -253,6 +253,28 @@ public enum ProcessTree {
         return UInt64(info.pbi_start_tvsec) * 1_000_000 + UInt64(info.pbi_start_tvusec)
     }
 
+    /// The foreground process group of the terminal `pid` runs on, as `ps`
+    /// reports it (tpgid). The shell at its prompt is its own foreground
+    /// group; a program it is running in the foreground is another. A job
+    /// left in the background, or a program suspended with ^Z, isn't.
+    public static func foregroundGroup(of pid: Int32) -> Int32? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-o", "tpgid=", "-p\(pid)"]
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return Int32(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Whether `shell` has handed its terminal to a program: something other
+    /// than the shell is in the foreground.
+    public static func runsForeground(shell: Int32, foreground: Int32?) -> Bool {
+        guard let f = foreground, f > 0 else { return false }
+        return f != shell
+    }
+
     /// The live `ps` table.
     public static func read() -> [Row] {
         let p = Process()

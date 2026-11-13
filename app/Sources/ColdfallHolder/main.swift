@@ -43,16 +43,6 @@ func writeAll(_ fd: Int32, _ bytes: [UInt8]) -> Bool {
     return true
 }
 
-func readSome(_ fd: Int32, max: Int = 65536) -> [UInt8]? {
-    var buf = [UInt8](repeating: 0, count: max)
-    while true {
-        let n = read(fd, &buf, max)
-        if n > 0 { return Array(buf[0..<n]) }
-        if n < 0, errno == EINTR { continue }
-        return nil
-    }
-}
-
 // MARK: - attach
 
 /// SIGWINCH arrives on this pipe, so the poll loop can see it.
@@ -190,9 +180,13 @@ func serve() -> Never {
     // A socket path macOS can't take would be cut short; refuse instead.
     guard Holder.fits(sock) else { exit(1) }
 
-    // Claim the socket before starting anything. Two attaches at once (a
-    // click and a launch-time reopen) both start a serve; only one binds,
-    // and the other goes away before it has started a second agent.
+    // One holder per desk, decided by a lock held for the holder's whole
+    // life. Two attaches at once (a click and a launch-time reopen) both
+    // start a serve; the second can't take the lock and leaves before it
+    // touches the socket or starts a second agent. With the lock, a socket
+    // nobody answers on really is left over, and safe to replace.
+    let lockFD = open(Holder.lockPath(socket: sock), O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+    guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else { exit(0) }
     if Holder.isAlive(sock) { exit(0) }
     let lfd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard lfd >= 0 else { exit(1) }
@@ -238,6 +232,10 @@ func serve() -> Never {
     _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL) | O_NONBLOCK)
     try? "\(child)\n".write(toFile: Holder.pidPath(socket: sock), atomically: true, encoding: .utf8)
     try? "\(desk)\n".write(toFile: Holder.namePath(socket: sock), atomically: true, encoding: .utf8)
+    // The name the agent's hooks report under (its CLAUDE_DESK), kept with
+    // the holder so a Coldfall reattaching after a rename still knows it.
+    let launch = ProcessInfo.processInfo.environment["CLAUDE_DESK"] ?? desk
+    try? "\(launch)\n".write(toFile: Holder.launchPath(socket: sock), atomically: true, encoding: .utf8)
 
     var replay = Holder.Replay()
     var attaches = 0
@@ -260,10 +258,13 @@ func serve() -> Never {
         return sig == 0 ? (st >> 8) & 0xff : 128 + sig
     }
     func done(_ code: Int32) -> Never {
+        // A last word to the terminal, but never a wait on one that has
+        // stopped reading: half a second, then it's dropped.
         let bye = Holder.Wire.encode(.exit, Holder.Wire.status(code))
-        for c in conns where c.attached && c.fd >= 0 {
-            _ = fcntl(c.fd, F_SETFL, fcntl(c.fd, F_GETFL) & ~O_NONBLOCK)
-            writeAll(c.fd, c.out + bye)
+        let until = Date().addingTimeInterval(0.5)
+        for i in conns.indices where conns[i].attached && conns[i].fd >= 0 {
+            var q = conns[i].out + bye
+            while !q.isEmpty, Date() < until, flush(conns[i].fd, &q) { if !q.isEmpty { usleep(10_000) } }
         }
         for c in conns where c.fd >= 0 { close(c.fd) }
         close(lfd)
@@ -315,7 +316,10 @@ func serve() -> Never {
     while true {
         var fds = [pollfd(fd: lfd, events: Int16(POLLIN), revents: 0),
                    pollfd(fd: master, events: Int16(POLLIN) | (toProgram.isEmpty ? 0 : Int16(POLLOUT)), revents: 0)]
-        fds += conns.map { pollfd(fd: $0.fd, events: Int16(POLLIN) | ($0.out.isEmpty ? 0 : Int16(POLLOUT)), revents: 0) }
+        // A terminal sending faster than the program takes input waits:
+        // its keys stay in the socket rather than being dropped here.
+        let full = toProgram.count >= 1 << 20
+        fds += conns.map { pollfd(fd: $0.fd, events: (full && $0.attached ? 0 : Int16(POLLIN)) | ($0.out.isEmpty ? 0 : Int16(POLLOUT)), revents: 0) }
         let r = poll(&fds, nfds_t(fds.count), 1000)
         if r < 0 { if errno == EINTR { continue }; break }
         if r == 0 { if let c = reap() { done(c) }; continue }
@@ -384,7 +388,7 @@ func serve() -> Never {
                 case .input:
                     // Queued, never blocking: a big paste while the program is
                     // busy writing can't wedge the two against each other.
-                    if conns[i].attached, toProgram.count + payload.count <= 8 << 20 {
+                    if conns[i].attached {
                         toProgram += payload
                         if !flush(master, &toProgram) { toProgram = [] }
                     }

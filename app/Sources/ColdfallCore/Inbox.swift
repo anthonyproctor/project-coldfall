@@ -60,8 +60,10 @@ public enum Inbox {
 
     // MARK: - where it listens
 
-    /// This Mac's Tailscale IPv4 addresses: the 100.64.0.0/10 range
-    /// Tailscale hands out.
+    /// This Mac's Tailscale IPv4 addresses: on a tunnel interface (utun,
+    /// which is what Tailscale uses on a Mac) and in the 100.64.0.0/10 range
+    /// it hands out. A home network or a carrier that happens to use that
+    /// range on an ordinary interface doesn't count.
     public static func tailscaleAddresses() -> [String] {
         var out: [String] = []
         var list: UnsafeMutablePointer<ifaddrs>?
@@ -70,7 +72,8 @@ public enum Inbox {
         var p: UnsafeMutablePointer<ifaddrs>? = first
         while let a = p {
             defer { p = a.pointee.ifa_next }
-            guard let sa = a.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET) else { continue }
+            guard let sa = a.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET),
+                  isTunnel(String(cString: a.pointee.ifa_name)) else { continue }
             let addr = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr.s_addr }
             let v = UInt32(bigEndian: addr)
             let ip = "\(v >> 24).\((v >> 16) & 0xff).\((v >> 8) & 0xff).\(v & 0xff)"
@@ -78,6 +81,8 @@ public enum Inbox {
         }
         return Array(Set(out)).sorted()
     }
+
+    public static func isTunnel(_ interface: String) -> Bool { interface.hasPrefix("utun") }
 
     public static func isTailscale(_ ip: String) -> Bool {
         let p = ip.split(separator: ".").compactMap { Int($0) }

@@ -61,10 +61,8 @@ of an editor.
 
 ## What it does not do yet
 
-- No syntax highlighting in the reader, and no diff view
-- Desks die when the app quits; they do not outlive it
-- One terminal per desk, no splits
-- No meter pane — the statusline in each desk covers it for now
-- No cross-vendor router
+- No diff view in the reader
+- Desks kept running outlive the app, but not a restart of the Mac (Coldfall
+  then offers to start them again)
 
 See [../DESIGN.md](../DESIGN.md) for where this is going.

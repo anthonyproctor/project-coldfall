@@ -420,24 +420,11 @@ extension Mailbox {
             }
             register?(p)
 
-            // Drain BOTH pipes concurrently. Reading stdout to EOF first and
-            // stderr afterwards deadlocks: a child that fills the 64KB stderr
-            // buffer blocks on write while the parent blocks on read, and both
-            // sit at 0% CPU forever. That is not hypothetical — it hung a live
-            // run for sixteen minutes and looked exactly like a slow model.
-            var d = Data(), e = Data()
-            let pipes = DispatchGroup()
-            let sink = DispatchQueue(label: "coldfall.fanout.drain", attributes: .concurrent)
-            pipes.enter()
-            sink.async { d = out.fileHandleForReading.readDataToEndOfFile(); pipes.leave() }
-            pipes.enter()
-            sink.async { e = err.fileHandleForReading.readDataToEndOfFile(); pipes.leave() }
-
-            // An upper bound, because a slice with no ceiling can hang the whole
-            // run and nothing downstream ever reports it.
-            if pipes.wait(timeout: .now() + timeout) == .timedOut {
-                p.terminate()
-                _ = pipes.wait(timeout: .now() + 5)
+            // Both pipes drained at once (a deadlock otherwise: it hung a live
+            // run for sixteen minutes), with an upper bound, because a slice
+            // with no ceiling can hang the whole run unreported.
+            let (d, e, timedOut) = Subprocess.drain(p, out: out, err: err, timeout: timeout)
+            if timedOut {
                 let mins = Int(timeout / 60)
                 let note = "gave up after \(mins) minutes. The process was killed; "
                     + "nothing was written."
@@ -445,7 +432,6 @@ extension Mailbox {
                 done(note, true)
                 return
             }
-            p.waitUntilExit()
 
             var reply = ""
             if let f = finalFile, let only = try? String(contentsOfFile: f, encoding: .utf8),

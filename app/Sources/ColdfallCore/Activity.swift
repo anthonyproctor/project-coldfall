@@ -108,8 +108,6 @@ public struct ActivityState {
     private var needsYouAt: Date?
     /// When the agent last said its turn was over.
     public private(set) var turnEndedAt: Date?
-    /// Work this long after the question means it was answered somewhere else.
-    public static let answeredElsewhereAfter: TimeInterval = 5
 
     /// Keys typed into the agent since the last Enter: a message half written.
     public private(set) var draftOpen = false
@@ -141,9 +139,21 @@ public struct ActivityState {
     public mutating func noteTyping(_ bytes: [UInt8], at now: Date = Date()) {
         guard !ActivityState.isReport(bytes) else { return }
         keyAt = now
-        needsYou = false
+        // Only an answer answers: Return, Esc, or a choice's number. Moving
+        // through the choices with the arrows is still the question open.
+        if ActivityState.answers(bytes) { needsYou = false }
         draftOpen = !ActivityState.isSubmit(bytes)
     }
+
+    /// Keys that answer a question: Return, Esc on its own, or one digit.
+    public static func answers(_ bytes: [UInt8]) -> Bool {
+        if isSubmit(bytes) || bytes == [27] { return true }
+        return bytes.count == 1 && (48...57).contains(bytes[0])
+    }
+
+    /// The agent says it's working again (OSC 7501): whatever it asked was
+    /// answered, here or somewhere else.
+    public mutating func noteResumed() { needsYou = false }
 
     /// Whether something sent on your behalf would land in the middle of a
     /// message you are writing. A draft counts for a minute after your last
@@ -210,12 +220,9 @@ public struct ActivityState {
             mutedUntil = nil
         }
         if !visible, let h = hiddenAt, now.timeIntervalSince(h) < ActivityState.leaveGrace { return }
-        // Work well after the question, while you weren't looking: it was
-        // answered somewhere else (the phone). Not while you look: switching
-        // to a desk makes its screen redraw, and that's not an answer.
-        if needsYou, !visible, let q = needsYouAt, now.timeIntervalSince(q) >= ActivityState.answeredElsewhereAfter {
-            needsYou = false
-        }
+        // Output never answers a question: a repaint, a status line ticking
+        // or a focus redraw all look like work. Only an answering key, the
+        // turn ending, or the agent saying it's working again (7501) does.
         lastOutput = now
         if !visible, !signaled { unseen = true }
         if !visible || typedAt.map({ now.timeIntervalSince($0) >= ActivityState.echoGrace }) ?? true {

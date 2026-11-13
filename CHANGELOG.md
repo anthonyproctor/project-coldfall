@@ -22,7 +22,27 @@ opens this file.
   tree (it stopped at 45%).
 
 ### Fixed
-From an audit of 0.3.32 (two independent reviews of the code).
+From an audit of 0.3.32: two independent reviews of the code (Claude and Codex), then a
+second Codex pass over the fixes.
+- **A desk counts as having an agent only while the agent has the terminal.** A job left
+  running in the background, or an agent suspended with ^Z, no longer passes for one.
+- **"Needs you" clears only on an answer:** Return, Esc or a choice's number, the turn
+  ending, or the agent saying it's working again. Moving through choices with the arrow keys,
+  or the screen repainting, no longer clears it.
+- **The inbox keeps each desk's draft to itself,** sends to the desk it was written for, and
+  ignores a late screen from the desk you just left.
+- **Only one holder can ever start for a desk** (a lock held for its whole life), a holder
+  ending never waits on a terminal that stopped reading, a big paste waits for room instead
+  of being dropped, and a desk renamed while held keeps reporting after Coldfall reopens.
+- **The inbox listens only on Tailscale's own tunnel,** not any network that happens to use
+  the same address range.
+- **A send that times out says what it knows:** never touched (safe to retry), or taken but
+  unconfirmed (check before retrying). `ask` waits for a busy desk to finish first, and
+  compares against the screen as it was when its message went in.
+- **`build-app.sh` stops if the build fails** and swaps the new app in only once it's whole,
+  so a failed build or update leaves the installed app as it was.
+- Agent mail and fan out, when they give up, stop everything the agent started, not just
+  the agent.
 - **A send could reach a bare shell.** After a desk's agent exited or crashed, `coldfall-cli
   send`, `ask`, the inbox, Wrap Up and commands run in a desk could type into the shell left
   behind, where text runs as a command. Each now checks the agent is really running under the

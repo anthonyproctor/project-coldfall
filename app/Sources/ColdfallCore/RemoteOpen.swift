@@ -61,8 +61,11 @@ public enum RemoteOpen {
     public struct Answer: Codable, Equatable {
         public var outcome: Outcome
         public var message: String
-        /// For read: the desk's screen as text.
+        /// For read: the desk's screen as text. For send: the screen just
+        /// before the message was typed (what `ask` compares the reply to).
         public var text: String?
+        /// For send: when it was typed, by this Mac's clock.
+        public var at: Double?
         public init(_ outcome: Outcome, _ message: String) { self.outcome = outcome; self.message = message }
     }
 
@@ -267,13 +270,28 @@ public enum RemoteOpen {
             }
             out.append(r)
         }
-        // Answers nobody collected.
-        for n in names where n.hasSuffix(".answer") {
+        // Answers nobody collected, and claims nobody answered.
+        for n in names where n.hasSuffix(".answer") || n.hasSuffix(".claimed") {
             let p = (requests as NSString).appendingPathComponent(n)
             if let a = try? fm.attributesOfItem(atPath: p), let m = a[.modificationDate] as? Date,
                now.timeIntervalSince(m) > requestTTL { try? fm.removeItem(atPath: p) }
         }
         return out.sorted { $0.time < $1.time }
+    }
+
+    /// Take a request before acting on it: its file moves out of the queue,
+    /// so a caller that gives up can tell "never touched" from "taken".
+    /// False if the caller already withdrew it.
+    public static func claim(_ r: Request) -> Bool {
+        let from = (requests as NSString).appendingPathComponent(r.id + ".json")
+        let to = (requests as NSString).appendingPathComponent(r.id + ".claimed")
+        return rename(from, to) == 0
+    }
+
+    /// Whether the app took a request (it may have acted on it) without
+    /// answering it.
+    public static func taken(_ r: Request) -> Bool {
+        FileManager.default.fileExists(atPath: (requests as NSString).appendingPathComponent(r.id + ".claimed"))
     }
 
     /// Answer a request and take it off the queue.
@@ -285,6 +303,7 @@ public enum RemoteOpen {
             chmod(p, 0o600)
         }
         try? FileManager.default.removeItem(atPath: (requests as NSString).appendingPathComponent(r.id + ".json"))
+        try? FileManager.default.removeItem(atPath: (requests as NSString).appendingPathComponent(r.id + ".claimed"))
     }
 
     public static func writeStatus(_ s: Status) {

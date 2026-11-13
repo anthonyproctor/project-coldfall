@@ -2762,7 +2762,15 @@ do {
     b.noteOutput(at: at(12))
     eq("blocked: a repaint right after the question isn't an answer", b.activity(now: at(13)), .blocked)
     b.noteOutput(at: at(20))
-    check("blocked: work well after it is (answered from the phone)", !b.needsYou)
+    check("blocked: output alone never answers it (it may be a repaint)", b.needsYou)
+    b.noteTyping([27, 91, 66], at: at(21))
+    check("blocked: moving through the choices doesn't answer it", b.needsYou)
+    b.noteTyping([13], at: at(22))
+    check("blocked: Return does", !b.needsYou)
+    var bb = ActivityState()
+    bb.noteSignal(.notify, at: at(1))
+    bb.noteResumed()
+    check("blocked: the agent saying it's working again does (answered elsewhere)", !bb.needsYou)
     var c = ActivityState()
     c.noteSignal(.notify, at: at(1)); c.noteSignal(.stop, at: at(2))
     check("blocked: the turn finishing clears it", !c.needsYou)
@@ -3043,6 +3051,7 @@ do {
     eq("inbox: a wrong method", respond(req("DELETE", "/api/desks")).status, 405)
     eq("inbox: an unknown path", respond(req("GET", "/etc/passwd")).status, 404)
 
+    check("inbox: only a tunnel interface counts", Inbox.isTunnel("utun4") && !Inbox.isTunnel("en0") && !Inbox.isTunnel("bridge100"))
     check("inbox: Tailscale's range", Inbox.isTailscale("100.102.175.106") && Inbox.isTailscale("100.64.0.1")
           && !Inbox.isTailscale("100.128.0.1") && !Inbox.isTailscale("192.168.1.10"))
     let tp = testSandbox + "/inbox-token"
@@ -3096,13 +3105,33 @@ do {
     check("needs you: a redraw while you look isn't an answer", d.needsYou)
     d.setVisible(false, at: Date(timeIntervalSince1970: 21))
     d.noteOutput(at: Date(timeIntervalSince1970: 40))
-    check("needs you: work while you're away is (answered on the phone)", !d.needsYou)
+    check("needs you: nor is output while you're away", d.needsYou)
+    check("liveness: the shell at its prompt isn't an agent", !ProcessTree.runsForeground(shell: 500, foreground: 500))
+    check("liveness: a program in the foreground is", ProcessTree.runsForeground(shell: 500, foreground: 612))
+    check("liveness: no answer from ps isn't one", !ProcessTree.runsForeground(shell: 500, foreground: nil))
 
     // The hook's log: a desk's last word.
     let log = testSandbox + "/signals-test.log"
     try? "1000 notify hub\n1001 stop work\n1002 stop hub\n1003 notify hub\n".write(toFile: log, atomically: true, encoding: .utf8)
     eq("signals: a desk's last word", DoneSignal.last(desk: "hub", since: Date(timeIntervalSince1970: 0), path: log)?.event, .notify)
     eq("signals: only newer than asked", DoneSignal.last(desk: "work", since: Date(timeIntervalSince1970: 1001.5), path: log), nil)
+}
+
+// MARK: - claimed requests
+
+do {
+    let r = RemoteOpen.Request(desk: "hub", action: "send", text: "hi")
+    try? RemoteOpen.submit(r)
+    check("claim: a waiting request can be taken", RemoteOpen.claim(r))
+    check("claim: and isn't offered again", !RemoteOpen.pending().contains { $0.id == r.id })
+    check("claim: a caller that gives up can see it was taken", RemoteOpen.taken(r))
+    RemoteOpen.answer(r, .init(.sent, "Sent."))
+    check("claim: answered, nothing is left taken", !RemoteOpen.taken(r))
+    _ = RemoteOpen.wait(for: r, timeout: 0.5)
+    let late = RemoteOpen.Request(desk: "hub", action: "send", text: "late")
+    try? RemoteOpen.submit(late)
+    eq("claim: withdrawn before it was taken", RemoteOpen.wait(for: late, timeout: 0.3), nil)
+    check("claim: can't be taken after", !RemoteOpen.claim(late) && !RemoteOpen.taken(late))
 }
 
 // MARK: - the suite must not touch a real home directory

@@ -1480,6 +1480,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             lastRemoteServe = now
             for r in RemoteOpen.pending(now: now) {
                 if r.action == "read" || r.action == "send" { serveReadSend(r); continue }
+                guard RemoteOpen.claim(r) else { continue }
                 let running = Set(sessions.filter { $0.value.started || $0.value.resolving || $0.value.holding }.keys)
                 let a = RemoteOpen.decide(r.desk, names: desks.map(\.name),
                                           hidden: Set(desks.filter(\.hidden).map(\.name)), running: running)
@@ -1513,8 +1514,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func serveReadSend(_ r: RemoteOpen.Request) {
         let names = desks.map(\.name), hidden = Set(desks.filter(\.hidden).map(\.name))
         let s = sessions[r.desk]
-        let target = s?.remoteTarget()
         if r.action == "read" {
+            // Reading needs no agent, so no process-table check.
+            let target = s.map { RemoteOpen.Target(running: $0.started, agent: true) }
+            guard RemoteOpen.claim(r) else { return }
             if let no = RemoteOpen.refuseRead(r.desk, names: names, hidden: hidden, target: target) { RemoteOpen.answer(r, no); return }
             var a = RemoteOpen.Answer(.read, "")
             a.text = s?.screenText(lines: r.lines ?? 60)
@@ -1522,12 +1525,19 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             return
         }
         let text = r.text ?? ""
-        if let no = RemoteOpen.refuseSend(r.desk, names: names, hidden: hidden, target: target, text: text) {
-            if no.outcome != .draft { RemoteOpen.answer(r, no) }
+        // A half-typed message holds the send without taking it, so the
+        // caller can still withdraw it cleanly.
+        if s?.holdsDraft == true, s?.isBlocked == false, s?.started == true { return }
+        guard RemoteOpen.claim(r) else { return }
+        if let no = RemoteOpen.refuseSend(r.desk, names: names, hidden: hidden, target: s?.remoteTarget(), text: text) {
+            RemoteOpen.answer(r, no.outcome == .draft ? RemoteOpen.Answer(.draft, "Someone started typing into \(r.desk) just now; nothing was sent.") : no)
             return
         }
+        var a = RemoteOpen.Answer(.sent, "Sent to \(r.desk).")
+        a.text = s?.screenText(lines: 400)
+        a.at = Date().timeIntervalSince1970
         s?.typeOnBehalf(RemoteOpen.keystrokes(text))
-        RemoteOpen.answer(r, RemoteOpen.Answer(.sent, "Sent to \(r.desk)."))
+        RemoteOpen.answer(r, a)
     }
 
     /// Start a desk for someone who isn't at the Mac. Like a click, but it

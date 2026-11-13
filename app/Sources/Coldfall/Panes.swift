@@ -433,8 +433,10 @@ final class DeskSession {
     /// (or crashed) leaves a bare shell, and typing into that runs commands.
     /// Reads the process table: call it for an action, not on a timer.
     func agentAlive() -> Bool {
-        guard started, !agentGone, desk.runtime != "shell", let root = panes[0].shellPid else { return false }
-        return ProcessTree.descendants(of: root, in: ProcessTree.read()).count > 1
+        guard started, !agentGone, desk.runtime != "shell", let shell = panes[0].shellPid else { return false }
+        // Who has the terminal: the shell at its prompt means no agent,
+        // whatever was left running in the background or suspended.
+        return ProcessTree.runsForeground(shell: shell, foreground: ProcessTree.foregroundGroup(of: shell))
     }
 
     /// What a send, an ask or the inbox may do with this desk right now.
@@ -546,7 +548,7 @@ final class DeskSession {
             startPanes(nil, hold: .reattach)
             let name = d.name
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in
-                let logged = DoneSignal.last(desk: name, since: Date().addingTimeInterval(-86_400))?.event
+                let logged = DoneSignal.last(desk: self?.launchName ?? name, since: Date().addingTimeInterval(-86_400))?.event
                 self?.activityState.endMute(logged: logged)
             }
             return
@@ -570,7 +572,9 @@ final class DeskSession {
     }
 
     private func startPanes(_ command: String?, hold: Pane.Hold? = nil) {
-        launchName = desk.name
+        // A held desk keeps the name it started under, even across a rename
+        // and a relaunch: that's the name its hooks report.
+        launchName = ((hold ?? self.hold) == .reattach ? Holder.launchName(desk: desk.name) : nil) ?? desk.name
         panes[0].start(desk: desk, command: command, hold: hold ?? self.hold)
         for p in panes.dropFirst() { p.start(desk: desk, command: nil) }
     }
@@ -641,6 +645,7 @@ final class DeskSession {
         // The agent's own word about itself, as the done hook would say it.
         agentTerm.onStatus = { [weak self] r in
             if let e = ProgramStatus.event(r) { self?.noteSignal(e) }
+            else if r.id.isEmpty, r.state == "working" { self?.activityState.noteResumed() }
         }
     }
 
