@@ -8,6 +8,11 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- More groundwork for Ghostty's terminal, still off in every release: a pane view that hosts
+  it (keys, input methods, mouse, paste, copy, resize, Coldfall's theme), tried with
+  `--ghostty-demo` in a build made with `COLDFALL_GHOSTTY=1`.
+
 ## [0.3.37] - 2026-11-13
 
 Answer waiting desks from one window, and review what a desk changed.

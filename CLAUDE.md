@@ -71,6 +71,13 @@ wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
 
+Ghostty's terminal is being brought in beside SwiftTerm and is off in every
+normal build. `scripts/ghostty-kit.sh` builds the library into `app/Vendor/`
+(needs Zig and Apple's Metal toolchain); `COLDFALL_GHOSTTY=1 swift build -c release`
+then links it, and `./.build/release/Coldfall --ghostty-demo` opens one Ghostty
+terminal in a window, with no desks. A build without that variable, and so every
+release, has none of it.
+
 Held desks (see `Holder` in the core) run through `coldfall-holder`, which
 ships beside the app. To try one end to end without touching a running
 Coldfall, run the built `Coldfall` binary directly with `HOME` and

@@ -44,6 +44,32 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        #if canImport(GhosttyKit)
+        // `--ghostty-demo [command]`: one Ghostty terminal in a window and
+        // nothing else: no desks, no rail. For trying the new terminal by
+        // hand before it becomes a pane. With COLDFALL_GHOSTTY_SELFTEST set
+        // to a file, it types a line, writes the screen's text there and quits.
+        if let k = CommandLine.arguments.firstIndex(of: "--ghostty-demo") {
+            let cmd = k + 1 < CommandLine.arguments.count ? CommandLine.arguments[k + 1] : "/bin/zsh -l"
+            guard let v = GhosttyDemo.open(command: cmd) else {
+                FileHandle.standardError.write("Ghostty's terminal couldn't start.\n".data(using: .utf8)!)
+                exit(1)
+            }
+            if let out = ProcessInfo.processInfo.environment["COLDFALL_GHOSTTY_SELFTEST"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { v.send(text: "typed by the self test\r") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    try? v.screenText(lines: 40).write(toFile: out, atomically: true, encoding: .utf8)
+                    if let w = GhosttyDemo.window {
+                        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                        p.arguments = ["-x", "-o", "-l\(w.windowNumber)", out + ".png"]
+                        try? p.run(); p.waitUntilExit()
+                    }
+                    exit(0)
+                }
+            }
+            return
+        }
+        #endif
         // Before anything builds a row.
         // In the rail's order, so cmd-1..9 match what is on screen even when
         // a group's desks are scattered through the file.

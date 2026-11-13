@@ -3,12 +3,15 @@ import PackageDescription
 import Foundation
 
 // Ghostty's terminal (libghostty), when scripts/ghostty-kit.sh has built it
-// into Vendor/. Optional on purpose: it's 140 MB, built with Zig and Apple's
-// Metal toolchain, so it isn't in the repo, and without it Coldfall builds
-// exactly as before with SwiftTerm. Code that uses it checks
-// `#if canImport(GhosttyKit)`.
+// into Vendor/ AND the build asks for it with COLDFALL_GHOSTTY=1. Optional
+// twice over on purpose: it's 140 MB, built with Zig and Apple's Metal
+// toolchain, so it isn't in the repo; and while it is being brought in, a
+// plain `swift build` (and so every release) stays the SwiftTerm app it
+// was, whether or not the library happens to be on this Mac. Code that
+// uses it checks `#if canImport(GhosttyKit)`.
 let ghosttyKit = Context.packageDirectory + "/Vendor/GhosttyKit.xcframework"
-let hasGhostty = FileManager.default.fileExists(atPath: ghosttyKit)
+let hasGhostty = ProcessInfo.processInfo.environment["COLDFALL_GHOSTTY"] == "1"
+    && FileManager.default.fileExists(atPath: ghosttyKit)
 
 // Two targets on purpose. ColdfallCore must not import AppKit — that boundary
 // is what keeps a future Linux or Windows front end a UI project rather than a
