@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.38] - 2026-11-13
+
+A colour for each desk, so you can see which agent you are in.
+
 ### Added
 - **A colour for each desk.** Right-click a desk, **Colour**, and pick one of eight (or set
   `color = "teal"` or `color = "#3aa0ff"` in desks.toml). The desk's pane takes it as its
@@ -978,7 +982,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...HEAD
+[0.3.38]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...v0.3.38
 [0.3.37]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.36...v0.3.37
 [0.3.36]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.35...v0.3.36
 [0.3.35]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.34...v0.3.35
