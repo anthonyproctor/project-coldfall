@@ -48,8 +48,9 @@ final class SidebarView: NSView {
     override func mouseEntered(with e: NSEvent) { pointerInside = true }
     override func mouseExited(with e: NSEvent) { pointerInside = false; syncFloat() }
 
-    /// "Move Ready Desks to Top": a desk waiting on you is shown at the top
-    /// of the rail, under any pinned desks, until you have looked at it.
+    /// "Show Running Desks on Top": every running desk in an Active section
+    /// under any pinned desks, sorted by what it needs from you; the rest
+    /// below, by group.
     var floatReady = true { didSet { if floatReady != oldValue { syncFloat(force: true) } } }
     var onToggleFloat: (() -> Void)?
     /// The desks floated to the top, as last drawn. This follows `waiting`,
@@ -63,11 +64,29 @@ final class SidebarView: NSView {
     /// place in the list.
     private var zoneRows: Set<Int> = []
 
-    /// Bring `floated` in line with who is waiting, if now is a calm moment.
+    /// The Active section as the desks' states say it should be now.
+    private func wantedActive(_ d: [Desk]) -> [String] {
+        var live: [String: DeskOrder.Live] = [:]
+        for (name, st) in status where st.running {
+            let rank: Int
+            switch st.activity { case .blocked: rank = 0; case .ready: rank = 1; case .working: rank = 2; case .quiet: rank = 3 }
+            live[name] = DeskOrder.Live(rank: rank, lastOutput: st.lastOutput)
+        }
+        return DeskOrder.active(d, live: live, enabled: floatReady)
+    }
+    private var lastReorder = Date.distantPast
+
+    /// Bring the Active section in line with the desks' states, if now is a
+    /// calm moment: the pointer outside the rail, no drag, and not reordered
+    /// in the last few seconds. A desk starting or stopping goes in or out
+    /// at the next calm moment; a change of order waits the few seconds too.
     func syncFloat(force: Bool = false) {
         guard let d = lastDesks else { return }
-        let want = DeskOrder.floating(d, waiting: waiting, enabled: floatReady)
+        let want = wantedActive(d)
         guard want != floated, force || (!pointerInside && !isDragging) else { return }
+        let sameMembers = Set(want) == Set(floated)
+        if !force, sameMembers, Date().timeIntervalSince(lastReorder) < 4 { return }
+        lastReorder = Date()
         floated = want
         build(desks: d)
     }
@@ -117,7 +136,7 @@ final class SidebarView: NSView {
             // row out from under the pointer. The next tick catches up.
             if q != waiting, dropLine.superview == nil, let d = lastDesks {
                 waiting = q
-                if !pointerInside { floated = DeskOrder.floating(d, waiting: q, enabled: floatReady) }
+                if !pointerInside { floated = wantedActive(d); lastReorder = Date() }
                 build(desks: d)
             } else {
                 syncFloat()
@@ -208,15 +227,32 @@ final class SidebarView: NSView {
             y += 34
         }
 
-        // Desks that are ready for you, floated up under the line that
-        // names them. Each goes back to its place once you've looked at it.
+        // Active: every running desk, by what it needs from you. Each goes
+        // back to its group when it stops.
+        if !zones.floated.isEmpty {
+            let t = SectionTitle("Active")
+            t.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
+            t.translatesAutoresizingMaskIntoConstraints = true
+            t.autoresizingMask = [.width]
+            addSubview(t)
+            y += 22
+        }
         for i in zones.floated {
             let r = row(i, desks[i], indent: 4, y: y, width: w)
             r.onHide = { [weak self] in self?.onHideDesk?(i) }
             zoneRows.insert(i)
             y += DeskRow.height + 2
         }
-        if !zones.floated.isEmpty { y += 8 }
+        if !zones.floated.isEmpty {
+            y += 8
+            // What's left is what isn't running.
+            let t = SectionTitle("Not running")
+            t.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
+            t.translatesAutoresizingMaskIntoConstraints = true
+            t.autoresizingMask = [.width]
+            addSubview(t)
+            y += 22
+        }
 
         // The live order, if on, with any group it doesn't know yet (just
         // created) after it in your order.
@@ -236,8 +272,9 @@ final class SidebarView: NSView {
                 h.autoresizingMask = [.width]
                 // Folded, a group would hide a waiting desk entirely.
                 let inside = isDown ? [] : members.filter { waiting.contains($0.element.name) }.map(\.element.name)
+                let upTop = all.filter { zones.floated.contains($0.offset) }.count
                 h.configure(title: g, expanded: isDown, waiting: inside.count,
-                            asking: inside.contains { status[$0]?.activity == .blocked })
+                            asking: inside.contains { status[$0]?.activity == .blocked }, running: upTop)
                 h.onClick = { [weak self] in self?.onToggleGroup?(g) }
                 h.onRename = { [weak self] in self?.onRenameGroup?(g) }
                 h.onSort = { [weak self] in self?.onSortDesks?() }
@@ -457,10 +494,11 @@ final class SidebarView: NSView {
         live.toolTip = "Groups with a desk that needs you, then the most recently used, rise to the top. "
             + "Your own order is kept underneath: turn this off to get it back."
         m.addItem(live)
-        let up = NSMenuItem(title: "Move Ready Desks to Top", action: #selector(toggleFloat), keyEquivalent: "")
+        let up = NSMenuItem(title: "Show Running Desks on Top", action: #selector(toggleFloat), keyEquivalent: "")
         up.target = self
         up.state = floatReady ? .on : .off
-        up.toolTip = "A desk that is waiting on you rises to the top of the rail, under any pinned desks, "
+        up.toolTip = "Every running desk sits in an Active section at the top, under any pinned desks, "
+            + "sorted by what it needs from you; the rest stay below, by group. "
             + "and goes back to its place once you've looked at it."
         m.addItem(up)
         let it = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortAll), keyEquivalent: "")
@@ -507,10 +545,16 @@ final class GroupHeader: NSView {
 
     /// Folded, the header carries what its desks would show: orange if one
     /// is asking you something, green if one has finished.
-    func configure(title: String, expanded: Bool, waiting: Int = 0, asking: Bool = false) {
+    func configure(title: String, expanded: Bool, waiting: Int = 0, asking: Bool = false, running: Int = 0) {
         let s = NSMutableAttributedString(string: (expanded ? "▾ " : "▸ ") + title, attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: Theme.ui.dimText,
         ])
+        // Its running desks are up in Active; say so, so none seem missing.
+        if running > 0 {
+            s.append(NSAttributedString(string: "  · \(running) in Active", attributes: [
+                .font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.ui.dimText.withAlphaComponent(0.8),
+            ]))
+        }
         if waiting > 0 {
             s.append(NSAttributedString(string: (asking ? "  ◉ " : "  ● ") + "\(waiting)", attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),

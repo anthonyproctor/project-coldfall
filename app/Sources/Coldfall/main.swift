@@ -951,7 +951,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         live.target = self
         live.state = ui.liveRail ? .on : .off
         deskMenu.addItem(live)
-        let readyUp = NSMenuItem(title: "Move Ready Desks to Top", action: #selector(toggleReadyOnTop), keyEquivalent: "")
+        let readyUp = NSMenuItem(title: "Show Running Desks on Top", action: #selector(toggleReadyOnTop), keyEquivalent: "")
         readyUp.target = self
         readyUp.state = ui.readyOnTop ? .on : .off
         deskMenu.addItem(readyUp)
@@ -1456,7 +1456,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
     }
 
-    /// "Move Ready Desks to Top". The rail does the moving itself, at calm
+    /// "Show Running Desks on Top". The rail does the moving itself, at calm
     /// moments; this only holds the setting.
     @objc func toggleReadyOnTop() {
         ui.readyOnTop.toggle()

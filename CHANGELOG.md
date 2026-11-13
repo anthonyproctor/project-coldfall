@@ -8,6 +8,17 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Active and Not running.** The desk list now has an Active section at the top: every
+  running desk, sorted by what it needs from you (needs you, done, working, idle). Everything
+  else sits below under Not running, in its groups, and a group says how many of its desks
+  are up in Active. Pinned desks keep the very top. Active re-sorts only while the pointer is
+  away from the list, and at most every few seconds, so nothing moves under a click. **Desks ▸
+  Show Running Desks on Top** turns it off. It replaces Move Ready Desks to Top.
+- **Which agent runs each desk, at a glance:** a small badge beside its name, a letter on the
+  vendor's colour (C Claude, X Codex, A Antigravity, G Copilot). A desk can have its own:
+  `icon = "⛳️"` in desks.toml. The inbox shows the same badges.
+
 ### Changed
 - **A compact desk list.** One line per desk (its state, name and how long ago), so a long
   list fits without scrolling; the rest (vendor, state, memory, budget, what's new) is in the

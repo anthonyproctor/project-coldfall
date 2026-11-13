@@ -73,6 +73,9 @@ final class DeskRow: NSView {
     private let isDefault: Bool
 
     private let glyph = NSTextField(labelWithString: "")
+    /// Which agent runs it: a letter on the vendor's colour (VendorBadge).
+    private let badge = NSTextField(labelWithString: "")
+    private let badgeInfo: VendorBadge.Badge
     private let name = NSTextField(labelWithString: "")
     private let time = NSTextField(labelWithString: "")
     private let sub = NSTextField(labelWithString: "")
@@ -111,10 +114,28 @@ final class DeskRow: NSView {
         runtime = desk.runtime
         label = desk.vendorLabel
         isDefault = desk.isDefault
+        badgeInfo = VendorBadge.badge(runtime: desk.runtime, icon: desk.icon)
         super.init(frame: .zero)
         wantsLayer = true
 
-        for f in [glyph, name, time, sub] {
+        // The badge: centred letter on a rounded square of the vendor's
+        // colour, or a bare emoji / shell mark.
+        badge.stringValue = badgeInfo.text
+        badge.alignment = .center
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 4
+        badge.font = .systemFont(ofSize: badgeInfo.fill == nil ? 12 : 10, weight: .bold)
+        if let hex = badgeInfo.fill {
+            badge.drawsBackground = false
+            badge.layer?.backgroundColor = NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
+                                                   green: CGFloat((hex >> 8) & 0xff) / 255,
+                                                   blue: CGFloat(hex & 0xff) / 255, alpha: 1).cgColor
+            badge.textColor = .white
+        } else {
+            badge.textColor = Theme.ui.dimText
+        }
+        badge.toolTip = desk.runtime == "shell" ? "shell" : desk.vendorLabel
+        for f in [glyph, badge, name, time, sub] {
             f.translatesAutoresizingMaskIntoConstraints = false
             f.lineBreakMode = .byTruncatingTail
             f.isSelectable = false
@@ -132,7 +153,12 @@ final class DeskRow: NSView {
             glyph.widthAnchor.constraint(equalToConstant: 16),
             glyph.centerYAnchor.constraint(equalTo: name.centerYAnchor),
 
-            name.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 6),
+            badge.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 5),
+            badge.centerYAnchor.constraint(equalTo: name.centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 16),
+            badge.heightAnchor.constraint(equalToConstant: 16),
+
+            name.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 7),
             name.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
 

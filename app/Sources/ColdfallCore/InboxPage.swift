@@ -24,6 +24,7 @@ main{padding:0 12px 24px;max-width:760px;margin:0 auto}
 h2{font-size:13px;font-weight:600;color:var(--dim);margin:18px 6px 6px}
 .desk{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:6px 0;color:var(--text);font:inherit;cursor:pointer}
 .dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dim);opacity:.5}
+.badge{width:20px;height:20px;border-radius:5px;flex:none;display:grid;place-items:center;font:700 11px/1 -apple-system,system-ui,sans-serif;color:#fff;background:#6b6b6b}
 .blocked .dot{background:var(--orange);opacity:1}.ready .dot{background:var(--green);opacity:1}.working .dot{background:var(--accent);opacity:1}
 .blocked .name{color:var(--orange)}.ready .name{color:var(--green)}
 .name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -73,6 +74,8 @@ function ago(t) {
   return s < 60 ? "now" : s < 3600 ? Math.floor(s/60) + "m" : s < 86400 ? Math.floor(s/3600) + "h" : Math.floor(s/86400) + "d";
 }
 function kind(d) { return d.running ? d.activity : "off"; }
+// The same letters and colours as the desk list in the app (VendorBadge).
+const badges = {claude:["C","#c96442"], codex:["X","#10a37f"], antigravity:["A","#4285f4"], copilot:["G","#8957e5"], grok:["K","#3a3a3a"], ollama:["O","#5a5a5a"], shell:["›",""]};
 
 function renderList(desks) {
   const list = $("list");
@@ -84,9 +87,12 @@ function renderList(desks) {
     const b = document.createElement("button");
     b.className = "desk " + k;
     const dot = document.createElement("span"); dot.className = "dot";
+    const bd = document.createElement("span"); bd.className = "badge";
+    const [letter, colour] = badges[d.runtime] || [(d.runtime || "?").slice(0,1).toUpperCase(), "#6b6b6b"];
+    bd.textContent = letter; if (colour) bd.style.background = colour; else { bd.style.background = "none"; bd.style.color = "var(--dim)"; }
     const n = document.createElement("span"); n.className = "name"; n.textContent = d.name;
     const s = document.createElement("span"); s.className = "sub"; s.textContent = [d.group, ago(d.lastOutput)].filter(Boolean).join(" · ");
-    b.append(dot, n, s);
+    b.append(dot, bd, n, s);
     b.onclick = () => { location.hash = "desk=" + encodeURIComponent(d.name); };
     list.appendChild(b);
   }

@@ -331,7 +331,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       <li><strong>Point each desk at its own folder.</strong> The agent reads and writes there, and its memory files there apply.</li>
       <li><strong>Group them.</strong> Desks with the same <code>group</code> fold together. Drag desks and whole groups into the order you like, or right-click and sort A to Z.</li>
       <li><strong>Pin the ones you live in.</strong> Right-click, Pin to Top. A pinned desk stays at the very top of the rail, above everything else, and cmd-1 goes to the first one.</li>
-      <li><strong>Let finished desks come to you.</strong> When a desk needs you it turns orange (a question) or green (finished) and rises to the top, under your pinned desks, then goes back to its place once you've looked at it. Rows only move while the pointer is away from the rail, so nothing jumps under a click. Right-click the rail to turn <strong>Move Ready Desks to Top</strong> off.</li>
+      <li><strong>Let the desks that need you come to you.</strong> Running desks sit in Active at the top, under your pinned desks: orange (a question) first, then green (finished), then working and idle. Rows only move while the pointer is away from the list, so nothing jumps under a click. Right-click the list to turn <strong>Show Running Desks on Top</strong> off.</li>
       <li><strong>Hide what you're not using.</strong> Right-click, Hide Desk. It stays in the file and comes back with one click.</li>
     </ul>
     <h3>Two Claude plans</h3>
@@ -350,6 +350,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     </figure>
     <ul>
       <li><strong>A green check</strong> on a desk means it finished while you were looking at something else, and its screen changed. It might want an answer, or it's just done. Its row also moves up to the top of the list, under the green line, until you've looked at it.</li>
+      <li><strong>Running desks sit in Active.</strong> The top of the desk list shows every running desk, the ones that need you first; the rest are below under Not running, in their groups. The small letter beside a name says which agent runs it (C Claude, X Codex, A Antigravity, G Copilot); <code>icon = "⛳️"</code> in desks.toml gives a desk its own.</li>
       <li><strong>Orange means it needs you.</strong> A desk stopped on a question (a permission, a choice) turns orange and stays that way until you answer it. Green means it finished. With Coldfall in the background you get a notification for either; click it to go there. Settings, Agents turns it off.</li>
       <li><strong>Make green exact.</strong> Settings, Agents, <strong>Let agents say when they're done</strong>. Claude Code and Codex then tell Coldfall when a desk finishes or needs you, so a desk turns green on the agent's word rather than a guess from its output. It writes one line to a file on your Mac and sends nothing. Codex asks you to trust the new hook once: run <code>/hooks</code> in a Codex desk.</li>
       <li><strong>The green line</strong> at the top names every waiting desk, oldest first. Click it, or press <kbd>⌘0</kbd>, to go to the one that's waited longest. The <strong>×</strong> clears it without visiting them.</li>

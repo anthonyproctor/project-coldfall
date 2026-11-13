@@ -106,13 +106,31 @@ public enum DeskOrder {
         return Zones(pinned: pinned, floated: up)
     }
 
-    /// Which desks should be floated to the top right now: the ones waiting
-    /// on you, unless they are pinned (already on top) or hidden. Empty when
-    /// the setting is off. The rail takes this up only at a calm moment, so
-    /// a row never moves out from under the pointer.
-    public static func floating(_ desks: [Desk], waiting: [String], enabled: Bool) -> [String] {
+    /// A running desk's state, for ordering the Active section.
+    public struct Live: Equatable {
+        /// 0 needs you, 1 done, 2 working, 3 idle.
+        public let rank: Int
+        public let lastOutput: Date?
+        public init(rank: Int, lastOutput: Date?) { self.rank = rank; self.lastOutput = lastOutput }
+    }
+
+    /// The Active section: every running desk that isn't pinned (pins keep
+    /// the very top) or hidden. Needs you, then done, each longest-waiting
+    /// first; then working and idle, most recent first; then the list's own
+    /// order. Empty when the setting is off. The rail takes this up only at
+    /// a calm moment, so a row never moves out from under the pointer.
+    public static func active(_ desks: [Desk], live: [String: Live], enabled: Bool) -> [String] {
         guard enabled else { return [] }
-        return zones(desks, floated: waiting).floated.map { desks[$0].name }
+        let order = Dictionary(desks.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { a, _ in a })
+        return desks.filter { live[$0.name] != nil && !$0.pinned && !$0.hidden }
+            .sorted { a, b in
+                let x = live[a.name]!, y = live[b.name]!
+                if x.rank != y.rank { return x.rank < y.rank }
+                let p = x.lastOutput ?? .distantPast, q = y.lastOutput ?? .distantPast
+                if p != q { return x.rank <= 1 ? p < q : p > q }
+                return order[a.name]! < order[b.name]!
+            }
+            .map(\.name)
     }
 
     /// Groups in the order the rail shows them: ungrouped desks first, then

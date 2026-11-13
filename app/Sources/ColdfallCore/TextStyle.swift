@@ -38,3 +38,34 @@ public enum TextStyle {
         return parts.joined(separator: " ")
     }
 }
+
+/// The small badge beside a desk's name: which agent runs it, at a glance.
+///
+/// A letter on the vendor's colour rather than the vendor's logo: the logos
+/// are trademarks, and a letter reads as well at 14 points. A desk can set its
+/// own (`icon` in desks.toml), one character or an emoji.
+public enum VendorBadge {
+    public struct Badge: Equatable {
+        public let text: String
+        /// 0xRRGGBB, or nil for no fill (an emoji, a shell).
+        public let fill: UInt32?
+        public init(text: String, fill: UInt32?) { self.text = text; self.fill = fill }
+    }
+
+    public static func badge(runtime: String, icon: String?) -> Badge {
+        if let i = icon, !i.isEmpty {
+            let letter = i.unicodeScalars.allSatisfy { $0.isASCII }
+            return Badge(text: letter ? i.uppercased() : i, fill: letter ? 0x6B6B6B : nil)
+        }
+        switch runtime {
+        case "claude": return Badge(text: "C", fill: 0xC96442)
+        case "codex": return Badge(text: "X", fill: 0x10A37F)
+        case "antigravity": return Badge(text: "A", fill: 0x4285F4)
+        case "copilot": return Badge(text: "G", fill: 0x8957E5)
+        case "grok": return Badge(text: "K", fill: 0x3A3A3A)
+        case "ollama": return Badge(text: "O", fill: 0x5A5A5A)
+        case "shell": return Badge(text: "›", fill: nil)
+        default: return Badge(text: String(runtime.prefix(1)).uppercased(), fill: 0x6B6B6B)
+        }
+    }
+}

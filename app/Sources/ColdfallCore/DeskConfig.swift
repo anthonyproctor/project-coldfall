@@ -55,6 +55,9 @@ public struct Desk {
     /// Holder). Nil follows the setting in Settings, Desks; `keep_running`
     /// in desks.toml turns it on or off for this desk alone.
     public var keepRunning: Bool?
+    /// The badge in the desk list, if not the vendor's letter: one
+    /// character or emoji (`icon` in desks.toml).
+    public var icon: String?
     /// Whether this desk is held, given the global setting.
     public func keepsRunning(global: Bool) -> Bool {
         guard runtime != "shell" || command != nil else { return keepRunning ?? false }
@@ -418,6 +421,7 @@ public enum DeskConfig {
             case "budget":  current?.budget = DeskBudget.parse(val)
             case "hidden":  current?.hidden = val == "true"
             case "pinned":  current?.pinned = val == "true"
+            case "icon":    current?.icon = val.isEmpty ? nil : String(val.prefix(2))
             case "keep_running": current?.keepRunning = val == "true" ? true : (val == "false" ? false : nil)
             case "session": current?.session = UUID(uuidString: val) != nil ? val.lowercased() : nil
             case "cwd":     current?.cwd = val
@@ -568,6 +572,7 @@ public enum DeskConfig {
             if d.hidden { out += "hidden = true\n" }
             if d.pinned { out += "pinned = true\n" }
             if let k = d.keepRunning { out += "keep_running = \(k)\n" }
+            if let i = d.icon { out += "icon = \"\(TomlText.escape(i))\"\n" }
             if !d.mcpOff.isEmpty {
                 out += "mcp_off = [" + d.mcpOff.map { "\"\(TomlText.escape($0))\"" }.joined(separator: ", ") + "]\n"
             }

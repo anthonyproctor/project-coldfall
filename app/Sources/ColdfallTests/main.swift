@@ -1450,18 +1450,30 @@ do {
     list[6].hidden = true
     eq("zones: nothing pinned, nothing ready, nothing on top",
        DeskOrder.zones(list, floated: []), DeskOrder.Zones(pinned: [], floated: []))
-    eq("float: a ready desk rises, out of its group", DeskOrder.floating(list, waiting: ["golf"], enabled: true), ["golf"])
-    eq("float: in the order they have waited", DeskOrder.floating(list, waiting: ["cars", "hub", "cpa"], enabled: true),
-       ["cars", "hub", "cpa"])
-    eq("float: off means nothing moves", DeskOrder.floating(list, waiting: ["golf"], enabled: false), [])
-    eq("float: a hidden desk stays hidden", DeskOrder.floating(list, waiting: ["old", "golf"], enabled: true), ["golf"])
-    eq("float: a desk that is gone is ignored", DeskOrder.floating(list, waiting: ["nope"], enabled: true), [])
+    typealias L = DeskOrder.Live
+    func t(_ s: Double) -> Date { Date(timeIntervalSince1970: s) }
+    eq("active: a running desk comes up, out of its group", DeskOrder.active(list, live: ["golf": L(rank: 3, lastOutput: t(5))], enabled: true), ["golf"])
+    eq("active: needs you, done, working, idle",
+       DeskOrder.active(list, live: ["hub": L(rank: 3, lastOutput: t(9)), "cpa": L(rank: 2, lastOutput: t(8)),
+                                     "golf": L(rank: 0, lastOutput: t(1)), "cars": L(rank: 1, lastOutput: t(2))], enabled: true),
+       ["golf", "cars", "cpa", "hub"])
+    eq("active: the longest wait first among those waiting",
+       DeskOrder.active(list, live: ["hub": L(rank: 1, lastOutput: t(9)), "cpa": L(rank: 1, lastOutput: t(3))], enabled: true), ["cpa", "hub"])
+    eq("active: the most recent first among the rest",
+       DeskOrder.active(list, live: ["hub": L(rank: 3, lastOutput: t(3)), "cpa": L(rank: 3, lastOutput: t(9))], enabled: true), ["cpa", "hub"])
+    eq("active: off means nothing moves", DeskOrder.active(list, live: ["golf": L(rank: 0, lastOutput: nil)], enabled: false), [])
+    eq("active: a hidden desk stays hidden", DeskOrder.active(list, live: ["old": L(rank: 0, lastOutput: nil), "golf": L(rank: 3, lastOutput: nil)], enabled: true), ["golf"])
+    eq("active: a desk that is gone is ignored", DeskOrder.active(list, live: ["nope": L(rank: 0, lastOutput: nil)], enabled: true), [])
     list[5].pinned = true      // cars
     list[1].pinned = true      // hub
     eq("zones: pinned desks come first, in your order",
        DeskOrder.zones(list, floated: []).pinned, [1, 5])
-    eq("float: a pinned desk is already on top, so it doesn't float",
-       DeskOrder.floating(list, waiting: ["cars", "golf"], enabled: true), ["golf"])
+    eq("active: a pinned desk keeps the very top instead",
+       DeskOrder.active(list, live: ["cars": L(rank: 0, lastOutput: nil), "golf": L(rank: 3, lastOutput: nil)], enabled: true), ["golf"])
+    eq("badge: Claude is a C on its colour", VendorBadge.badge(runtime: "claude", icon: nil), VendorBadge.Badge(text: "C", fill: 0xC96442))
+    eq("badge: Codex an X", VendorBadge.badge(runtime: "codex", icon: nil).text, "X")
+    eq("badge: a desk's own letter wins", VendorBadge.badge(runtime: "claude", icon: "m").text, "M")
+    eq("badge: an emoji has no fill", VendorBadge.badge(runtime: "claude", icon: "⛳️").fill, nil)
     let z = DeskOrder.zones(list, floated: ["golf", "golf", "cars"])
     eq("zones: no desk appears twice", z, DeskOrder.Zones(pinned: [1, 5], floated: [4]))
     check("zones: and a desk in a zone is known to be there", z.contains(4) && z.contains(5) && !z.contains(0))
