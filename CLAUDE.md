@@ -79,7 +79,10 @@ Ghostty's terminal is being brought in beside SwiftTerm and is off in every
 normal build. `scripts/ghostty-kit.sh` builds the library into `app/Vendor/`
 (needs Zig and Apple's Metal toolchain); `COLDFALL_GHOSTTY=1 swift build -c release`
 then links it, and `./.build/release/Coldfall --ghostty-demo` opens one Ghostty
-terminal in a window, with no desks. A build without that variable, and so every
+terminal in a window, with no desks. `--ghostty-held <program>` runs that program
+as a held desk drawn by Ghostty and prints its state as it changes (set
+`COLDFALL_HOLDER_DIR` to a short throwaway folder first); with
+`COLDFALL_GHOSTTY_SELFTEST=1` it answers the program's question and quits. A build without that variable, and so every
 release, has none of it.
 
 Held desks (see `Holder` in the core) run through `coldfall-holder`, which

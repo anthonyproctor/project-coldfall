@@ -400,7 +400,17 @@ func serve() -> Never {
                     // Watching only: same version or nothing, and never the terminal.
                     guard Holder.Wire.readVersion(payload) == Holder.protocolVersion, !conns[i].attached
                     else { close(conns[i].fd); conns[i].fd = -1; break }
-                    conns[i].tap = true
+                    // What's remembered so far, then the mark that says
+                    // "live from here", then it joins the live copy.
+                    let snap = replay.snapshot
+                    var off = 0
+                    while off < snap.count, conns[i].fd >= 0 {
+                        let end = min(snap.count, off + 256 * 1024)
+                        queue(i, Holder.Wire.encode(.output, Array(snap[off..<end])))
+                        off = end
+                    }
+                    queue(i, Holder.Wire.encode(.tap, []))
+                    if conns[i].fd >= 0 { conns[i].tap = true }
                 case .resize:
                     if conns[i].attached, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 { setSize(s.cols, s.rows) }
                 case .end:

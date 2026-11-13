@@ -49,6 +49,27 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // nothing else: no desks, no rail. For trying the new terminal by
         // hand before it becomes a pane. With COLDFALL_GHOSTTY_SELFTEST set
         // to a file, it types a line, writes the screen's text there and quits.
+        // `--ghostty-held <program>`: a held desk drawn by Ghostty, its state
+        // read through the holder. With COLDFALL_GHOSTTY_SELFTEST set, it
+        // answers the program's question with "2" after a few seconds, then
+        // quits; the states it went through are printed as they change.
+        if let k = CommandLine.arguments.firstIndex(of: "--ghostty-held"), k + 1 < CommandLine.arguments.count {
+            guard let holder = Pane.holderPath, Holder.ensureRoot(),
+                  let d = GhosttyDemo.openHeld(program: CommandLine.arguments[k + 1], holder: holder) else {
+                FileHandle.standardError.write("The held Ghostty desk couldn't start.\n".data(using: .utf8)!)
+                exit(1)
+            }
+            if ProcessInfo.processInfo.environment["COLDFALL_GHOSTTY_SELFTEST"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { d.view.send(text: "2") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 11) {
+                    print("screen: " + d.view.screenText(lines: 12).replacingOccurrences(of: "\n", with: " | ")); fflush(stdout)
+                    _ = Holder.end(desk: "ghostty-demo")
+                    d.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+                }
+            }
+            return
+        }
         if let k = CommandLine.arguments.firstIndex(of: "--ghostty-demo") {
             let cmd = k + 1 < CommandLine.arguments.count ? CommandLine.arguments[k + 1] : "/bin/zsh -l"
             guard let v = GhosttyDemo.open(command: cmd) else {

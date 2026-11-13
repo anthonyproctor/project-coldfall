@@ -1694,6 +1694,28 @@ do {
         check("schedule: one that doesn't, doesn't", !Schedule.precheckPasses("exit 3", folder: dir))
         try? FileManager.default.removeItem(atPath: dir)
     }
+    do {
+        var sc = OscScanner()
+        let a = sc.feed(Array("hello \u{1b}]7501;state=working\u{07} world \u{1b}]0;my title\u{1b}\\ end".utf8))
+        eq("osc: sequences out of the stream, BEL or ST ended", a, [OscScanner.Sequence(code: 7501, payload: "state=working"),
+                                                                   OscScanner.Sequence(code: 0, payload: "my title")])
+        var cut = OscScanner()
+        let first = cut.feed(Array("x\u{1b}]7501;state=bl".utf8))
+        let second = cut.feed(Array("ocked:kind=permission\u{07}y".utf8))
+        eq("osc: nothing until it is whole", first, [])
+        eq("osc: then the whole of it, across the cut", second, [OscScanner.Sequence(code: 7501, payload: "state=blocked:kind=permission")])
+        var esc = OscScanner()
+        _ = esc.feed([0x1b])
+        eq("osc: even cut between ESC and ]", esc.feed(Array("]9;done\u{07}".utf8)), [OscScanner.Sequence(code: 9, payload: "done")])
+        var csi = OscScanner()
+        eq("osc: colour codes and the like are not OSC", csi.feed(Array("\u{1b}[1;32mgreen\u{1b}[0m".utf8)), [])
+        var big = OscScanner()
+        _ = big.feed(Array("\u{1b}]52;".utf8) + [UInt8](repeating: 65, count: OscScanner.limit + 10))
+        eq("osc: a runaway one is dropped, and the next still reads", big.feed(Array("\u{07}\u{1b}]9;ok\u{07}".utf8)), [OscScanner.Sequence(code: 9, payload: "ok")])
+        var nocode = OscScanner()
+        eq("osc: no code, nothing", nocode.feed(Array("\u{1b}]junk\u{07}".utf8)), [])
+        eq("osc: a 7501 payload reads as a report", ProgramStatus.parse(a[0].payload)?.state, "working")
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

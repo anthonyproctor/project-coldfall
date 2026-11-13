@@ -8,6 +8,13 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- More groundwork for Ghostty's terminal, still off in every release. A held desk can now be
+  drawn by Ghostty with its state known: the desk's holder gives Coldfall a copy of the
+  agent's output and of the keys typed (starting with what it remembers, so a late listener
+  learns the desk's last word), and the same rules as every other desk turn that into
+  working, needs you and done. Tried with `--ghostty-held` in a `COLDFALL_GHOSTTY=1` build.
+
 ## [0.3.40] - 2026-11-13
 
 Sleep idle desks, the last turn's diff, schedules, conversation search, and a calmer waiting queue.

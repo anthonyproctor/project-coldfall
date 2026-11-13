@@ -414,6 +414,118 @@ final class GhosttyTermView: NSView, NSTextInputClient {
     }
 }
 
+/// A held desk in a Ghostty terminal, with its state read off the holder.
+///
+/// Ghostty runs `coldfall-holder attach`, so the agent lives in the holder
+/// as any held desk does; a tap on the same holder gives Coldfall the
+/// output and the keys, and from those the same ActivityState that drives
+/// every other desk's mark. `--ghostty-held` shows one, to prove the chain.
+final class GhosttyHeldDesk {
+    let view: GhosttyTermView
+    private let desk: String
+    private var tap: HolderTap?
+    private var scanner = OscScanner()
+    private(set) var activity = ActivityState()
+    private(set) var title: String?
+    private(set) var reason: String?
+    private var timer: Timer?
+    private var last: String = ""
+    /// The state in words, each time it changes.
+    var onState: ((String) -> Void)?
+
+    init(desk: String, frame: NSRect) {
+        self.desk = desk
+        view = GhosttyTermView(frame: frame)
+    }
+
+    /// Start `program` (a shell command line) held, drawn by Ghostty.
+    func start(program: String, cwd: String, holder: String) -> Bool {
+        let cmd = [holder, "attach", desk, "--", "/bin/sh", "-c", program].map(Shell.quote).joined(separator: " ")
+        guard view.start(command: cmd, cwd: cwd, env: [("COLDFALL", "1"), ("CLAUDE_DESK", desk), ("COLDFALL_HOLDER_DIR", Holder.root)]) else { return false }
+        listen(tries: 0)
+        timer = Timer.inEveryMode(withTimeInterval: 0.35, repeats: true) { [weak self] _ in self?.report() }
+        return true
+    }
+
+    /// The holder takes a moment to come up; keep knocking for a few seconds.
+    private func listen(tries: Int) {
+        let t = HolderTap(desk: desk)
+        // What it said before we were listening: read for its standing
+        // state and title only, applied once the replay is over.
+        t.onReplay = { [weak self] b in DispatchQueue.main.async { self?.replayed(b) } }
+        t.onLive = { [weak self] in DispatchQueue.main.async { self?.replayOver() } }
+        t.onOutput = { [weak self] b in DispatchQueue.main.async { self?.output(b) } }
+        t.onInput = { [weak self] b in DispatchQueue.main.async { self?.input(b) } }
+        if t.start() { tap = t; return }
+        guard tries < 40 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.listen(tries: tries + 1) }
+    }
+
+    private func output(_ bytes: [UInt8]) {
+        activity.noteOutput()
+        for s in scanner.feed(bytes) {
+            switch s.code {
+            case 7501:
+                guard let r = ProgramStatus.parse(s.payload) else { continue }
+                if let e = ProgramStatus.event(r) {
+                    activity.noteSignal(e)
+                    reason = e == .notify ? DeskDetail.reason(message: r.message, kind: r.kind) : nil
+                } else if r.id.isEmpty, r.state == "working" { activity.noteResumed() }
+            case 9, 99, 777:
+                guard !activity.signaled, let m = TerminalNotice.message(code: s.code, payload: s.payload) else { continue }
+                let e = TerminalNotice.event(m)
+                activity.noteSignal(e)
+                reason = e == .notify ? DeskDetail.reason(message: m) : nil
+            case 0, 2:
+                title = DeskDetail.title(s.payload, desk: desk)
+            default: break
+            }
+        }
+    }
+
+    /// The last status and title in the replay are the desk as it stands.
+    private var standing: OscScanner.Sequence?
+    private func replayed(_ bytes: [UInt8]) {
+        for s in scanner.feed(bytes) {
+            switch s.code {
+            case 7501: if let r = ProgramStatus.parse(s.payload), r.id.isEmpty { standing = s }
+            case 0, 2: title = DeskDetail.title(s.payload, desk: desk)
+            default: break
+            }
+        }
+    }
+    private func replayOver() {
+        defer { standing = nil }
+        guard let s = standing, let r = ProgramStatus.parse(s.payload) else { return }
+        if let e = ProgramStatus.event(r) {
+            activity.noteSignal(e)
+            reason = e == .notify ? DeskDetail.reason(message: r.message, kind: r.kind) : nil
+        } else if r.state == "working" {
+            activity.noteOutput()
+        }
+    }
+
+    private func input(_ bytes: [UInt8]) {
+        activity.noteInput()
+        activity.noteTyping(bytes)
+        if ActivityState.isSubmit(bytes) { activity.noteAsked() }
+    }
+
+    private func report() {
+        let word: String
+        switch activity.activity() {
+        case .blocked: word = "needs you" + (reason.map { " (\($0))" } ?? "")
+        case .working: word = "working"
+        case .ready: word = "done"
+        case .quiet: word = "idle"
+        }
+        let line = word + (title.map { " · " + $0 } ?? "")
+        if line != last { last = line; onState?(line) }
+    }
+
+    func stop() { timer?.invalidate(); tap?.stop() }
+}
+
 /// `--ghostty-demo`: one Ghostty terminal in a window, to try by hand.
 enum GhosttyDemo {
     static var window: NSWindow?
@@ -431,6 +543,30 @@ enum GhosttyDemo {
         w.makeFirstResponder(v)
         window = w
         return v
+    }
+
+    /// `--ghostty-held <program>`: that program as a held desk in Ghostty,
+    /// its state (from the holder's tap) in the window's title.
+    static var held: GhosttyHeldDesk?
+    static func openHeld(program: String, holder: String) -> GhosttyHeldDesk? {
+        let w = NSWindow(contentRect: NSRect(x: 240, y: 240, width: 820, height: 480),
+                         styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        w.title = "Coldfall · held desk in Ghostty (demo)"
+        w.isReleasedWhenClosed = false
+        let d = GhosttyHeldDesk(desk: "ghostty-demo", frame: w.contentView!.bounds)
+        d.view.autoresizingMask = [.width, .height]
+        w.contentView!.addSubview(d.view)
+        d.onState = { [weak w] s in
+            w?.title = "Coldfall · held desk in Ghostty (demo) · " + s
+            print("state: " + s); fflush(stdout)
+        }
+        guard d.start(program: program, cwd: NSHomeDirectory(), holder: holder) else { return nil }
+        // Not on screen as far as the marks go, so every state shows.
+        w.makeKeyAndOrderFront(nil)
+        w.makeFirstResponder(d.view)
+        window = w
+        held = d
+        return d
     }
 }
 #endif

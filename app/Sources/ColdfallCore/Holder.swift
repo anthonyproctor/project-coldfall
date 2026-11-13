@@ -244,9 +244,12 @@ public enum Holder {
         case end = 0x58         // X
         /// Client to holder, first: watch, don't drive (version, u32). The
         /// holder then sends this connection a copy of the program's output
-        /// (`output`) and of the keys the attached terminal sent it (`input`),
-        /// from now on, no replay. A tap never takes the terminal, never
-        /// types, and is let go if it stops reading.
+        /// (`output`) and of the keys the attached terminal sent it (`input`).
+        /// It starts with what the holder remembers of the output so far,
+        /// then an empty `tap` frame back, then everything live: so a
+        /// listener that arrives late still learns the desk's last word
+        /// about itself, and can tell old from new. A tap never takes the
+        /// terminal, never types, and is let go if it stops reading.
         ///
         /// This is how Coldfall knows what a desk is doing when the terminal
         /// on screen (libghostty) owns its own pty and gives no byte hook.
