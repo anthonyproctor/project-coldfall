@@ -1432,6 +1432,53 @@ do {
         eq("prompt: one that has gone is not", Prompt.key(for: yes, on: "Which file?\n1. a.txt\n2. b.txt\n"), nil)
         eq("prompt: button labels drop the key hint", Prompt.short("No, and tell Claude what to do (esc)"), "No, and tell Claude what to do")
     }
+    do {
+        let st = Changes.parseStatus(" M src/a.swift\0?? notes.txt\0R  new.swift\0old.swift\0D  gone.swift\0A  added.swift\0")
+        eq("changes: status reads each file", st.map(\.path), ["src/a.swift", "notes.txt", "new.swift", "gone.swift", "added.swift"])
+        eq("changes: and what happened to it", st.map(\.status), ["M", "?", "R", "D", "A"])
+        let d = Changes.parseDiff("""
+        diff --git a/a.swift b/a.swift
+        index 1..2 100644
+        --- a/a.swift
+        +++ b/a.swift
+        @@ -10,3 +10,4 @@ func f() {
+         let a = 1
+        -let b = 2
+        +let b = 3
+        +let c = 4
+         return a
+        """)
+        eq("diff: kinds in order", d.map(\.kind), [.meta, .meta, .meta, .meta, .hunk, .context, .removed, .added, .added, .context])
+        eq("diff: new-file line numbers", d.map(\.number), [nil, nil, nil, nil, nil, 10, nil, 11, 12, 13])
+        eq("diff: the marker is not part of the text", d[7].text, "let b = 3")
+        eq("diff: a new file is all additions", Changes.asAdded("a\nb").map(\.number), [1, 2])
+        let msg = Changes.compose([Changes.Comment(file: "a.swift", line: 11, quote: "let b = 3", text: "Why 3?"),
+                                   Changes.Comment(file: "notes.txt", line: nil, quote: "", text: "Delete this.")])
+        check("compose: says how many", msg.hasPrefix("2 review comments on your changes:"))
+        check("compose: names file and line and quotes the code", msg.contains("1. a.swift:11  `let b = 3`\n   Why 3?"))
+        check("compose: a comment on a whole file", msg.contains("2. notes.txt\n   Delete this."))
+        check("compose: no trailing newline, sending adds the Return", !msg.hasSuffix("\n"))
+        eq("compose: nothing to say", Changes.compose([]), "")
+
+        // Against a real repository, in a temp folder.
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-git-\(UUID().uuidString)").path
+        try? FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        let id = ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
+        _ = Changes.git(["init", "-q"], in: repo)
+        try? "one\ntwo\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+        _ = Changes.git(["add", "."], in: repo)
+        _ = Changes.git(id + ["commit", "-q", "-m", "first"], in: repo)
+        try? "one\nTWO\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+        try? "new\n".write(toFile: repo + "/n.txt", atomically: true, encoding: .utf8)
+        let fs = Changes.files(in: repo) ?? []
+        eq("git: a changed and a new file", Set(fs.map { $0.status + $0.path }), ["Mf.txt", "?n.txt"])
+        if let m = fs.first(where: { $0.path == "f.txt" }) {
+            let dl = Changes.diff(m, in: repo)
+            check("git: the change is in the diff", dl.contains(Changes.Line(.added, "TWO", 2)) && dl.contains(Changes.Line(.removed, "two")))
+        }
+        eq("git: not a repository, no list", Changes.files(in: FileManager.default.temporaryDirectory.path + "/coldfall-none-\(UUID().uuidString)") == nil, true)
+        try? FileManager.default.removeItem(atPath: repo)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

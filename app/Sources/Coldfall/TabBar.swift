@@ -24,6 +24,8 @@ final class TabBar: NSView {
     /// "+": the menu is built by the controller, which knows the desks.
     var plusMenu: (() -> NSMenu?)?
     var onPromptHelper: (() -> Void)?
+    var onChanges: (() -> Void)?
+    private let changesBtn = NSButton(title: "Changes", target: nil, action: nil)
 
     static let height: CGFloat = 36
 
@@ -84,7 +86,18 @@ final class TabBar: NSView {
         prompt.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSubview(prompt)
 
+        changesBtn.target = self; changesBtn.action = #selector(showChanges)
+        changesBtn.bezelStyle = .inline
+        changesBtn.isBordered = false
+        changesBtn.font = .systemFont(ofSize: 12)
+        changesBtn.toolTip = "What this desk changed in its folder, to read and comment on  ⇧⌘G"
+        changesBtn.translatesAutoresizingMaskIntoConstraints = false
+        changesBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSubview(changesBtn)
+
         NSLayoutConstraint.activate([
+            changesBtn.trailingAnchor.constraint(equalTo: prompt.leadingAnchor, constant: -10),
+            changesBtn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             heightAnchor.constraint(equalToConstant: Self.height),
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             row.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 1),
@@ -94,7 +107,7 @@ final class TabBar: NSView {
             plus.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             plus.widthAnchor.constraint(equalToConstant: 24),
             plus.heightAnchor.constraint(equalToConstant: 24),
-            plus.trailingAnchor.constraint(lessThanOrEqualTo: prompt.leadingAnchor, constant: -8),
+            plus.trailingAnchor.constraint(lessThanOrEqualTo: changesBtn.leadingAnchor, constant: -8),
             prompt.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             prompt.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         ])
@@ -107,7 +120,7 @@ final class TabBar: NSView {
     func set(_ wanted: [Tab], current: String?) {
         all = wanted
         // What fits between the edge and the buttons on the right.
-        let space = bounds.width - 8 - (prompt.intrinsicContentSize.width + 10) - 28 - 40 - 12
+        let space = bounds.width - 8 - (prompt.intrinsicContentSize.width + 10) - (changesBtn.intrinsicContentSize.width + 10) - 28 - 40 - 12
         let room = bounds.width > 0 ? max(1, Int(space / Self.tabRoom)) : wanted.count
         if ProcessInfo.processInfo.environment["COLDFALL_SNAPSHOT_DEBUG"] != nil { print("tabs: width \(bounds.width) room \(room) of \(wanted.count)") }
         let fit = DeskTabs.fit(wanted.map(\.name), current: current, room: room)
@@ -143,6 +156,7 @@ final class TabBar: NSView {
         layer?.backgroundColor = ui.sidebar.cgColor
         plus.contentTintColor = ui.dimText
         prompt.contentTintColor = ui.dimText
+        changesBtn.contentTintColor = ui.dimText
         for (v, t) in zip(views, shown) { v.configure(t, selected: t.name == current, force: true) }
     }
 
@@ -173,6 +187,7 @@ final class TabBar: NSView {
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: plus.bounds.height + 4), in: plus)
     }
     @objc private func writePrompt() { onPromptHelper?() }
+    @objc private func showChanges() { onChanges?() }
 }
 
 /// One tab: logo, name, mark; an × in place of the mark under the pointer.

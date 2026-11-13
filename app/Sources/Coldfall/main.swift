@@ -201,6 +201,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         meter.onClick = { [weak self] in self?.openMeter() }
         meter.onNeedsYou = { [weak self] in self?.openFeed() }
         feed.items = { [weak self] in self?.feedItems() ?? [] }
+        tabs.onChanges = { [weak self] in self?.openChanges() }
+        // Review comments go the road every send goes: refused while the
+        // desk is asking something or you are mid-message there.
+        changes.onSend = { [weak self] name, text in
+            guard let self else { return (false, "Nothing to send to.") }
+            let a = self.inboxSend(name, text: text)
+            return (a.outcome == .sent, a.message)
+        }
         feed.onGo = { [weak self] n in self?.showDesk(named: n) }
         feed.onAnswer = { [weak self] n, o in self?.answer(desk: n, with: o) }
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
@@ -670,6 +678,45 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     }
                     return
                 }
+                // `--changes`: the Changes window with a made-up diff and one
+                // comment waiting, to shot-changes.png.
+                if CommandLine.arguments.contains("--changes"), let me = self, me.desks.indices.contains(i) {
+                    let d = me.desks[i]
+                    let files = [Changes.File(path: "Sources/Parser/Invoice.swift", status: "M"),
+                                 Changes.File(path: "Sources/Parser/Totals.swift", status: "M"),
+                                 Changes.File(path: "Tests/InvoiceTests.swift", status: "A"),
+                                 Changes.File(path: "notes/todo.txt", status: "?")]
+                    let lines = Changes.parseDiff("""
+                    diff --git a/Sources/Parser/Invoice.swift b/Sources/Parser/Invoice.swift
+                    --- a/Sources/Parser/Invoice.swift
+                    +++ b/Sources/Parser/Invoice.swift
+                    @@ -41,7 +41,9 @@ func parse(_ text: String) -> Invoice? {
+                         let rows = text.split(separator: ",")
+                    -    guard rows.count > 1 else { return nil }
+                    +    guard rows.count > 1 else {
+                    +        return Invoice.empty
+                    +    }
+                         let header = rows[0]
+                    -    let total = Double(rows.last!)
+                    +    let total = Decimal(string: String(rows.last ?? ""))
+                         return Invoice(header: String(header), total: total)
+                     }
+                    """)
+                    me.changes.show(desk: d.name, folder: "/srv/demo/work", files: files, lines: lines,
+                                    comments: [Changes.Comment(file: "Sources/Parser/Invoice.swift", line: 45, quote: "return Invoice.empty",
+                                                               text: "An empty file should still be nil.")],
+                                    size: NSSize(width: 940, height: 520))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard let pv = me.changes.contentView,
+                              let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
+                        pv.cacheDisplay(in: pv.bounds, to: prep)
+                        if let png = prep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-changes.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 // `--feed` (with `--terminal <file>`): Needs You showing that
                 // desk's question as read from the file, to shot-feed.png.
                 if CommandLine.arguments.contains("--feed"), let me = self, me.desks.indices.contains(i),
@@ -993,6 +1040,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let waitingItem = NSMenuItem(title: "Go to Desk That Needs You", action: #selector(jumpToWaiting), keyEquivalent: "0")
         waitingItem.target = self
         deskMenu.addItem(waitingItem)
+        let chItem = NSMenuItem(title: "Changes…", action: #selector(openChanges), keyEquivalent: "g")
+        chItem.keyEquivalentModifierMask = [.command, .shift]
+        chItem.target = self
+        deskMenu.addItem(chItem)
         let feedItem = NSMenuItem(title: "Needs You…", action: #selector(openFeed), keyEquivalent: "0")
         feedItem.keyEquivalentModifierMask = [.command, .option]
         feedItem.target = self
@@ -2336,6 +2387,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var inboxServer: InboxServer?
     let peek = PeekPanel()
     let feed = FeedPanel()
+    let changes = ChangesPanel()
+
+    /// Changes: what the desk on screen changed in its folder, to read and
+    /// comment on.
+    @objc func openChanges() {
+        if changes.isOpen { changes.close(); return }
+        guard let name = waitingName ?? visible?.desk.name, let d = desks.first(where: { $0.name == name }) else { NSSound.beep(); return }
+        changes.open(over: window, desk: d.name, folder: d.resolvedCwd)
+    }
 
     /// Needs You: the desks stopped on a question, to answer from one place.
     @objc func openFeed() { feed.toggle(over: window) }

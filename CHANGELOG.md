@@ -9,6 +9,13 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Changes: read what a desk changed, and send comments back.** The Changes button over
+  the terminal (or **Desks ▸ Changes…**, ⇧⌘G) lists the files changed in the desk's folder
+  since the last commit, with each one's diff. Select lines, write a comment, add as many
+  as you like across files, and Send gives the agent all of them in one message, each with
+  its file, line and the code it is about. A send is refused, and your comments kept, while
+  the desk is asking something. Coldfall only reads the repository: nothing is staged,
+  committed or reverted.
 - **Needs You: answer waiting desks from one window.** Click "needs you" on the status bar
   (or **Desks ▸ Needs You…**, ⌥⌘0) for every desk stopped on a question, each with its
   question, what it is about, and its choices as buttons. The choices are read off the
