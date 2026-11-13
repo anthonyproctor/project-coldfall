@@ -437,6 +437,7 @@ final class DeskSession {
         if fresh.isEmpty { markSeen() } else { ScreenChange.logGreen(desk: desk.name, lines: fresh) }
     }
     func markSeen() { activityState.markSeen() }
+    func notePeeked() { activityState.notePeeked() }
     func noteSignal(_ event: DoneSignal.Event) { activityState.noteSignal(event) }
 
     /// What the rail should draw right now.

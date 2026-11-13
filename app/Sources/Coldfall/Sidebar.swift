@@ -13,6 +13,7 @@ final class SidebarView: NSView {
     var onMakeDefault: ((Int) -> Void)?
     var onRenameDesk: ((Int) -> Void)?
     var onStopDesk: ((Int) -> Void)?
+    var onPeekDesk: ((Int) -> Void)?
     var onMcpDesk: ((Int) -> Void)?
     var onInventoryDesk: ((Int) -> Void)?
     var onHideDesk: ((Int) -> Void)?
@@ -313,6 +314,7 @@ final class SidebarView: NSView {
                     ? nil : { [weak self] in self?.onMakeDefault?(i) }
                 r.onRename = { [weak self] in self?.onRenameDesk?(i) }
                 r.onStop = { [weak self] in self?.onStopDesk?(i) }
+                r.onPeek = { [weak self] in self?.onPeekDesk?(i) }
                 if !d.hidden {
                     if d.pinned { r.onUnpin = { [weak self] in self?.onPinDesk?(i, false) } }
                     else { r.onPin = { [weak self] in self?.onPinDesk?(i, true) } }

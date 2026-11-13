@@ -199,6 +199,13 @@ public struct ActivityState {
         }
     }
 
+    /// A peek at the desk: you've read its answer, so it isn't news, but a
+    /// question it's waiting on still is.
+    public mutating func notePeeked() {
+        if unseen { asked = false }
+        unseen = false
+    }
+
     /// "Clear" on the needs-you line: counts as having looked, without
     /// opening the desk.
     public mutating func markSeen() {

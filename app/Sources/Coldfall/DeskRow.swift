@@ -59,6 +59,8 @@ final class DeskRow: NSView {
     /// Toggle whether opening this desk asks about starting fresh. Nil where
     /// it can't be started fresh, so the item isn't offered.
     var onToggleAskResume: (() -> Void)?
+    /// Show this desk's screen over the current one (see PeekPanel).
+    var onPeek: (() -> Void)?
     var asksResume = true
     /// Drag to reorder. Points are in the row's superview (the rail).
     var onDragMoved: ((NSPoint) -> Void)?
@@ -269,7 +271,10 @@ final class DeskRow: NSView {
     override func mouseUp(with e: NSEvent) {
         defer { downAt = nil; dragging = false; alphaValue = 1 }
         if dragging, let sv = superview { onDragEnded?(sv.convert(e.locationInWindow, from: nil)) }
-        else if downAt != nil { onClick?() }
+        else if downAt != nil {
+            // Option-click: a look at a running desk without switching to it.
+            if e.modifierFlags.contains(.option), status.running, !selected, let p = onPeek { p() } else { onClick?() }
+        }
     }
 
     /// Refresh the "2m" label without a full restyle. Called by the rail.
@@ -291,11 +296,12 @@ final class DeskRow: NSView {
                                      hasInventory: onInventory != nil, hasMcp: onMcp != nil,
                                      askResume: onToggleAskResume != nil ? asksResume : nil,
                                      pinned: onUnpin != nil ? true : (onPin != nil ? false : nil),
-                                     news: status.news)
+                                     news: status.news, canPeek: onPeek != nil && !selected)
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
             let sel: Selector
             switch e.action {
+            case .peek:        sel = #selector(peek)
             case .reveal:      sel = #selector(reveal)
             case .makeDefault: sel = #selector(makeDefault)
             case .rename:      sel = #selector(rename)
@@ -337,6 +343,7 @@ final class DeskRow: NSView {
         return m
     }
     @objc private func remove() { onRemove?() }
+    @objc private func peek() { onPeek?() }
     @objc private func rename() { onRename?() }
     @objc private func stop() { onStop?() }
     @objc private func mcp() { onMcp?() }

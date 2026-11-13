@@ -9,6 +9,11 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Peek at a desk without leaving the one you're on.** Option-click a running desk in the
+  rail, or right-click it and choose Peek: its screen opens over the current desk and keeps
+  up as it works. Return goes to it, Escape closes the look. Read only, so nothing you type
+  lands in the wrong desk. Peeking at an answer counts as reading it; a question it's
+  waiting on stays orange until you answer.
 - **Run any command from the keyboard.** ⌘⇧P, or `>` in quick open, lists every menu command
   with its shortcut, and the desk on screen's own actions (stop, rename, pin, hide…) first.
   Type a few letters and press Return. Commands come from the menus themselves, so the list is

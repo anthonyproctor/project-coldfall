@@ -23,7 +23,7 @@ public enum DeskMenu {
     }
 
     public enum Action: String, Equatable {
-        case reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
+        case peek, reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
     }
 
     public struct Entry: Equatable {
@@ -52,8 +52,15 @@ public enum DeskMenu {
     public static func items(runtime: String, running: Bool, hidden: Bool,
                              canReveal: Bool, canMakeDefault: Bool,
                              hasInventory: Bool, hasMcp: Bool, askResume: Bool? = nil,
-                             pinned: Bool? = nil, news: Int = 0) -> [Entry] {
+                             pinned: Bool? = nil, news: Int = 0, canPeek: Bool = false) -> [Entry] {
         var out: [Entry] = []
+        // A running desk that isn't on screen: look without leaving this one.
+        if canPeek, running {
+            out.append(Entry(.peek, "Peek",
+                             subtitle: "Its screen over this one, without switching. Option-click the desk does the same.",
+                             symbol: "eye"))
+            out.append(.separator)
+        }
         // Something new on the desk: the entry that shows it, and clears the
         // "new" on the row, goes first, saying so. It used to sit mid-menu
         // under a plain name, and the row's "2 new" was orange, the colour of

@@ -263,6 +263,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         sidebar.onUnhideDesk = { [weak self] i in self?.unhideDesk(i) }
         sidebar.onStopDesk = { [weak self] i in self?.stopDesk(i) }
+        sidebar.onPeekDesk = { [weak self] i in self?.peekDesk(i) }
+        peek.onGo = { [weak self] d in
+            guard let self, let i = self.deskIndex(d) else { return }
+            self.show(i)
+        }
         sidebar.onMoveDesk = { [weak self] i, d in self?.moveDesk(i, to: d) }
         sidebar.onMoveGroup = { [weak self] g, b in self?.moveGroup(g, before: b) }
         sidebar.onSortDesks = { [weak self] in self?.sortDesks() }
@@ -600,6 +605,22 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 // `--settings <tab>`: the Settings window on that tab, to
                 // <out>-settings.png. Never saved, never shown.
+                // `--peek` (with `--terminal <file>`): that desk peeked at,
+                // to shot-peek.png.
+                if CommandLine.arguments.contains("--peek"), let me = self, me.desks.indices.contains(i),
+                   let s = me.sessions[me.desks[i].name] {
+                    me.peek.open(over: me.window, desk: me.desks[i].name, session: s)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        guard let pv = me.peek.contentView,
+                              let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
+                        pv.cacheDisplay(in: pv.bounds, to: prep)
+                        if let png = prep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-peek.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 // `--quit-prompt a,b`: the question quitting asks with those
                 // desks held, to shot-quit.png. An alert can't be caught in a
                 // window snapshot, so its own window is drawn.
@@ -2088,6 +2109,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// Each desk's state as of the last tick, to notice it change.
     var lastActivity: [String: DeskActivity] = [:]
     let notifier = Notifier()
+    let peek = PeekPanel()
 
     /// Memory per desk, sampled every five seconds from one `ps` call off the
     /// main thread. Cheap enough to leave on, and it answers "which desk is
@@ -2423,6 +2445,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     // MARK: - quick open (cmd-P)
+
+    /// A look at a running desk over the current one (see PeekPanel).
+    func peekDesk(_ i: Int) {
+        guard desks.indices.contains(i), let s = sessions[desks[i].name], s.started, s !== visible else { return }
+        s.notePeeked()
+        peek.open(over: window, desk: desks[i].name, session: s)
+    }
 
     @objc func openPalette() {
         if palette.isOpen { palette.close(); return }

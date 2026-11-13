@@ -2864,6 +2864,30 @@ do {
     eq("commands: found by menu and name", list.first?.searchKey, "Desk Stop Desk")
 }
 
+// MARK: - peek
+
+do {
+    func menu(running: Bool, canPeek: Bool) -> [DeskMenu.Entry] {
+        DeskMenu.items(runtime: "claude", running: running, hidden: false, canReveal: false, canMakeDefault: false,
+                       hasInventory: false, hasMcp: false, canPeek: canPeek)
+    }
+    eq("peek: first in a running desk's menu", menu(running: true, canPeek: true).first?.action, .peek)
+    check("peek: not for a desk that isn't running", !menu(running: false, canPeek: true).contains { $0.action == .peek })
+    check("peek: not where it isn't offered (the desk on screen)", !menu(running: true, canPeek: false).contains { $0.action == .peek })
+    check("peek: the menu's danger stays apart", DeskMenu.destructiveIsIsolated(menu(running: true, canPeek: true)))
+    var a = ActivityState()
+    a.setVisible(false, at: Date(timeIntervalSince1970: 0))
+    a.noteAsked()
+    a.noteSignal(.stop, at: Date(timeIntervalSince1970: 10))
+    a.notePeeked()
+    eq("peek: a peeked answer isn't news any more", a.activity(now: Date(timeIntervalSince1970: 20)), .quiet)
+    var b = ActivityState()
+    b.setVisible(false, at: Date(timeIntervalSince1970: 0))
+    b.noteSignal(.notify, at: Date(timeIntervalSince1970: 10))
+    b.notePeeked()
+    eq("peek: but a question it's waiting on still is", b.activity(now: Date(timeIntervalSince1970: 20)), .blocked)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

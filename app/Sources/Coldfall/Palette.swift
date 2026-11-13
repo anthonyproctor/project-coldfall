@@ -46,7 +46,7 @@ private final class PaletteRow: NSTableRowView {
 }
 
 /// A borderless panel has to opt in to taking the keyboard.
-private final class KeyPanel: NSPanel {
+final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
