@@ -14,6 +14,7 @@
 #if COLDFALL_GHOSTTY
 import AppKit
 import GhosttyKit
+import SwiftTerm
 import ColdfallCore
 
 /// The one libghostty app: its config and its callbacks.
@@ -82,8 +83,20 @@ final class GhosttyRuntime {
         }
     }
 
+    /// A config object from Coldfall's theme, with a desk's colour washed
+    /// into the background. The caller owns it (ghostty_config_free).
+    static func makeConfig(wash: String?) -> ghostty_config_t? {
+        guard let cfg = ghostty_config_new() else { return nil }
+        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("coldfall-ghostty-\(getpid())-\(UUID().uuidString.prefix(8)).conf")
+        try? config(wash: wash).write(toFile: path, atomically: true, encoding: .utf8)
+        ghostty_config_load_file(cfg, path)
+        ghostty_config_finalize(cfg)
+        try? FileManager.default.removeItem(atPath: path)
+        return cfg
+    }
+
     /// Ghostty config text from Coldfall's theme.
-    static func config() -> String {
+    static func config(wash: String? = nil) -> String {
         let pal = Theme.current().skin.terminal
         func hex(_ c: NSColor) -> String {
             let r = c.usingColorSpace(.sRGB) ?? c
@@ -91,7 +104,7 @@ final class GhosttyRuntime {
         }
         let t = DeskConfig.themeSettings()
         var lines = [
-            "background = \(hex(pal.background))",
+            "background = \(hex(DeskTint.wash(pal.background, wash)))",
             "foreground = \(hex(pal.foreground))",
             "cursor-color = \(hex(pal.cursor))",
             "selection-background = \(hex(pal.selection))",
@@ -101,8 +114,11 @@ final class GhosttyRuntime {
             "confirm-close-surface = false",
             "shell-integration = none",
         ]
+        // The font Coldfall resolved (the one asked for, or its fallback).
+        let font = Theme.current().1
+        lines.append("font-size = \(Int(font.pointSize.rounded()))")
+        if let family = font.familyName, !family.isEmpty { lines.append("font-family = \"\(family)\"") }
         for (i, c) in pal.ansi.prefix(16).enumerated() { lines.append("palette = \(i)=#\(hex(c))") }
-        _ = t
         return lines.joined(separator: "\n") + "\n"
     }
 }
@@ -120,7 +136,10 @@ final class GhosttyTermView: NSView, NSTextInputClient {
     override var acceptsFirstResponder: Bool { true }
     override var isOpaque: Bool { true }
 
-    deinit { if let s = surface { ghostty_surface_free(s) } }
+    deinit {
+        if let s = surface { ghostty_surface_free(s) }
+        if let c = ownConfig { ghostty_config_free(c) }
+    }
 
     /// Start `command` (a shell command line) in `cwd` with extra `env`.
     /// False if the library couldn't make a surface.
@@ -153,6 +172,8 @@ final class GhosttyTermView: NSView, NSTextInputClient {
         guard let made else { return false }
         surface = made
         syncSize()
+        registerForDraggedTypes([.fileURL])
+        if wash != nil { applyTheme(wash: wash) }
         return true
     }
 
@@ -162,10 +183,81 @@ final class GhosttyTermView: NSView, NSTextInputClient {
         ghostty_surface_free(s)
     }
 
-    /// Type text into the program, as a paste would.
+    /// Type into the program what Coldfall would have written to a pty.
+    ///
+    /// Ghostty takes text as a paste, and a paste never presses a key: a
+    /// newline inside one doesn't run a command, and a "1" inside one isn't
+    /// the 1 key to a prompt. So what is sent is read the way a terminal's
+    /// input is: Return, Esc, Tab, the arrows, Ctrl-C and single characters
+    /// go as key presses; a longer run of text goes as one paste.
     func send(text: String) {
-        guard let s = surface, !text.isEmpty else { return }
-        text.withCString { ghostty_surface_text(s, $0, UInt(strlen($0))) }
+        guard surface != nil, !text.isEmpty else { return }
+        var bytes = Array(text.utf8)
+        // Coldfall wraps multi-line sends in paste brackets itself; Ghostty
+        // adds its own when the program asked for them.
+        for marker in ["\u{1b}[200~", "\u{1b}[201~"] {
+            let m = Array(marker.utf8)
+            while let r = bytes.firstRange(of: m) { bytes.removeSubrange(r) }
+        }
+        var run: [UInt8] = []
+        func flush() {
+            guard !run.isEmpty else { return }
+            let t = String(decoding: run, as: UTF8.self)
+            run = []
+            // One character is a key; more is a paste.
+            if t.count == 1 { key(text: t) } else { paste(t) }
+        }
+        var i = 0
+        while i < bytes.count {
+            let b = bytes[i]
+            if b == 0x1b, i + 2 < bytes.count, bytes[i + 1] == 0x5b, let code = [0x41: 126, 0x42: 125, 0x43: 124, 0x44: 123][Int(bytes[i + 2])] {
+                flush(); key(code: UInt32(code)); i += 3; continue      // arrows: up, down, right, left
+            }
+            switch b {
+            case 0x0d, 0x0a: flush(); key(code: 36, text: "\r")           // Return
+            case 0x1b: flush(); key(code: 53)                             // Esc
+            case 0x09: flush(); key(code: 48, text: "\t")                 // Tab
+            case 0x7f: flush(); key(code: 51)                             // Delete
+            case 0x03: flush(); key(code: 8, mods: GHOSTTY_MODS_CTRL)     // Ctrl-C
+            default: run.append(b)
+            }
+            i += 1
+        }
+        flush()
+    }
+
+    private func paste(_ t: String) {
+        guard let s = surface else { return }
+        t.withCString { ghostty_surface_text(s, $0, UInt(strlen($0))) }
+    }
+
+    /// Mac key codes for the characters an answer is made of.
+    private static let keyCodes: [Character: UInt32] = [
+        "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "0": 29,
+        "y": 16, "n": 45, "a": 0, "q": 12, " ": 49,
+    ]
+
+    /// One key, pressed and released.
+    private func key(code: UInt32? = nil, text: String? = nil, mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE) {
+        guard let s = surface else { return }
+        var k = ghostty_input_key_s()
+        k.mods = mods
+        k.consumed_mods = GHOSTTY_MODS_NONE
+        k.composing = false
+        k.keycode = code ?? text.flatMap { $0.lowercased().first }.flatMap { Self.keyCodes[$0] } ?? 0
+        k.unshifted_codepoint = text?.lowercased().unicodeScalars.first?.value ?? 0
+        func fire(_ action: ghostty_input_action_e) {
+            k.action = action
+            if action == GHOSTTY_ACTION_PRESS, let t = text, let first = t.unicodeScalars.first, first.value >= 0x20 {
+                _ = t.withCString { p -> Bool in k.text = p; return ghostty_surface_key(s, k) }
+                k.text = nil
+            } else {
+                k.text = nil
+                _ = ghostty_surface_key(s, k)
+            }
+        }
+        fire(GHOSTTY_ACTION_PRESS)
+        fire(GHOSTTY_ACTION_RELEASE)
     }
 
     /// The screen and scrollback as text, the last `lines` rows.
@@ -182,6 +274,52 @@ final class GhosttyTermView: NSView, NSTextInputClient {
         return RemoteOpen.lastLines(all, lines: lines)
     }
 
+    /// Everything on it, scrollback included.
+    func allText() -> String { read(GHOSTTY_POINT_SCREEN) }
+    /// The rows on screen now.
+    func viewportRows() -> [String] {
+        read(GHOSTTY_POINT_VIEWPORT).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+    private func read(_ tag: ghostty_point_tag_e) -> String {
+        guard let s = surface else { return "" }
+        var t = ghostty_text_s()
+        let sel = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: tag, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: tag, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            rectangle: false)
+        guard ghostty_surface_read_text(s, sel, &t), let p = t.text else { return "" }
+        defer { ghostty_surface_free_text(s, &t) }
+        return String(decoding: UnsafeRawBufferPointer(start: p, count: Int(t.text_len)), as: UTF8.self)
+    }
+
+    /// This surface's own look: Coldfall's theme with a desk's colour in it.
+    private var ownConfig: ghostty_config_t?
+    func applyTheme(wash: String?) {
+        self.wash = wash
+        guard let s = surface, let cfg = GhosttyRuntime.makeConfig(wash: wash) else { return }
+        ghostty_surface_update_config(s, cfg)
+        if let old = ownConfig { ghostty_config_free(old) }
+        ownConfig = cfg
+    }
+    /// The colour asked for before the surface existed, applied once it does.
+    private var wash: String?
+
+    // MARK: - dropping files
+
+    private func dropped(_ sender: NSDraggingInfo) -> [URL] {
+        sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { dropped(sender).isEmpty ? [] : .copy }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !dropped(sender).isEmpty }
+    /// A dropped file's path is typed, as in the SwiftTerm pane.
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = dropped(sender).map { ShellPath.escape(DeskTerminalView.stable($0).path) }
+        guard !paths.isEmpty else { return false }
+        send(text: paths.joined(separator: " ") + " ")
+        window?.makeFirstResponder(self)
+        return true
+    }
+
     /// The process in front in this terminal, for "is the agent still there".
     var foregroundPid: Int32? {
         guard let s = surface else { return nil }
@@ -191,15 +329,25 @@ final class GhosttyTermView: NSView, NSTextInputClient {
 
     // MARK: - size, scale, focus
 
+    private var lastPixels = NSSize.zero
     private func syncSize() {
         guard let s = surface else { return }
         let scale = Double(window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
         ghostty_surface_set_content_scale(s, scale, scale)
         let px = convertToBacking(bounds).size
-        guard px.width > 0, px.height > 0 else { return }
+        guard px.width > 0, px.height > 0, px != lastPixels else { return }
+        lastPixels = px
         ghostty_surface_set_size(s, UInt32(px.width), UInt32(px.height))
+        if ProcessInfo.processInfo.environment["COLDFALL_SNAPSHOT_DEBUG"] != nil {
+            let z = ghostty_surface_size(s)
+            print("ghostty size: view \(bounds.size) px \(px) scale \(scale) window \(window != nil) -> cols \(z.columns) rows \(z.rows) cell \(z.cell_width_px)x\(z.cell_height_px) layer \(String(describing: layer?.contentsScale)) sublayers \(layer?.sublayers?.map { "\($0.frame.size)@\($0.contentsScale)" } ?? [])")
+            fflush(stdout)
+        }
     }
     override func setFrameSize(_ n: NSSize) { super.setFrameSize(n); syncSize() }
+    // Auto Layout moves a view without always going through setFrameSize.
+    override func layout() { super.layout(); syncSize() }
+    override func resize(withOldSuperviewSize old: NSSize) { super.resize(withOldSuperviewSize: old); syncSize() }
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); syncSize() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -412,6 +560,118 @@ final class GhosttyTermView: NSView, NSTextInputClient {
         mods |= phase << 1
         ghostty_surface_mouse_scroll(s, x, y, mods)
     }
+}
+
+/// Ghostty's terminal as a pane's terminal (see PaneTerminal).
+///
+/// The agent pane attaches to the desk's holder, and a tap on that holder
+/// supplies what SwiftTerm supplied directly: that the program wrote, what
+/// was typed, and its status reports. A shell pane has no holder, so it
+/// draws and takes keys but reports no activity.
+final class GhosttyPaneTerminal: PaneTerminal {
+    private let gview = GhosttyTermView(frame: .zero)
+    var view: NSView { gview }
+    var onOutput: (() -> Void)?
+    var onInput: (([UInt8]) -> Void)?
+    var onStatus: ((ProgramStatus.Report) -> Void)?
+    var onNotice: ((String) -> Void)?
+    var onTitle: ((String) -> Void)?
+    var onExit: (() -> Void)?
+    /// SwiftTerm's delegate has no meaning here; exits come through onExit.
+    weak var exitDelegate: LocalProcessTerminalViewDelegate?
+
+    private var tap: HolderTap?
+    private var scanner = OscScanner()
+    private var standing: ProgramStatus.Report?
+    /// Keys Coldfall typed itself (a launch line) come back through the tap
+    /// like any others; for this long after one, they aren't "you typing".
+    private var quietUntil = Date.distantPast
+    private var ended = false
+
+    init() {
+        gview.translatesAutoresizingMaskIntoConstraints = false
+        gview.onTitle = { [weak self] t in self?.onTitle?(t) }
+        gview.onExit = { [weak self] in
+            guard let self, !self.ended else { return }
+            self.ended = true
+            self.tap?.stop()
+            self.onExit?()
+        }
+    }
+
+    func start(executable: String, args: [String], desk: Desk, extraEnv: [String], held: String?) {
+        // Ghostty's child inherits Coldfall's environment; what must not
+        // reach a desk is taken out by env(1) on the way.
+        let unset = Pane.poison.flatMap { ["-u", $0] }
+        let cmd = (["/usr/bin/env"] + unset + [executable] + args).map(Shell.quote).joined(separator: " ")
+        var env: [(String, String)] = [("TERM", "xterm-256color")]
+        for e in Pane.additions(for: desk) + extraEnv {
+            guard let eq = e.firstIndex(of: "=") else { continue }
+            env.append((String(e[..<eq]), String(e[e.index(after: eq)...])))
+        }
+        guard gview.start(command: cmd, cwd: desk.resolvedCwd, env: env) else {
+            // No surface: say so where the terminal would have been.
+            DispatchQueue.main.async { [weak self] in self?.onExit?() }
+            return
+        }
+        if let held { listen(desk: held, tries: 0) }
+    }
+
+    /// The holder takes a moment to come up; keep knocking for a few seconds.
+    private func listen(desk: String, tries: Int) {
+        guard !ended else { return }
+        let t = HolderTap(desk: desk)
+        t.onReplay = { [weak self] b in DispatchQueue.main.async { self?.replayed(b) } }
+        t.onLive = { [weak self] in DispatchQueue.main.async { self?.replayOver() } }
+        t.onOutput = { [weak self] b in DispatchQueue.main.async { self?.output(b) } }
+        t.onInput = { [weak self] b in DispatchQueue.main.async { self?.input(b) } }
+        if t.start() { tap = t; return }
+        guard tries < 60 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.listen(desk: desk, tries: tries + 1) }
+    }
+
+    private func output(_ bytes: [UInt8]) {
+        onOutput?()
+        for s in scanner.feed(bytes) {
+            switch s.code {
+            case 7501: if let r = ProgramStatus.parse(s.payload) { onStatus?(r) }
+            case 9, 99, 777: if let m = TerminalNotice.message(code: s.code, payload: s.payload) { onNotice?(m) }
+            default: break      // titles reach us from Ghostty itself
+            }
+        }
+    }
+    /// What it said before we were listening: only its last word about itself counts.
+    private func replayed(_ bytes: [UInt8]) {
+        for s in scanner.feed(bytes) where s.code == 7501 {
+            if let r = ProgramStatus.parse(s.payload), r.id.isEmpty { standing = r }
+        }
+    }
+    private func replayOver() {
+        if let r = standing { onStatus?(r) }
+        standing = nil
+    }
+    private func input(_ bytes: [UInt8]) {
+        guard Date() >= quietUntil else { return }
+        onInput?(bytes)
+    }
+
+    func send(text: String) { gview.send(text: text) }
+    func sendQuietly(_ text: String) {
+        quietUntil = Date().addingTimeInterval(0.8)
+        gview.send(text: text)
+    }
+    func send(bytes: [UInt8]) { gview.send(text: String(decoding: bytes, as: UTF8.self)) }
+    /// Ghostty draws only what its program writes.
+    func feed(text: String) {}
+    func screenText() -> String { gview.allText() }
+    func liveRows() -> [String] { gview.viewportRows() }
+    func applyTheme(wash: String?) { gview.applyTheme(wash: wash) }
+    func terminate() {
+        ended = true
+        tap?.stop()
+        gview.terminate()
+    }
+    var shellPid: Int32? { gview.foregroundPid }
 }
 
 /// A held desk in a Ghostty terminal, with its state read off the holder.

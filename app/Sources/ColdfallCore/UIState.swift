@@ -18,6 +18,9 @@ public struct UIState: Codable {
     public var sleepIdleMinutes: Int = 0
     /// Desks Coldfall put to sleep, shown with a moon until opened again.
     public var sleeping: [String] = []
+    /// Which terminal draws a desk started from now on: "classic"
+    /// (SwiftTerm) or "ghostty". Ghostty only in builds that carry it.
+    public var terminal: String = "classic"
     /// Agents whose "add a desk" offer was waved off with Not now.
     public var dismissedOffers: [String] = []
     /// Whether reopening a big, idle conversation asks about starting fresh
@@ -75,6 +78,7 @@ public struct UIState: Codable {
         desksByPriority = try c.decodeIfPresent(Bool.self, forKey: .desksByPriority) ?? false
         sleepIdleMinutes = try c.decodeIfPresent(Int.self, forKey: .sleepIdleMinutes) ?? 0
         sleeping = try c.decodeIfPresent([String].self, forKey: .sleeping) ?? []
+        terminal = try c.decodeIfPresent(String.self, forKey: .terminal) ?? "classic"
         dismissedOffers = try c.decodeIfPresent([String].self, forKey: .dismissedOffers) ?? []
         offerFreshStart = try c.decodeIfPresent(Bool.self, forKey: .offerFreshStart) ?? true
         wrappedUp = try c.decodeIfPresent([String: Double].self, forKey: .wrappedUp) ?? [:]

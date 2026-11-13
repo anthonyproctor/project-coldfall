@@ -248,7 +248,21 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + " Using the built-in handoff."
             + (box.runner != nil ? " The runner = line in bridge.toml is ignored." : "")))
 
-        var updLines: [NSView] = [caps("UPDATES")]
+        var updLines: [NSView] = []
+        #if COLDFALL_GHOSTTY
+        let termPop = NSPopUpButton(frame: .zero, pullsDown: false)
+        termPop.addItem(withTitle: "Classic (SwiftTerm)"); termPop.lastItem?.representedObject = "classic"
+        termPop.addItem(withTitle: "Ghostty (new)"); termPop.lastItem?.representedObject = "ghostty"
+        termPop.selectItem(at: UIState.load().terminal == "ghostty" ? 1 : 0)
+        termPop.target = self; termPop.action = #selector(pickTerminal(_:))
+        updLines += [caps("TERMINAL"), termPop,
+            note("Which terminal draws a desk you start from now on; desks already running keep the one they "
+               + "have. Ghostty's is faster and draws more of what agents send. A Ghostty desk always runs "
+               + "through Coldfall's holder, so quitting asks whether to keep it running, and a shell split "
+               + "beside it shows no activity mark. If anything looks wrong, switch back and restart the desk.",
+                 width: 350)]
+        #endif
+        updLines.append(caps("UPDATES"))
         let upd = UpdateState.load()
         let updSwitch = NSButton(checkboxWithTitle: UpdateCheck.switchLabel, target: self,
                                  action: #selector(toggleUpdateCheck(_:)))
@@ -620,6 +634,10 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func toggleNotify(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallNotifyChanged, object: sender.state == .on)
+    }
+
+    @objc private func pickTerminal(_ sender: NSPopUpButton) {
+        NotificationCenter.default.post(name: .coldfallTerminalChanged, object: sender.selectedItem?.representedObject as? String ?? "classic")
     }
 
     @objc private func pickSleep(_ sender: NSPopUpButton) {

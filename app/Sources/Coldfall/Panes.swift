@@ -186,7 +186,8 @@ final class DeskTerminalView: LocalProcessTerminalView {
 
 /// A single terminal inside a desk, wrapped in a box that can show focus.
 final class Pane {
-    let term: DeskTerminalView
+    /// The terminal that draws this pane: SwiftTerm, or Ghostty's.
+    let terminal: PaneTerminal
     let box: PaneBox
     /// Pane 0 runs the desk's CLI. The rest are shells, and closing one is free.
     let isAgent: Bool
@@ -205,13 +206,14 @@ final class Pane {
         return FileManager.default.isExecutableFile(atPath: p) ? p : nil
     }
 
-    init(isAgent: Bool) {
+    /// Which terminal new desks get: Ghostty's when Settings asks for it
+    /// and this build has it, otherwise SwiftTerm.
+    static var wantsGhostty = false
+
+    init(isAgent: Bool, ghostty: Bool = false) {
         self.isAgent = isAgent
-        term = DeskTerminalView(frame: .zero)
-        term.translatesAutoresizingMaskIntoConstraints = false
-        if isAgent { term.listenForStatus() }
-        Theme.apply(to: term)
-        box = PaneBox(term: term)
+        terminal = PaneTerminals.make(isAgent: isAgent, ghostty: ghostty)
+        box = PaneBox(term: terminal.view)
     }
 
     /// End this pane's shell and everything running in it. The tree is read
@@ -223,7 +225,7 @@ final class Pane {
             // can't be reached, the tree is ended directly, so nothing runs
             // on unseen to be started a second time.
             let shell = Holder.heldPid(desk: d)
-            let t = term
+            let t = terminal
             DispatchQueue.global(qos: .userInitiated).async {
                 if Holder.end(desk: d) { return }
                 if let p = shell { ProcessTree.end(ProcessTree.descendants(of: p, in: ProcessTree.read())) }
@@ -233,8 +235,8 @@ final class Pane {
         }
         // The process table is read off the main thread; the terminal lets go
         // of the shell only after, or there'd be no tree to find.
-        let root = term.process?.shellPid ?? 0
-        let t = term
+        let root = terminal.shellPid ?? 0
+        let t = terminal
         DispatchQueue.global(qos: .userInitiated).async {
             let tree = root > 0 ? ProcessTree.descendants(of: root, in: ProcessTree.read()) : []
             DispatchQueue.main.async { t.terminate() }
@@ -251,11 +253,9 @@ final class Pane {
         if hold != .none, let holder = Pane.holderPath {
             held = true
             heldDesk = desk.name
-            var env = Pane.environment(for: desk)
-            env.append("COLDFALL_HOLDER_DIR=\(Holder.root)")
             if hold == .fresh, let command { paintStarting(desk: desk, command: command) }
-            term.startProcess(executable: holder, args: ["attach", desk.name, "--", "/bin/zsh", "-l"],
-                              environment: env)
+            terminal.start(executable: holder, args: ["attach", desk.name, "--", "/bin/zsh", "-l"], desk: desk,
+                           extraEnv: ["COLDFALL_HOLDER_DIR=\(Holder.root)"], held: desk.name)
             // Already running: it carries on where it was, nothing to type.
             if hold == .reattach { return }
             typeLaunch(desk: desk, command: command)
@@ -264,15 +264,14 @@ final class Pane {
 
         if let command { paintStarting(desk: desk, command: command) }
 
-        term.startProcess(executable: "/bin/zsh", args: ["-l"],
-                          environment: Pane.environment(for: desk))
+        terminal.start(executable: "/bin/zsh", args: ["-l"], desk: desk, extraEnv: [], held: nil)
         typeLaunch(desk: desk, command: command)
     }
 
     /// The held shell's pid when held, else this terminal's own shell.
     var shellPid: Int32? {
         if held, let d = heldDesk { return Holder.heldPid(desk: d) }
-        return term.process?.shellPid
+        return terminal.shellPid
     }
 
     /// Follow a rename of the desk this pane holds, once its socket moved.
@@ -282,7 +281,7 @@ final class Pane {
     /// written straight to the view rather than through the pty, so a blank
     /// screen never reads as "nothing happened".
     private func paintStarting(desk: Desk, command: String) {
-        term.feed(text: "\u{1b}[2J\u{1b}[H"
+        terminal.feed(text: "\u{1b}[2J\u{1b}[H"
             + "\u{1b}[36m●\u{1b}[0m starting \u{1b}[1m\(desk.name)\u{1b}[0m\r\n"
             + "\u{1b}[2m  \(command)\r\n"
             + "  in \(desk.resolvedCwd)\u{1b}[0m\r\n\r\n")
@@ -296,7 +295,7 @@ final class Pane {
         let dir = Shell.quote(desk.resolvedCwd)
         let line = command.map { "cd \(dir) && \($0)\n" } ?? "cd \(dir)\n"
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            self?.term.sendQuietly(line)
+            self?.terminal.sendQuietly(line)
         }
     }
 
@@ -306,13 +305,21 @@ final class Pane {
     /// start — which happens whenever Coldfall is launched from a terminal that
     /// is itself running an agent. Scrub it rather than depending on how the app
     /// was launched.
+    /// What must not reach a desk from Coldfall's own environment.
+    static let poison = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
+                         "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_BRIDGE_SESSION_ID",
+                         "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                         "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_PID", "CLAUDE_EFFORT"]
+
     static func environment(for desk: Desk) -> [String] {
         var env = Terminal.getEnvironmentVariables(termName: "xterm-256color")
-        let poison = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
-                      "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_BRIDGE_SESSION_ID",
-                      "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-                      "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_PID", "CLAUDE_EFFORT"]
         env.removeAll { entry in poison.contains(where: { entry.hasPrefix($0 + "=") }) }
+        return env + additions(for: desk)
+    }
+
+    /// What Coldfall adds to a desk's environment, as "KEY=value".
+    static func additions(for desk: Desk) -> [String] {
+        var env: [String] = []
         // Hooks and desk-scoped behaviour key off this, same as the shell wrapper.
         env.append("CLAUDE_DESK=\(desk.name)")
         env.append("COLDFALL=1")
@@ -583,6 +590,10 @@ final class DeskPairView: NSView {
         } else {
             main.frame = bounds
         }
+        // The halves' own contents are pinned to them with constraints, and
+        // those were solved before the frames above changed: solve again, or
+        // a desk keeps its old width under its neighbour.
+        for v in [main, side] { v.needsLayout = true; v.layoutSubtreeIfNeeded() }
     }
     override func setFrameSize(_ n: NSSize) { super.setFrameSize(n); needsLayout = true }
 
@@ -622,7 +633,7 @@ final class DeskSession {
     /// The desk's colour on every pane: terminal wash, card outline, header.
     func applyColor() {
         for p in panes {
-            Theme.apply(to: p.term, wash: desk.color)
+            p.terminal.applyTheme(wash: desk.color)
             p.box.tint = desk.color
             p.box.restyle()
         }
@@ -630,7 +641,7 @@ final class DeskSession {
     /// Every pane reports process exit to the same delegate, so a shell pane
     /// closing is handled the same way the agent's own exit is.
     weak var processDelegate: LocalProcessTerminalViewDelegate? {
-        didSet { for p in panes { p.term.processDelegate = processDelegate } }
+        didSet { for p in panes { p.terminal.exitDelegate = processDelegate } }
     }
     private(set) var panes: [Pane] = []
     private(set) var focused = 0
@@ -646,14 +657,22 @@ final class DeskSession {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.dividerStyle = .thin
         container.isVertical = true
-        panes.append(Pane(isAgent: true))
+        // Ghostty's terminal learns a desk's state from its holder, so it is
+        // only for a desk whose holder's socket path fits; the rest keep SwiftTerm.
+        usesGhostty = Pane.wantsGhostty && PaneTerminals.hasGhostty && Pane.holderPath != nil
+            && Holder.fits(Holder.socketPath(desk: desk.name))
+        panes.append(Pane(isAgent: true, ghostty: usesGhostty))
         rebuild()
         wireOutput()
     }
 
     /// The agent's terminal — where a routed command goes, regardless of which
     /// pane the user happens to be looking at.
-    var agentTerm: DeskTerminalView { panes[0].term }
+    var agent: PaneTerminal { panes[0].terminal }
+    /// Drawn by Ghostty's terminal, and so always through a holder.
+    let usesGhostty: Bool
+    /// A pane's program ended (for a terminal with no delegate of its own).
+    static var onPaneExit: ((NSView) -> Void)?
 
     /// Inferring "finished" from output stopping is fiddly enough to be worth
     /// testing, so the rule lives in ColdfallCore rather than here.
@@ -673,10 +692,10 @@ final class DeskSession {
     private var screenChecked = false
 
     func noteOutput() { activityState.noteOutput(); screenChecked = false }
-    func noteInput(_ bytes: [UInt8], from term: DeskTerminalView?) {
+    func noteInput(_ bytes: [UInt8], from term: PaneTerminal?) {
         activityState.noteInput()
         // A shell split beside the agent isn't asking the agent anything.
-        guard term === agentTerm else { return }
+        guard term === agent else { return }
         // A prompt sent to an agent that wasn't mid-question starts a turn.
         // (Enter on a permission prompt is an answer, part of the same turn.)
         let startsTurn = ActivityState.isSubmit(bytes) && !activityState.needsYou
@@ -712,20 +731,19 @@ final class DeskSession {
 
     /// The agent pane as text, scrollback included, the last `lines` rows.
     func screenText(lines: Int) -> String {
-        RemoteOpen.lastLines(String(decoding: agentTerm.getTerminal().getBufferAsData(), as: UTF8.self), lines: lines)
+        RemoteOpen.lastLines(agent.screenText(), lines: lines)
     }
 
     /// Type into the agent as if from the keyboard. Goes the same road as
     /// a keystroke, so it counts as asking and a finished turn turns green.
     func typeOnBehalf(_ bytes: [UInt8]) {
-        agentTerm.send(source: agentTerm, data: bytes[...])
+        agent.send(bytes: bytes)
     }
 
     /// The agent terminal's live screen as text, wherever you have scrolled
     /// to. See ScreenChange.liveRows.
     func screen() -> [String] {
-        let t = agentTerm.getTerminal()
-        return ScreenChange.liveRows(buffer: String(decoding: t.getBufferAsData(), as: UTF8.self), rows: t.rows)
+        agent.liveRows()
     }
 
     /// Once a desk has gone quiet and would show as waiting: if its screen
@@ -789,7 +807,7 @@ final class DeskSession {
     var holding = false
     /// The agent pane exited while a shell pane stayed. What's left is a
     /// shell, not the agent, whatever agentTerm now points at.
-    var agentGone = false
+    var agentGone = false { didSet { if agentGone, !oldValue { activityState.noteResumed(); reason = nil; title = nil } } }
 
     /// Settings' "Keep desks running when Coldfall quits" (off unless turned
     /// on); a desk's own keep_running wins. Mirrors UIState.keepDesksRunning.
@@ -802,7 +820,8 @@ final class DeskSession {
         let sock = Holder.socketPath(desk: desk.name)
         guard Holder.fits(sock) else { return .none }
         if Holder.isAlive(sock) { return .reattach }
-        return desk.keepsRunning(global: DeskSession.keepGlobal) ? .fresh : .none
+        // A Ghostty desk always has a holder: that is where its state comes from.
+        return usesGhostty || desk.keepsRunning(global: DeskSession.keepGlobal) ? .fresh : .none
     }
 
     /// The holder's socket moves with a rename; the pane follows it.
@@ -862,10 +881,8 @@ final class DeskSession {
         // Four is where panes stop being useful and start being a mosaic.
         guard panes.count < 4 else { return nil }
         if panes.count == 1 { isVertical = vertical; container.isVertical = vertical }
-        let p = Pane(isAgent: false)
-        p.term.processDelegate = processDelegate
-        p.term.onOutput = { [weak self] in self?.noteOutput() }
-        p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
+        let p = Pane(isAgent: false, ghostty: usesGhostty)
+        wire(p)
         panes.insert(p, at: focused + 1)
         focused += 1
         rebuild()
@@ -878,7 +895,7 @@ final class DeskSession {
     @discardableResult
     func splitRunning(_ line: String) -> Bool {
         guard let p = split(vertical: panes.count == 1 ? true : isVertical) else { return false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak p] in p?.term.sendQuietly(line + "\n") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak p] in p?.terminal.sendQuietly(line + "\n") }
         return true
     }
 
@@ -928,8 +945,8 @@ final class DeskSession {
     }
 
 
-    func drop(term: TerminalView) {
-        guard let i = panes.firstIndex(where: { $0.term === term }) else { return }
+    func drop(view: NSView) {
+        guard let i = panes.firstIndex(where: { $0.terminal.view === view }) else { return }
         guard panes.count > 1 else { return }   // the desk itself dying is handled above
         panes[i].box.removeFromSuperview()
         panes.remove(at: i)
@@ -940,24 +957,34 @@ final class DeskSession {
     /// Any pane writing counts as the desk writing — a shell pane finishing a
     /// build is as worth knowing about as the agent answering.
     private func wireOutput() {
-        for p in panes {
-            p.term.onOutput = { [weak self] in self?.noteOutput() }
-            p.term.onInput = { [weak self, weak term = p.term] b in self?.noteInput(b, from: term) }
+        for p in panes { wire(p) }
+        // Its title is its own word for what it is working on.
+        agent.onTitle = { [weak self] t in
+            guard let s = self, !s.agentGone else { return }
+            s.title = DeskDetail.title(t, desk: s.desk.name, runtime: s.desk.runtime)
         }
         // The agent's own word about itself, as the done hook would say it.
-        agentTerm.onNotice = { [weak self] m in
+        agent.onNotice = { [weak self] m in
             // The agent's own hook or 7501 says it better; this is for
             // agents with neither.
             guard let s = self, !s.isSignaled else { return }
             s.noteSignal(TerminalNotice.event(m), message: m)
         }
-        agentTerm.onStatus = { [weak self] r in
+        agent.onStatus = { [weak self] r in
             guard let s = self else { return }
             if let e = ProgramStatus.event(r) { s.noteSignal(e, message: r.message, kind: r.kind) }
             else if r.id.isEmpty, r.state == "working" { s.activityState.noteResumed() }
             // The program's own title for what it is doing, when it sends one.
             if r.id.isEmpty, !r.title.isEmpty { s.title = DeskDetail.title(r.title, desk: s.desk.name, runtime: s.desk.runtime) }
         }
+    }
+
+    /// Any pane's output, input and exit, to this desk.
+    private func wire(_ p: Pane) {
+        p.terminal.exitDelegate = processDelegate
+        p.terminal.onOutput = { [weak self] in self?.noteOutput() }
+        p.terminal.onInput = { [weak self, weak t = p.terminal] b in self?.noteInput(b, from: t) }
+        p.terminal.onExit = { [weak t = p.terminal] in if let v = t?.view { DeskSession.onPaneExit?(v) } }
     }
 
     private func rebuild() {

@@ -370,7 +370,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), which includes the five AppKit and parsi
 
 ## Built on
 
-[SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal, PDFKit for the reader. [libghostty](https://mitchellh.com/writing/libghostty-is-coming) is the intended engine later, once it ships a renderer — today `libghostty-vt` parses and tracks terminal state but does not draw.
+[SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal, PDFKit for the reader.
+
+[Ghostty](https://ghostty.org)'s terminal (libghostty, MIT) is the second engine, chosen in **Settings ▸ General ▸ Terminal**; SwiftTerm stays the default while it proves itself. It is faster and draws more of what agents send. Ghostty runs the program itself and offers no view of its output, so a Ghostty desk always runs through Coldfall's holder, which gives Coldfall a copy of what the agent writes and what is typed; the desk's state comes from that copy by the same rules as any other desk. Release builds carry it. Building from source includes it only after `scripts/ghostty-kit.sh` has built the library (it needs Zig and Apple's Metal toolchain); without that the app builds with SwiftTerm alone.
 
 ## Renamed from Deskwork
 

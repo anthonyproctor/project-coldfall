@@ -19,7 +19,16 @@ VERSION="$(git -C .. describe --tags --always 2>/dev/null || echo 0.1.0)"
 SOURCE_ROOT="$(cd .. && pwd)"
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-echo "building…"
+# Ghostty's terminal goes in when scripts/ghostty-kit.sh has built its
+# library on this Mac (see Package.swift). Without it, or with
+# COLDFALL_GHOSTTY=0, the app is built with SwiftTerm alone, as it always was.
+if [ "${COLDFALL_GHOSTTY:-}" != "0" ] && [ -d Vendor/GhosttyKit.xcframework ]; then
+  export COLDFALL_GHOSTTY=1
+  echo "building, with Ghostty's terminal…"
+else
+  export COLDFALL_GHOSTTY=0
+  echo "building…"
+fi
 # A build that didn't finish stops here. (SwiftPM can report a build-database
 # error after a complete build on a synced folder; "Build complete!" is what
 # counts.)
@@ -33,6 +42,10 @@ else
 fi
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# Ghostty is MIT licensed: its notice travels with any build that links it.
+if [ "$COLDFALL_GHOSTTY" = "1" ] && [ -f Vendor/ghostty-src/LICENSE ]; then
+  cp Vendor/ghostty-src/LICENSE "$APP/Contents/Resources/Ghostty-LICENSE.txt"
+fi
 cp .build/release/Coldfall "$APP/Contents/MacOS/Coldfall"
 # Ship the headless core alongside it, so `coldfall-cli` is available without a
 # second build.

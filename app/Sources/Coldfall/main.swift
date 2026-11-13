@@ -234,6 +234,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
         }
         sidebar.onBesideDesk = { [weak self] i in self?.openBeside(i) }
+        DeskSession.onPaneExit = { [weak self] v in self?.paneExited(v) }
         tabs.onPromptHelper = { [weak self] in self?.openPromptHelper() }
         tabs.onSelect = { [weak self] n in
             guard let self, let i = self.deskIndex(n) else { return }
@@ -348,6 +349,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.ui.notifyDesks = on
             self.ui.save()
         }
+        NotificationCenter.default.addObserver(forName: .coldfallTerminalChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let t = n.object as? String else { return }
+            self.ui.terminal = t
+            Pane.wantsGhostty = t == "ghostty"
+            self.ui.save()
+        }
         NotificationCenter.default.addObserver(forName: .coldfallSleepChanged, object: nil, queue: .main) {
             [weak self] n in
             guard let self, let m = n.object as? Int else { return }
@@ -443,7 +451,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     s.container.leadingAnchor.constraint(equalTo: host.leadingAnchor),
                     s.container.trailingAnchor.constraint(equalTo: host.trailingAnchor),
                 ])
-                s.panes.first?.term.feed(text: text.replacingOccurrences(of: "\n", with: "\r\n"))
+                s.panes.first?.terminal.feed(text: text.replacingOccurrences(of: "\n", with: "\r\n"))
                 // `--beside <desk>`: with that desk next to it (not started).
                 if let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count,
                    let other = desks.first(where: { $0.name == CommandLine.arguments[b + 1] }), other.name != desks[i].name {
@@ -451,7 +459,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     let o = DeskSession(desk: other)
                     sessions[other.name] = o
                     mountBeside(o)
-                    o.panes.first?.term.feed(text: "> waiting for you\r\n")
+                    o.panes.first?.terminal.feed(text: "> waiting for you\r\n")
                 }
                 // `--split`: with a shell pane beside it, to see the cards.
                 if CommandLine.arguments.contains("--split") { s.addPaneForPicture() }
@@ -945,6 +953,18 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         NSApp.activate(ignoringOtherApps: true)
         installMenu()
         watchPaneClicks()
+        // `--split` outside a snapshot: a shell split in the startup desk
+        // once it is up. For trying a split without a click.
+        if !CommandLine.arguments.contains("--snapshot"), CommandLine.arguments.contains("--split") {
+            var tries = 0
+            Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
+                tries += 1
+                guard let self, tries < 30 else { t.invalidate(); return }
+                guard self.visible?.started == true else { return }
+                t.invalidate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.splitRight() }
+            }
+        }
         // `--beside <desk>` outside a snapshot: open that desk next to the
         // startup one once it is up. For trying two desks without a click.
         if !CommandLine.arguments.contains("--snapshot"),
@@ -982,6 +1002,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Desks still running in their holders from last time come straight
         // back; the ones that went with a restart of the Mac are offered.
         DeskSession.keepGlobal = ui.keepDesksRunning
+        // COLDFALL_TERMINAL overrides the setting for one run, for trying it.
+        Pane.wantsGhostty = (ProcessInfo.processInfo.environment["COLDFALL_TERMINAL"] ?? ui.terminal) == "ghostty"
+            && !CommandLine.arguments.contains("--snapshot")
         if !args.contains("--snapshot") {
             let heldNow = Set(Holder.held())
             for d in desks where heldNow.contains(d.name) { openRemotely(d.name, show: false) }
@@ -1026,6 +1049,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         visible?.container.removeFromSuperview()
         stoppedNote?.removeFromSuperview(); stoppedNote = nil
         s.container.delegate = self
+        // A desk opened from the CLI or the phone was sized by frame while
+        // it was off screen; on screen it follows its slot, or it keeps
+        // that size when the window or its neighbour changes.
+        s.container.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(s.container)
         NSLayoutConstraint.activate([
             s.container.topAnchor.constraint(equalTo: host.topAnchor),
@@ -1048,7 +1075,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         window.title = "Project Coldfall — \(d.name)"
         strip.setContext(d.name)
         updateTermHeader()
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
 
     /// Start a desk, first asking about a big conversation that has sat long
@@ -1468,7 +1495,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let s = self.sessions[d.name] else { return }
             if !s.splitRunning(cmd) { NSSound.beep(); return }
             self.updateTermHeader()
-            self.window.makeFirstResponder(s.focusedPane.term)
+            self.window.makeFirstResponder(s.focusedPane.terminal.view)
         }
         transcripts.open(over: window, desk: d.name, folder: d.resolvedCwd)
     }
@@ -1501,7 +1528,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 if !s.splitRunning(cmd) { NSSound.beep(); return }
                 self.updateTermHeader()
-                self.window.makeFirstResponder(s.focusedPane.term)
+                self.window.makeFirstResponder(s.focusedPane.terminal.view)
             }
         }
     }
@@ -1760,7 +1787,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         if let i = desks.firstIndex(where: { $0.name == d.name }) { show(i) }
         let sent = Date()
-        s.agentTerm.send(txt: Reopen.wrapUpPrompt + "\r")
+        s.agent.send(text: Reopen.wrapUpPrompt + "\r")
         var ticks = 0
         Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
@@ -2676,7 +2703,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         func attempt(_ left: Int) {
             DispatchQueue.main.asyncAfter(deadline: .now() + (left == 8 ? 0.3 : 1.0)) { [weak self] in
                 guard let self, self.sessions[name] === target else { return }
-                if target.agentAlive() { target.agentTerm.send(txt: command + "\n"); return }
+                if target.agentAlive() { target.agent.send(text: command + "\n"); return }
                 if left > 0 { attempt(left - 1); return }
                 let a = NSAlert()
                 a.messageText = "\(name)'s agent didn't come up"
@@ -2819,7 +2846,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         notifier.clear(desk: d.name)
         keyIsBeside = true
         syncPairFocus()
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
 
     /// Show `s` in the second slot, or nil to close the slot.
@@ -2832,6 +2859,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         beside = s
         if let s {
             s.container.delegate = self
+            s.container.translatesAutoresizingMaskIntoConstraints = false
             besideSlot.addSubview(s.container)
             NSLayoutConstraint.activate([
                 s.container.topAnchor.constraint(equalTo: besideSlot.topAnchor),
@@ -2845,6 +2873,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                     guard let self else { return }
                     print("beside: split \(self.deskSplit.frame) host \(self.host.frame) slot \(self.besideSlot.frame) container \(s.container.frame) super \(String(describing: s.container.superview === self.besideSlot))")
+                    if let m = self.visible {
+                        print("beside: main container \(m.container.frame) in host \(m.container.superview === self.host) boxes \(m.panes.map { "\($0.box.frame.size) view \($0.terminal.view.frame.size) ambiguous \($0.terminal.view.hasAmbiguousLayout)" }) host subviews \(self.host.subviews.count)")
+                    }
                     fflush(stdout)
                 }
             }
@@ -2859,7 +2890,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     @objc func closeBeside() {
         guard beside != nil else { return }
         mountBeside(nil)
-        if let s = visible { window.makeFirstResponder(s.focusedPane.term) }
+        if let s = visible { window.makeFirstResponder(s.focusedPane.terminal.view) }
     }
 
     /// The focus outline on whichever of the two desks has the keys.
@@ -2996,7 +3027,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             NSSound.beep(); return          // four panes is the ceiling
         }
         updateTermHeader()
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
     var warnedAboutAxis = false
 
@@ -3024,21 +3055,21 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         _ = s.closeFocused()
         updateTermHeader()
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
 
     /// One pane filling the desk; again to bring the others back.
     @objc func zoomPane() {
         guard let s = activeSession else { return }
         s.toggleZoom()
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
     @objc func nextPane() { cyclePane(1) }
     @objc func prevPane() { cyclePane(-1) }
     func cyclePane(_ d: Int) {
         guard let s = activeSession, s.panes.count > 1 else { return }
         s.cycleFocus(d)
-        window.makeFirstResponder(s.focusedPane.term)
+        window.makeFirstResponder(s.focusedPane.terminal.view)
     }
 
     /// Clicking a pane focuses it. SwiftTerm takes first responder itself, so
@@ -3363,26 +3394,29 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     /// An agent's terminal title is its own word for what it is working on.
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        guard let s = sessions.values.first(where: { $0.agentTerm === source && !$0.agentGone }) else { return }
+        guard let s = sessions.values.first(where: { $0.agent.view === source && !$0.agentGone }) else { return }
         s.title = DeskDetail.title(title, desk: s.desk.name, runtime: s.desk.runtime)
     }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
+    func processTerminated(source: TerminalView, exitCode: Int32?) { paneExited(source) }
+
+    /// A pane's program ended, whichever terminal drew it.
+    func paneExited(_ source: NSView) {
         // A desk exiting is not the app exiting, and a PANE exiting is not the
         // desk exiting. Typing `exit` in a shell pane should close that pane and
         // leave the agent next to it untouched.
         guard let entry = sessions.first(where: { s in
-            s.value.panes.contains(where: { $0.term === source })
+            s.value.panes.contains(where: { $0.terminal.view === source })
         }) else { return }
 
         if entry.value.panes.count > 1 {
             // The agent pane going leaves a shell that must not be mistaken
             // for the agent by Wrap Up or "run this in the desk".
-            if entry.value.panes.first?.term === source { entry.value.agentGone = true }
-            entry.value.drop(term: source)
+            if entry.value.panes.first?.terminal.view === source { entry.value.agentGone = true }
+            entry.value.drop(view: source)
             if entry.value === visible {
                 updateTermHeader()
-                window.makeFirstResponder(entry.value.focusedPane.term)
+                window.makeFirstResponder(entry.value.focusedPane.terminal.view)
             }
             return
         }
@@ -3465,6 +3499,7 @@ extension Notification.Name {
     static let coldfallFreshStartChanged = Notification.Name("coldfallFreshStartChanged")
     static let coldfallKeepRunningChanged = Notification.Name("coldfallKeepRunningChanged")
     static let coldfallSleepChanged = Notification.Name("coldfallSleepChanged")
+    static let coldfallTerminalChanged = Notification.Name("coldfallTerminalChanged")
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
     static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
     static let coldfallReopenSettings = Notification.Name("coldfallReopenSettings")

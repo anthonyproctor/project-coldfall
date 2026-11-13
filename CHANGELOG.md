@@ -9,6 +9,19 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Ghostty's terminal, as a choice.** **Settings ▸ General ▸ Terminal** switches desks you
+  start from now on between the classic terminal (SwiftTerm, still the default) and Ghostty's,
+  which is faster and draws more of what agents send. Everything else is the same: state
+  marks, the reason beside a desk, Needs You, the phone inbox, colours, splits, side by side.
+  A Ghostty desk always runs through Coldfall's holder (that is where its state comes from),
+  so quitting asks whether to keep it running; a shell split beside it shows no activity
+  mark. Desks already running keep the terminal they have.
+
+### Fixed
+- A desk opened from the CLI or the phone and then shown no longer keeps the size it had
+  at that moment: it follows the window, and a desk opened beside it, like any other.
+- A desk whose agent has exited (leaving a shell split) no longer goes on saying
+  "needs you".
 - More groundwork for Ghostty's terminal, still off in every release. A held desk can now be
   drawn by Ghostty with its state known: the desk's holder gives Coldfall a copy of the
   agent's output and of the keys typed (starting with what it remembers, so a late listener
