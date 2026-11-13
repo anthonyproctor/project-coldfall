@@ -19,7 +19,7 @@ macOS 13 or later · Swift · MIT licensed · early, but it runs
 ### Why it exists
 
 - **The meter.** Live quota for Claude and Codex, side by side, with the week's reset time. When one vendor is far ahead of the other, it says so and names where to send the next task. Click the strip for quota bars, which desk used what, and fourteen days of history. Copilot shows tokens and premium requests but no quota, and Antigravity shows nothing yet.
-- **Desks, not threads.** One desk per specialist. Switch desks and the others keep running. A green dot tells you which one has finished answering.
+- **Desks, not threads.** One desk per specialist. Switch desks and the others keep running. Green tells you which one has finished answering; orange, which one is waiting on you.
 - **Your own agents, untouched.** Project Coldfall launches the vendor's real CLI in a real terminal, so your agent definitions, hooks, memory files and model pins all still apply. It never reimplements an agent.
 - **Yours to leave.** Everything it writes is in two folders, and Settings can list and remove all of it.
 
@@ -47,7 +47,7 @@ Project Coldfall calls one of those a **desk**, and makes the desk the unit.
 
 **Pasting a screenshot works too.** `cmd-ctrl-shift-4` puts an image on the clipboard and nowhere else; paste it into a desk and Project Coldfall writes it to `~/.local/share/coldfall/pasted/` and types that path instead. Pasting text is untouched, and a file copied in Finder still pastes as a path the normal way.
 
-**It tells you when a desk answered.** The point of desks is running several agents at once, which means you are never watching more than one of them — so a desk that finishes while you are elsewhere gets a **green dot** in the rail, and the Dock icon carries a count of how many are waiting. A desk mid-thought shows a dim ring instead, so "working" and "done" are not the same signal.
+**It tells you when a desk answered.** The point of desks is running several agents at once, which means you are never watching more than one of them — so a desk that finishes while you are elsewhere gets a **green check** in the rail, one stopped on a question for you (a permission, a choice) turns **orange**, and the Dock icon carries a count of how many are waiting. A desk mid-thought shows a still blue dot, so "working", "needs you" and "done" are three different signals.
 
 No CLI announces that it has finished answering; all that reaches Project Coldfall is bytes on a pty, so "finished" is inferred from bytes stopping for two seconds. Looking at the desk is the only thing that clears the dot — not hovering, not bringing the app forward. A badge that clears itself is worse than none, because you stop trusting it was ever set.
 
