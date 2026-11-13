@@ -141,6 +141,9 @@ final class MeterBar: NSView {
         if let call = Self.routerCall(limits) {
             hint.stringValue = call
             hint.textColor = .labelColor
+        } else if let pace = Self.paceCall(limits) {
+            hint.stringValue = pace
+            hint.textColor = .labelColor
         } else if limits.isEmpty && !Limits.recorderInstalled {
             hint.stringValue = "plan limits off — turn on in Settings"
             hint.textColor = .secondaryLabelColor
@@ -157,8 +160,9 @@ final class MeterBar: NSView {
     static func routerCall(_ ls: [VendorLimits]) -> String? {
         let withWeek = ls.compactMap { l -> (String, Double)? in l.liveWeekPct.map { (l.vendor, $0) } }
         guard withWeek.count >= 2 else {
-            if let one = withWeek.first, one.1 >= 75 {
-                return String(format: "%@ is %.0f%% through the week.", one.0, one.1)
+            // The pace line says more (when it runs out), so it speaks instead.
+            if let one = withWeek.first, one.1 >= 75, paceCall(ls) == nil {
+                return String(format: "%@ has used %.0f%% of its week.", one.0, one.1)
             }
             return nil
         }
@@ -172,6 +176,17 @@ final class MeterBar: NSView {
             return String(format: "%@ is at %.0f%%.", hot.0, hot.1)
         }
         return nil
+    }
+
+    /// The vendor running out soonest before its reset, if any is (WeekPace).
+    static func paceCall(_ ls: [VendorLimits]) -> String? {
+        let readings = ls.compactMap { l -> (String, WeekPace.Reading)? in
+            guard let w = l.liveWeekPct, let r = l.weekResetsAt,
+                  let p = WeekPace.assess(usedPct: w, resetsAt: Date(timeIntervalSince1970: r)) else { return nil }
+            return (l.vendor, p)
+        }
+        guard let soonest = readings.min(by: { $0.1.runsOutAt < $1.1.runsOutAt }) else { return nil }
+        return WeekPace.line(vendor: soonest.0, soonest.1)
     }
 
     /// Repaint after a light/dark flip.

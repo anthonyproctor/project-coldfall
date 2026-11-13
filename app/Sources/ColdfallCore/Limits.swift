@@ -326,3 +326,45 @@ public struct DeskState: Codable {
         return Date().timeIntervalSince1970 - s.at < 900 ? s : nil
     }
 }
+
+/// How fast the week's quota is going, against how much of the week is gone.
+///
+/// "57%" alone doesn't say whether that's fine on a Tuesday. What changes
+/// behaviour is whether, at the rate so far, the quota runs out before it
+/// resets. Only then is there something to say.
+public enum WeekPace {
+    public static let window: TimeInterval = 7 * 86_400
+    /// Too early in the week, one busy morning looks like a crisis.
+    public static let minElapsed = 0.08
+
+    public struct Reading: Equatable {
+        /// When the quota runs out at the rate so far.
+        public let runsOutAt: Date
+        /// How long before the reset that is.
+        public let early: TimeInterval
+    }
+
+    /// Nil when there's nothing to say: on pace, too early, or no data.
+    public static func assess(usedPct: Double, resetsAt: Date, now: Date = Date()) -> Reading? {
+        let start = resetsAt.addingTimeInterval(-window)
+        let elapsed = now.timeIntervalSince(start)
+        guard usedPct > 0, usedPct < 100, elapsed > 0, now < resetsAt,
+              elapsed / window >= minElapsed else { return nil }
+        let perSecond = usedPct / elapsed
+        let out = now.addingTimeInterval((100 - usedPct) / perSecond)
+        let early = resetsAt.timeIntervalSince(out)
+        // Within the last hour or two is noise, not news.
+        guard early > 3 * 3600 else { return nil }
+        return Reading(runsOutAt: out, early: early)
+    }
+
+    /// "claude: at this pace you run out Fri 3 pm, 22h before the week resets."
+    public static func line(vendor: String, _ r: Reading, calendar: Calendar = .current) -> String {
+        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        f.dateFormat = "EEE h a"
+        let when = f.string(from: r.runsOutAt).replacingOccurrences(of: "AM", with: "am").replacingOccurrences(of: "PM", with: "pm")
+        let h = Int(r.early / 3600)
+        let gap = h >= 48 ? "\(h / 24) days" : "\(h)h"
+        return "\(vendor): at this pace you run out \(when), \(gap) before the week resets."
+    }
+}

@@ -9,6 +9,10 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **The meter says when you'd run out.** If, at the rate so far, a vendor's weekly quota runs
+  out before it resets, the usage strip says when: "claude: at this pace you run out Fri 6 pm,
+  47h before the week resets." Quiet when you're on pace, and early in the week, when one busy
+  morning would skew it.
 - **Peek at a desk without leaving the one you're on.** Option-click a running desk in the
   rail, or right-click it and choose Peek: its screen opens over the current desk and keeps
   up as it works. Return goes to it, Escape closes the look. Read only, so nothing you type

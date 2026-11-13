@@ -2888,6 +2888,25 @@ do {
     eq("peek: but a question it's waiting on still is", b.activity(now: Date(timeIntervalSince1970: 20)), .blocked)
 }
 
+// MARK: - weekly pace
+
+do {
+    let reset = Date(timeIntervalSince1970: 1_800_000_000)
+    let start = reset.addingTimeInterval(-WeekPace.window)
+    // Half the week gone, 75% used: out at two-thirds, well before the reset.
+    let mid = start.addingTimeInterval(WeekPace.window / 2)
+    let r = WeekPace.assess(usedPct: 75, resetsAt: reset, now: mid)
+    check("pace: ahead of the week is called out", r != nil)
+    eq("pace: it runs out when the rate says", r.map { Int($0.runsOutAt.timeIntervalSince(start) / 3600) }, Int(WeekPace.window * (2.0 / 3.0) / 3600))
+    eq("pace: on pace says nothing", WeekPace.assess(usedPct: 45, resetsAt: reset, now: mid), nil)
+    eq("pace: too early in the week says nothing", WeekPace.assess(usedPct: 20, resetsAt: reset, now: start.addingTimeInterval(3600)), nil)
+    eq("pace: a few hours early is noise", WeekPace.assess(usedPct: 99, resetsAt: reset, now: reset.addingTimeInterval(-7200)), nil)
+    eq("pace: after the reset says nothing", WeekPace.assess(usedPct: 50, resetsAt: reset, now: reset.addingTimeInterval(60)), nil)
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    if let r { check("pace: the line says when and how early", WeekPace.line(vendor: "claude", r, calendar: cal).hasPrefix("claude: at this pace you run out ")
+                     && WeekPace.line(vendor: "claude", r, calendar: cal).hasSuffix("before the week resets.")) }
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the
