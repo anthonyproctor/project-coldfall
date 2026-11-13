@@ -1657,6 +1657,15 @@ do {
         eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
         eq("tabs: no desk on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]), [])
         eq("tabs: + offers this group's stopped desks", DeskTabs.startable(t, current: "work", running: ["work"]), ["a", "b"])
+        check("pair: choosing another desk keeps the one beside", DeskPair.show("c", main: "a", beside: "b") == ("c", Optional("b")))
+        check("pair: choosing the desk beside swaps them", DeskPair.show("b", main: "a", beside: "b") == ("b", Optional("a")))
+        check("pair: no desk beside, nothing to keep", DeskPair.show("b", main: "a", beside: nil) == ("b", nil))
+        check("pair: open beside the one on screen", DeskPair.openBeside("b", main: "a", beside: nil).map { $0 == ("a", "b") } == true)
+        check("pair: a desk can't be beside itself", DeskPair.openBeside("a", main: "a", beside: nil) == nil)
+        check("pair: nothing on screen, nothing to be beside", DeskPair.openBeside("a", main: nil, beside: nil) == nil)
+        let bm = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: false, canMakeDefault: false,
+                                hasInventory: true, hasMcp: true, canBeside: true)
+        check("menu: a desk can open beside", bm.contains { $0.action == .beside })
         let many = ["a", "b", "c", "d", "e"]
         check("tabs: all shown when there is room", DeskTabs.fit(many, current: "a", room: 5) == (many, []))
         check("tabs: the rest go to the more menu", DeskTabs.fit(many, current: "a", room: 3) == (["a", "b", "c"], ["d", "e"]))

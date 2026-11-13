@@ -34,6 +34,24 @@ public enum DeskTabs {
     }
 }
 
+/// Two desks side by side: the one you switch with the desk list (main)
+/// and one opened beside it. A desk is on screen once at most.
+public enum DeskPair {
+    /// After choosing `name` in the desk list. Choosing the desk that is
+    /// beside swaps the two, rather than showing it twice or closing it.
+    public static func show(_ name: String, main: String?, beside: String?) -> (main: String, beside: String?) {
+        if name == beside { return (name, main) }
+        return (name, beside)
+    }
+
+    /// After "Open Beside" on `name`. Nil when there is nothing to put it
+    /// beside, or it is the desk already on screen.
+    public static func openBeside(_ name: String, main: String?, beside: String?) -> (main: String, beside: String)? {
+        guard let main, name != main else { return nil }
+        return (main, name)
+    }
+}
+
 /// The counts along the status bar: "1 needs you · 2 working · 3 done".
 public struct DeskCounts: Equatable {
     public var needsYou = 0, working = 0, done = 0

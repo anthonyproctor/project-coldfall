@@ -23,7 +23,7 @@ public enum DeskMenu {
     }
 
     public enum Action: String, Equatable {
-        case peek, markUnread, color, reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
+        case peek, beside, markUnread, color, reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
     }
 
     public struct Entry: Equatable {
@@ -53,8 +53,14 @@ public enum DeskMenu {
                              canReveal: Bool, canMakeDefault: Bool,
                              hasInventory: Bool, hasMcp: Bool, askResume: Bool? = nil,
                              pinned: Bool? = nil, news: Int = 0, canPeek: Bool = false,
-                             canMarkUnread: Bool = false) -> [Entry] {
+                             canMarkUnread: Bool = false, canBeside: Bool = false) -> [Entry] {
         var out: [Entry] = []
+        // Two agents at once: this desk next to the one on screen.
+        if canBeside, !hidden {
+            out.append(Entry(.beside, "Open Beside",
+                             subtitle: "Shows this desk next to the one on screen. Each keeps its own agent.",
+                             symbol: "rectangle.split.2x1"))
+        }
         // A running desk that isn't on screen: look without leaving this one.
         if canPeek, running {
             out.append(Entry(.peek, "Peek",

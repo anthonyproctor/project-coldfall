@@ -133,17 +133,20 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // floating window you had to arrange by hand; VS Code shows files
         // inside the window, beside the sidebar. It can still pop out.
         host.translatesAutoresizingMaskIntoConstraints = false
-        center.addSubview(tabs); center.addSubview(host)
+        // The desk on screen, and beside it a second one when asked for.
+        deskSplit.translatesAutoresizingMaskIntoConstraints = false
+        deskSplit.install(main: host, side: besideSlot)
+        center.addSubview(tabs); center.addSubview(deskSplit)
         // The cards bring their own gap; this keeps them off the window's edges.
         let inset: CGFloat = 4
         NSLayoutConstraint.activate([
             tabs.topAnchor.constraint(equalTo: center.topAnchor),
             tabs.leadingAnchor.constraint(equalTo: center.leadingAnchor),
             tabs.trailingAnchor.constraint(equalTo: center.trailingAnchor),
-            host.topAnchor.constraint(equalTo: tabs.bottomAnchor),
-            host.leadingAnchor.constraint(equalTo: center.leadingAnchor, constant: inset),
-            host.trailingAnchor.constraint(equalTo: center.trailingAnchor, constant: -inset),
-            host.bottomAnchor.constraint(equalTo: center.bottomAnchor, constant: -inset),
+            deskSplit.topAnchor.constraint(equalTo: tabs.bottomAnchor),
+            deskSplit.leadingAnchor.constraint(equalTo: center.leadingAnchor, constant: inset),
+            deskSplit.trailingAnchor.constraint(equalTo: center.trailingAnchor, constant: -inset),
+            deskSplit.bottomAnchor.constraint(equalTo: center.bottomAnchor, constant: -inset),
         ])
         Theme.paint(readerPane, Theme.ui.editor)
         split.addArrangedSubview(rail)
@@ -197,14 +200,19 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         strip.onToggleReader = { [weak self] in self?.toggleReader() }
         strip.onToggleMeter = { [weak self] in self?.toggleMeter() }
         strip.onUpdate = { [weak self] in self?.updates.openRelease() }
-        DeskSession.onPaneAction = { [weak self] a in
+        DeskSession.onPaneAction = { [weak self] s, a in
+            guard let self else { return }
+            // The button's own desk, when two are on screen.
+            self.keyIsBeside = s === self.beside
+            self.syncPairFocus()
             switch a {
-            case .splitRight: self?.splitRight()
-            case .splitDown: self?.splitDown()
-            case .close: self?.closePane()
-            case .zoom: self?.zoomPane()
+            case .splitRight: self.splitRight()
+            case .splitDown: self.splitDown()
+            case .close: self.closePane()
+            case .zoom: self.zoomPane()
             }
         }
+        sidebar.onBesideDesk = { [weak self] i in self?.openBeside(i) }
         tabs.onPromptHelper = { [weak self] in self?.openPromptHelper() }
         tabs.onSelect = { [weak self] n in
             guard let self, let i = self.deskIndex(n) else { return }
@@ -409,6 +417,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     s.container.trailingAnchor.constraint(equalTo: host.trailingAnchor),
                 ])
                 s.panes.first?.term.feed(text: text.replacingOccurrences(of: "\n", with: "\r\n"))
+                // `--beside <desk>`: with that desk next to it (not started).
+                if let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count,
+                   let other = desks.first(where: { $0.name == CommandLine.arguments[b + 1] }), other.name != desks[i].name {
+                    visible = s
+                    let o = DeskSession(desk: other)
+                    sessions[other.name] = o
+                    mountBeside(o)
+                    o.panes.first?.term.feed(text: "> waiting for you\r\n")
+                }
                 // `--split`: with a shell pane beside it, to see the cards.
                 if CommandLine.arguments.contains("--split") { s.addPaneForPicture() }
             }
@@ -846,6 +863,22 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         NSApp.activate(ignoringOtherApps: true)
         installMenu()
         watchPaneClicks()
+        // `--beside <desk>` outside a snapshot: open that desk next to the
+        // startup one once it is up. For trying two desks without a click.
+        if !CommandLine.arguments.contains("--snapshot"),
+           let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count {
+            let name = CommandLine.arguments[b + 1]
+            // Once a desk is on screen to be beside (the launch screen waits
+            // on Start first); given up on after half a minute.
+            var tries = 0
+            Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
+                tries += 1
+                guard let self, tries < 30 else { t.invalidate(); return }
+                guard self.visible?.started == true, let i = self.deskIndex(name) else { return }
+                t.invalidate()
+                self.openBeside(i)
+            }
+        }
         watchSystemAppearance()
         watchDeskActivity()
         notifier.onOpen = { [weak self] d in
@@ -888,6 +921,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func show(_ i: Int) {
         guard desks.indices.contains(i) else { return }
         let d = desks[i]
+        // Choosing the desk that is beside swaps the two.
+        var swapIn: DeskSession?
+        if let b = beside, b.desk.name == d.name {
+            swapIn = visible
+            mountBeside(nil)
+        }
+        defer { if let old = swapIn, old !== visible { mountBeside(old) } }
         lastVisited[d.name] = Date()
         notifier.clear(desk: d.name)
         waitingName = nil
@@ -914,6 +954,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         visible?.isVisible = false
         s.isVisible = true
         visible = s
+        keyIsBeside = false
+        syncPairFocus()
         meter.currentDesk = d.name
         // Follow the desk that is on screen.
         watcher.start(root: d.resolvedCwd)
@@ -1129,6 +1171,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         zp.keyEquivalentModifierMask = [.command, .shift]
         zp.target = self
         deskMenu.addItem(zp)
+        let cb = NSMenuItem(title: "Close Beside Desk", action: #selector(closeBeside), keyEquivalent: "w")
+        cb.keyEquivalentModifierMask = [.command, .option]
+        cb.target = self
+        deskMenu.addItem(cb)
         let nx = NSMenuItem(title: "Next Pane", action: #selector(nextPane), keyEquivalent: "]")
         nx.target = self
         deskMenu.addItem(nx)
@@ -1195,6 +1241,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func applicationDidBecomeActive(_ n: Notification) {
         // Back in front of it: the desk on screen is seen again.
         visible?.isVisible = true
+        beside?.isVisible = true
         let stamp = (try? FileManager.default.attributesOfItem(atPath: KeyMap.path))?[.modificationDate] as? Date
         if stamp != keyMapStamp { installMenu() }
     }
@@ -1204,6 +1251,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func applicationDidResignActive(_ n: Notification) {
         guard !CommandLine.arguments.contains("--snapshot") else { return }
         visible?.isVisible = false
+        beside?.isVisible = false
     }
 
     @objc func jump(_ sender: NSMenuItem) { open(sender.tag) }
@@ -1571,6 +1619,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sessions.removeValue(forKey: d.name)
         memory.removeValue(forKey: d.name)
         s.terminateAll()
+        if beside === s { mountBeside(nil) }
         if visible === s {
             s.container.removeFromSuperview()
             visible = nil
@@ -2423,6 +2472,85 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     let feed = FeedPanel()
     let changes = ChangesPanel()
 
+    // MARK: - two desks side by side
+
+    /// The desk shown next to the one on screen, if any. It is a whole desk
+    /// with its own agent, not a pane of the first.
+    var beside: DeskSession?
+    let deskSplit = DeskPairView()
+    let besideSlot = NSView()
+    /// Which of the two the keys last went to: pane commands act on it.
+    var keyIsBeside = false
+    var activeSession: DeskSession? { keyIsBeside ? (beside ?? visible) : visible }
+
+    /// Put a desk next to the one on screen, starting it if need be.
+    func openBeside(_ i: Int) {
+        guard desks.indices.contains(i) else { return }
+        let d = desks[i]
+        guard DeskPair.openBeside(d.name, main: visible?.desk.name, beside: beside?.desk.name) != nil else { NSSound.beep(); return }
+        let s = sessions[d.name] ?? {
+            let new = DeskSession(desk: d)
+            new.processDelegate = self
+            sessions[d.name] = new
+            return new
+        }()
+        mountBeside(s)
+        if !s.started { checkInventory(d) }
+        startOrAsk(s, d)
+        lastVisited[d.name] = Date()
+        notifier.clear(desk: d.name)
+        keyIsBeside = true
+        syncPairFocus()
+        window.makeFirstResponder(s.focusedPane.term)
+    }
+
+    /// Show `s` in the second slot, or nil to close the slot.
+    func mountBeside(_ s: DeskSession?) {
+        if let old = beside, old !== s {
+            old.container.removeFromSuperview()
+            if old !== visible { old.isVisible = false }
+            old.setPair(false, key: true)
+        }
+        beside = s
+        if let s {
+            s.container.delegate = self
+            besideSlot.addSubview(s.container)
+            NSLayoutConstraint.activate([
+                s.container.topAnchor.constraint(equalTo: besideSlot.topAnchor),
+                s.container.bottomAnchor.constraint(equalTo: besideSlot.bottomAnchor),
+                s.container.leadingAnchor.constraint(equalTo: besideSlot.leadingAnchor),
+                s.container.trailingAnchor.constraint(equalTo: besideSlot.trailingAnchor),
+            ])
+            s.isVisible = true
+            deskSplit.showsSide = true
+            if ProcessInfo.processInfo.environment["COLDFALL_SNAPSHOT_DEBUG"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                    guard let self else { return }
+                    print("beside: split \(self.deskSplit.frame) host \(self.host.frame) slot \(self.besideSlot.frame) container \(s.container.frame) super \(String(describing: s.container.superview === self.besideSlot))")
+                    fflush(stdout)
+                }
+            }
+        } else {
+            deskSplit.showsSide = false
+            keyIsBeside = false
+        }
+        syncPairFocus()
+    }
+
+    /// Take the second desk off the screen. It keeps running.
+    @objc func closeBeside() {
+        guard beside != nil else { return }
+        mountBeside(nil)
+        if let s = visible { window.makeFirstResponder(s.focusedPane.term) }
+    }
+
+    /// The focus outline on whichever of the two desks has the keys.
+    func syncPairFocus() {
+        let two = beside != nil
+        visible?.setPair(two, key: !keyIsBeside)
+        beside?.setPair(two, key: keyIsBeside, beside: true)
+    }
+
     /// Changes: what the desk on screen changed in its folder, to read and
     /// comment on.
     @objc func openChanges() {
@@ -2497,7 +2625,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// other direction joins the existing one rather than nesting, and says so
     /// once instead of silently doing something else than the menu promised.
     func addPane(vertical: Bool) {
-        guard let s = visible else { return }
+        guard let s = activeSession else { return }
         if s.panes.count > 1 && s.isVertical != vertical && !warnedAboutAxis {
             warnedAboutAxis = true
             let a = NSAlert()
@@ -2523,7 +2651,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // cmd-w closes the innermost thing, the way every terminal does it: the
         // pane if there is more than one, otherwise the window. Beeping here
         // instead would quietly take cmd-w away from closing the window at all.
-        guard let s = visible, s.panes.count > 1 else {
+        // The second desk's only pane: off the screen, still running.
+        if keyIsBeside, let b = beside, b.panes.count < 2 { closeBeside(); return }
+        guard let s = activeSession, s.panes.count > 1 else {
             window.performClose(nil); return
         }
         if s.focusedPane.isAgent {
@@ -2543,14 +2673,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// One pane filling the desk; again to bring the others back.
     @objc func zoomPane() {
-        guard let s = visible else { return }
+        guard let s = activeSession else { return }
         s.toggleZoom()
         window.makeFirstResponder(s.focusedPane.term)
     }
     @objc func nextPane() { cyclePane(1) }
     @objc func prevPane() { cyclePane(-1) }
     func cyclePane(_ d: Int) {
-        guard let s = visible, s.panes.count > 1 else { return }
+        guard let s = activeSession, s.panes.count > 1 else { return }
         s.cycleFocus(d)
         window.makeFirstResponder(s.focusedPane.term)
     }
@@ -2559,13 +2689,20 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// this only has to keep the ring in step with where the keystrokes go.
     func watchPaneClicks() {
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] ev in
-            guard let self, let s = self.visible, s.panes.count > 1,
-                  ev.window === self.window else { return ev }
+            guard let self, ev.window === self.window else { return ev }
             let pt = ev.locationInWindow
-            for (i, p) in s.panes.enumerated()
-            where p.box.superview != nil
-                && p.box.convert(p.box.bounds, to: nil).contains(pt) {
-                s.focus(i); break
+            for s in [self.visible, self.beside].compactMap({ $0 }) {
+                for (i, p) in s.panes.enumerated()
+                where p.box.superview != nil
+                    && p.box.convert(p.box.bounds, to: nil).contains(pt) {
+                    if s.panes.count > 1 { s.focus(i) }
+                    // With two desks on screen, the one clicked has the keys.
+                    if self.beside != nil, self.keyIsBeside != (s === self.beside) {
+                        self.keyIsBeside = s === self.beside
+                        self.syncPairFocus()
+                    }
+                    return ev
+                }
             }
             return ev
         }
@@ -2893,6 +3030,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             return
         }
+        if entry.value === beside { mountBeside(nil) }
         sessions.removeValue(forKey: entry.key)
     }
 

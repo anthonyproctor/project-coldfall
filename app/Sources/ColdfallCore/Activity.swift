@@ -281,7 +281,10 @@ public struct ActivityState {
         // agent is mid-answer in front of you.
         if visible {
             if let w = lastWork, now.timeIntervalSince(w) < ActivityState.quietFor { return .working }
-            return .quiet
+            // Stopped on a question, it says so even in front of you: with
+            // two desks on screen, "which one is asking" is still a question.
+            // (Nothing notifies for a desk on screen; see NotifyRule.)
+            return needsYou ? .blocked : .quiet
         }
         if needsYou { return .blocked }
         if let last = lastOutput, now.timeIntervalSince(last) < ActivityState.quietFor { return .working }

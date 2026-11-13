@@ -54,6 +54,7 @@ final class DeskRow: NSView {
     /// Show this desk's screen over the current one (see PeekPanel).
     var onPeek: (() -> Void)?
     var onMarkUnread: (() -> Void)?
+    var onBeside: (() -> Void)?
     /// Give the desk a colour (a palette name), or nil to take it away.
     var onColor: ((String?) -> Void)?
     private var colorName: String?
@@ -290,7 +291,8 @@ final class DeskRow: NSView {
                                      askResume: onToggleAskResume != nil ? asksResume : nil,
                                      pinned: onUnpin != nil ? true : (onPin != nil ? false : nil),
                                      news: status.news, canPeek: onPeek != nil && !selected,
-                                     canMarkUnread: onMarkUnread != nil && Mark(status) != .done && Mark(status) != .needsYou)
+                                     canMarkUnread: onMarkUnread != nil && Mark(status) != .done && Mark(status) != .needsYou,
+                                     canBeside: onBeside != nil && !selected)
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
             if e.action == .color {
@@ -320,6 +322,7 @@ final class DeskRow: NSView {
             switch e.action {
             case .peek:        sel = #selector(peek)
             case .markUnread:  sel = #selector(markUnread)
+            case .beside:      sel = #selector(openBeside)
             case .color:       continue
             case .reveal:      sel = #selector(reveal)
             case .makeDefault: sel = #selector(makeDefault)
@@ -364,6 +367,7 @@ final class DeskRow: NSView {
     @objc private func remove() { onRemove?() }
     @objc private func peek() { onPeek?() }
     @objc private func markUnread() { onMarkUnread?() }
+    @objc private func openBeside() { onBeside?() }
     @objc private func pickColor(_ item: NSMenuItem) { onColor?(item.representedObject as? String) }
     @objc private func rename() { onRename?() }
     @objc private func stop() { onStop?() }

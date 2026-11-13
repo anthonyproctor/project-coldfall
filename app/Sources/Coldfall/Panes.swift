@@ -397,7 +397,7 @@ final class PaneHeader: NSView {
             : "This conversation is filling up."
     }
 
-    func set(icon: NSImage?, title t: String, detail: String, panes: Int, zoomed: Bool = false) {
+    func set(icon: NSImage?, title t: String, detail: String, panes: Int, zoomed: Bool = false, canClose: Bool? = nil) {
         iconView.image = icon
         title.stringValue = t
         sub.stringValue = detail
@@ -405,9 +405,13 @@ final class PaneHeader: NSView {
         zoom.image = NSImage(systemSymbolName: zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                              accessibilityDescription: "Zoom")
         zoom.toolTip = zoomed ? "Show all panes  ⇧⌘↩" : "Zoom this pane  ⇧⌘↩"
-        // Closing the last pane would leave a desk with no terminal.
-        close.isEnabled = panes > 1
-        close.alphaValue = panes > 1 ? 1 : 0.35
+        // Closing the last pane would leave a desk with no terminal; beside
+        // another desk, it takes this desk off the screen instead.
+        let closable = canClose ?? (panes > 1)
+        close.isEnabled = closable
+        close.alphaValue = closable ? 1 : 0.35
+        if panes < 2 { close.toolTip = closable ? "Take this desk off the screen (it keeps running)" : "Close pane  ⌘W" }
+        else { close.toolTip = "Close pane  ⌘W" }
     }
 
     func restyle() {
@@ -527,6 +531,68 @@ final class PaneBox: NSView {
         alphaValue = (showsFocus && !focused) ? 0.78 : 1.0
         header.restyle()
     }
+}
+
+/// Two desks side by side: the main one and, when asked for, a second.
+///
+/// Laid out by hand rather than with NSSplitView, which takes a half added
+/// later for a collapsed pane and gives it no width. The boundary between
+/// the halves drags; double-click it for even halves again.
+final class DeskPairView: NSView {
+    private weak var main: NSView?
+    private weak var side: NSView?
+    /// The main desk's share of the width while two are shown.
+    private(set) var ratio: CGFloat = 0.5
+    static let minHalf: CGFloat = 260
+    var showsSide = false { didSet { if showsSide != oldValue { if showsSide { ratio = 0.5 }; needsLayout = true; layoutSubtreeIfNeeded(); window?.invalidateCursorRects(for: self) } } }
+
+    func install(main: NSView, side: NSView) {
+        self.main = main; self.side = side
+        for v in [main, side] {
+            v.translatesAutoresizingMaskIntoConstraints = true
+            v.autoresizingMask = []
+            addSubview(v)
+        }
+        side.isHidden = true
+    }
+
+    private var boundary: CGFloat {
+        let w = bounds.width
+        let lo = min(Self.minHalf, w / 2), hi = max(w - Self.minHalf, w / 2)
+        return min(max((w * ratio).rounded(), lo), hi)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let main, let side else { return }
+        side.isHidden = !showsSide
+        if showsSide {
+            let x = boundary
+            main.frame = NSRect(x: 0, y: 0, width: x, height: bounds.height)
+            side.frame = NSRect(x: x, y: 0, width: bounds.width - x, height: bounds.height)
+        } else {
+            main.frame = bounds
+        }
+    }
+    override func setFrameSize(_ n: NSSize) { super.setFrameSize(n); needsLayout = true }
+
+    // The few points either side of the boundary belong to the drag.
+    private var grip: NSRect { NSRect(x: boundary - 4, y: 0, width: 8, height: bounds.height) }
+    override func hitTest(_ p: NSPoint) -> NSView? {
+        if showsSide, let sv = superview, grip.contains(convert(p, from: sv)) { return self }
+        return super.hitTest(p)
+    }
+    override func resetCursorRects() { if showsSide { addCursorRect(grip, cursor: .resizeLeftRight) } }
+    override func mouseDown(with e: NSEvent) {
+        guard showsSide else { return super.mouseDown(with: e) }
+        if e.clickCount == 2 { ratio = 0.5; needsLayout = true; window?.invalidateCursorRects(for: self) }
+    }
+    override func mouseDragged(with e: NSEvent) {
+        guard showsSide, bounds.width > 0 else { return }
+        ratio = convert(e.locationInWindow, from: nil).x / bounds.width
+        needsLayout = true
+    }
+    override func mouseUp(with e: NSEvent) { window?.invalidateCursorRects(for: self) }
 }
 
 /// The split view that holds a desk's cards. No divider line: the gap
@@ -865,7 +931,7 @@ final class DeskSession {
             p.box.header.onAction = { [weak self, weak p] a in
                 guard let self, let p, let i = self.panes.firstIndex(where: { $0 === p }) else { return }
                 self.focus(i)
-                DeskSession.onPaneAction?(a)
+                DeskSession.onPaneAction?(self, a)
             }
         }
         markFocus()
@@ -875,7 +941,20 @@ final class DeskSession {
 
     /// The pane headers' buttons go to the controller, which owns splitting
     /// and closing (and the window's first responder).
-    static var onPaneAction: ((PaneAction) -> Void)?
+    static var onPaneAction: ((DeskSession, PaneAction) -> Void)?
+
+    /// On screen next to another desk. Then the focus outline shows which
+    /// of the two desks the keys go to, even with one pane each.
+    private(set) var paired = false
+    private(set) var isKey = true
+    /// The second of the pair: its last pane's close button takes it off screen.
+    private(set) var isBeside = false
+    func setPair(_ paired: Bool, key: Bool, beside: Bool = false) {
+        guard paired != self.paired || key != isKey || beside != isBeside else { return }
+        self.paired = paired; isKey = key; isBeside = beside
+        markFocus()
+        refreshHeaders()
+    }
 
     /// Name each pane: the agent pane by its desk and vendor, shells as shell.
     func refreshHeaders() {
@@ -886,11 +965,12 @@ final class DeskSession {
         for p in panes {
             if p.isAgent, desk.runtime != "shell" {
                 p.box.header.set(icon: VendorIcon.image(runtime: desk.runtime, icon: desk.icon, size: 14),
-                                 title: desk.name, detail: "\(desk.claudeAccount()?.vendor ?? AgentOffer.shortName(desk.runtime)) · \(path)", panes: panes.count, zoomed: zoomed)
+                                 title: desk.name, detail: "\(desk.claudeAccount()?.vendor ?? AgentOffer.shortName(desk.runtime)) · \(path)", panes: panes.count, zoomed: zoomed,
+                                 canClose: panes.count > 1 || isBeside)
                 p.box.header.setContext(DeskState.load(desk.name)?.ctxPct)
             } else {
                 p.box.header.set(icon: shellIcon, title: p.isAgent ? desk.name : "shell",
-                                 detail: path, panes: panes.count, zoomed: zoomed)
+                                 detail: path, panes: panes.count, zoomed: zoomed, canClose: panes.count > 1 || isBeside)
                 p.box.header.mark.mark = .none
             }
         }
@@ -903,10 +983,10 @@ final class DeskSession {
     }
 
     private func markFocus() {
-        let many = panes.count > 1
+        let many = panes.count > 1 || paired
         for (i, p) in panes.enumerated() {
             p.box.showsFocus = many
-            p.box.focused = (i == focused)
+            p.box.focused = (i == focused) && (isKey || !paired)
         }
     }
 }

@@ -16,6 +16,7 @@ final class SidebarView: NSView {
     var onPeekDesk: ((Int) -> Void)?
     var onMarkUnreadDesk: ((Int) -> Void)?
     var onColorDesk: ((Int, String?) -> Void)?
+    var onBesideDesk: ((Int) -> Void)?
     /// The Desks section by priority: every running desk, across groups,
     /// under Needs you, Done, Working, Idle. Off, it lists the selected group.
     var byPriority = false { didSet { if byPriority != oldValue, let d = lastDesks { build(desks: d) } } }
@@ -383,7 +384,10 @@ final class SidebarView: NSView {
                 r.onStop = { [weak self] in self?.onStopDesk?(i) }
                 r.onPeek = { [weak self] in self?.onPeekDesk?(i) }
                 r.onMarkUnread = { [weak self] in self?.onMarkUnreadDesk?(i) }
-                if !d.hidden { r.onColor = { [weak self] c in self?.onColorDesk?(i, c) } }
+                if !d.hidden {
+                    r.onColor = { [weak self] c in self?.onColorDesk?(i, c) }
+                    r.onBeside = { [weak self] in self?.onBesideDesk?(i) }
+                }
                 if !d.hidden {
                     if d.pinned { r.onUnpin = { [weak self] in self?.onPinDesk?(i, false) } }
                     else { r.onPin = { [weak self] in self?.onPinDesk?(i, true) } }

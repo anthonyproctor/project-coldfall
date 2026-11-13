@@ -8,6 +8,19 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Two desks side by side.** Right-click a desk, **Open Beside**, and it appears next to
+  the desk on screen: two agents, each in its own card with its own colour and state. The
+  outline shows which one your keys go to; click the other to move them. Choosing the desk
+  that is beside swaps the two; choosing any other desk replaces the first and keeps the
+  second. Drag the gap to resize (double-click for even halves). The close button on the
+  second desk's pane, or **Desks ▸ Close Beside Desk** (⌥⌘W), takes it off the screen; it
+  keeps running.
+
+### Changed
+- A desk stopped on a question shows **Needs you** even while it is on screen. It used to
+  read as idle there, which with two desks in view hid which one was asking.
+
 ## [0.3.38] - 2026-11-13
 
 A colour for each desk, so you can see which agent you are in.
