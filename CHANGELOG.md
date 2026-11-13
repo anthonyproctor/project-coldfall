@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.39] - 2026-11-13
+
+Two desks side by side.
+
 ### Added
 - **Two desks side by side.** Right-click a desk, **Open Beside**, and it appears next to
   the desk on screen: two agents, each in its own card with its own colour and state. The
@@ -995,7 +999,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...HEAD
+[0.3.39]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...v0.3.39
 [0.3.38]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...v0.3.38
 [0.3.37]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.36...v0.3.37
 [0.3.36]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.35...v0.3.36
