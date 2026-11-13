@@ -9,6 +9,16 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Conversations** (**Desks ▸ Conversations…**, ⇧⌘H): every conversation Claude Code and
+  Codex have had in the desk's folder, with when, how big, and the first thing you asked.
+  Type to search everything said in them. **Open in a Split** resumes one in a shell beside
+  the desk; **Copy Command** gives you the vendor's resume command.
+- **Fork Conversation in a Split** runs the vendor's own fork (Claude Code, Codex) beside
+  the desk, so you can try something without disturbing the original.
+- **Hand Off to Another Desk…** sends the end of a desk's screen to another running desk as
+  history, for one that is out of context or out of quota. It says how much goes and that
+  nothing is redacted, and asks first; the other agent is told to read it as history,
+  check the folder, and change nothing yet.
 - **Sleep idle desks.** **Settings ▸ Agents ▸ Idle desks** (off until you pick a time): a
   desk that has finished, been read, and sat untouched that long is put to sleep. Its
   processes end and its memory comes back, its row shows a moon, and opening it picks the

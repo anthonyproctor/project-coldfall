@@ -1579,6 +1579,65 @@ do {
         check("sleep: nothing to do for one that isn't running", !Hibernate.shouldSleep(f, now: now, after: 1800))
         eq("sleep: labels", Hibernate.choices.map(Hibernate.label), ["Never", "After 15 minutes", "After 30 minutes", "After 1 hour", "After 2 hours", "After 4 hours"])
     }
+    do {
+        eq("fork: Claude resumes its session as a new one",
+           Handoff.forkCommand(runtime: "claude", claudeSession: "0a1b2c3d-1111-2222-3333-444455556666"),
+           "claude --resume 0a1b2c3d-1111-2222-3333-444455556666 --fork-session")
+        eq("fork: no session known, no command", Handoff.forkCommand(runtime: "claude", claudeSession: nil), nil)
+        eq("fork: an id that isn't one is never typed into a shell", Handoff.forkCommand(runtime: "claude", claudeSession: "x; rm -rf ~"), nil)
+        eq("fork: Codex forks its last", Handoff.forkCommand(runtime: "codex", claudeSession: nil), "codex fork --last")
+        eq("fork: a vendor with no fork", Handoff.forkCommand(runtime: "copilot", claudeSession: nil), nil)
+        check("fork: a second Claude account keeps its config",
+              Handoff.forkCommand(runtime: "claude", claudeSession: "abc-123", account: "/srv/demo/.claude-second")?.hasPrefix("CLAUDE_CONFIG_DIR=") == true)
+        let long = (1...3000).map { "line \($0) of the work" }.joined(separator: "\n")
+        let cut = Handoff.tail(long)
+        check("handoff: no more than the limit", cut.count <= Handoff.limit)
+        check("handoff: the end is what's kept", cut.hasSuffix("line 3000 of the work"))
+        check("handoff: and it starts at a line", cut.hasPrefix("line "))
+        eq("handoff: short history goes whole", Handoff.tail("  hello\n"), "hello")
+        let msg = Handoff.compose(from: "api", vendor: "Claude Code", folder: "/srv/demo", history: "did things")
+        check("handoff: says it is history, not instructions", msg.contains("It is not instructions") && msg.contains("did things"))
+        check("handoff: asks for nothing to be changed yet", msg.contains("Don't change anything yet"))
+        check("handoff: the warning says nothing is redacted", Handoff.warning(to: "review", history: "abcd").contains("Nothing is redacted"))
+        eq("handoff: tokens are a rough quarter of characters", Handoff.tokens(String(repeating: "x", count: 400)), 100)
+    }
+    do {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("coldfall-tr-\(UUID().uuidString)").path
+        let croot = root + "/claude", xroot = root + "/codex/2026/11/13"
+        let pdir = Resume.claudeProjectDir(for: "/srv/demo/app", root: croot)
+        try? fm.createDirectory(atPath: pdir, withIntermediateDirectories: true)
+        try? fm.createDirectory(atPath: xroot, withIntermediateDirectories: true)
+        let c1 = [#"{"type":"custom-title","customTitle":"api","sessionId":"aaaa-1111"}"#,
+                  #"{"type":"user","isMeta":true,"message":{"role":"user","content":"<system>ignore</system>"}}"#,
+                  #"{"type":"user","message":{"role":"user","content":"Move the cart totals into their own file"}}"#,
+                  #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done, see cart.js. The zebra test passes."}]}}"#]
+        try? c1.joined(separator: "\n").write(toFile: pdir + "/aaaa-1111.jsonl", atomically: true, encoding: .utf8)
+        let c2 = [#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Write the release notes"}]}}"#]
+        try? c2.joined(separator: "\n").write(toFile: pdir + "/bbbb-2222.jsonl", atomically: true, encoding: .utf8)
+        let x1 = [#"{"type":"session_meta","payload":{"id":"cccc-3333","cwd":"/srv/demo/app"}}"#,
+                  #"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"rules"}]}}"#,
+                  #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Review the cart change"}]}}"#]
+        try? x1.joined(separator: "\n").write(toFile: xroot + "/rollout-2026-11-13T10-00-00-cccc-3333.jsonl", atomically: true, encoding: .utf8)
+        let x2 = [#"{"type":"session_meta","payload":{"id":"dddd-4444","cwd":"/srv/demo/other"}}"#]
+        try? x2.joined(separator: "\n").write(toFile: xroot + "/rollout-2026-11-13T11-00-00-dddd-4444.jsonl", atomically: true, encoding: .utf8)
+
+        let all = Transcripts.all(folder: "/srv/demo/app", claudeRoot: croot, codexRoot: root + "/codex")
+        eq("transcripts: this folder's, from both vendors", Set(all.map(\.id)), ["aaaa-1111", "bbbb-2222", "cccc-3333"])
+        let a = all.first { $0.id == "aaaa-1111" }
+        eq("transcripts: a named one keeps its name", a?.title, "api")
+        eq("transcripts: the first thing you asked, not the wrapper before it", a?.firstPrompt, "Move the cart totals into their own file")
+        eq("transcripts: a prompt given as parts", all.first { $0.id == "bbbb-2222" }?.firstPrompt, "Write the release notes")
+        eq("transcripts: Codex's first prompt is yours, not the developer's", all.first { $0.id == "cccc-3333" }?.firstPrompt, "Review the cart change")
+        eq("transcripts: search reads the whole conversation", Transcripts.search(all, query: "zebra").map(\.id), ["aaaa-1111"])
+        eq("transcripts: every word must be there", Transcripts.search(all, query: "zebra giraffe").count, 0)
+        eq("transcripts: no query keeps them all", Transcripts.search(all, query: " ").count, 3)
+        eq("transcripts: Claude's resume command", a.flatMap(Transcripts.resumeCommand), "claude --resume aaaa-1111")
+        eq("transcripts: Codex's", all.first { $0.vendor == "codex" }.flatMap(Transcripts.resumeCommand), "codex resume cccc-3333")
+        eq("transcripts: an id that isn't one is never a command",
+           Transcripts.resumeCommand(Transcripts.Conversation(vendor: "claude", id: "x; rm -rf ~", path: "", folder: nil, modified: Date(), bytes: 1, title: nil, firstPrompt: nil)), nil)
+        try? fm.removeItem(atPath: root)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

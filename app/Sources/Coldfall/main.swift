@@ -732,6 +732,32 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     }
                     return
                 }
+                // `--conversations`: the Conversations window with made-up ones,
+                // to shot-conversations.png.
+                if CommandLine.arguments.contains("--conversations"), let me = self, me.desks.indices.contains(i) {
+                    let d = me.desks[i]
+                    let t = Date()
+                    func c(_ v: String, _ id: String, _ ago: Double, _ kb: Int, _ title: String?, _ p: String) -> Transcripts.Conversation {
+                        Transcripts.Conversation(vendor: v, id: id, path: "", folder: "/srv/demo/acme-app",
+                                                 modified: t.addingTimeInterval(-ago), bytes: kb * 1024, title: title, firstPrompt: p)
+                    }
+                    me.transcripts.show(desk: d.name, folder: "/srv/demo/acme-app", [
+                        c("claude", "aaaa-1111", 1800, 2300, d.name, "Move the cart totals into their own file"),
+                        c("codex", "cccc-3333", 9000, 410, nil, "Review the cart change and say what you'd test"),
+                        c("claude", "bbbb-2222", 90000, 5200, nil, "Write the release notes for the spring release"),
+                        c("claude", "dddd-4444", 400000, 880, "checkout", "Why does the receipt round per item?"),
+                    ], size: NSSize(width: 720, height: 430))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard let pv = me.transcripts.contentView,
+                              let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
+                        pv.cacheDisplay(in: pv.bounds, to: prep)
+                        if let png = prep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-conversations.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 // `--changes`: the Changes window with a made-up diff and one
                 // comment waiting, to shot-changes.png.
                 if CommandLine.arguments.contains("--changes"), let me = self, me.desks.indices.contains(i) {
@@ -1138,6 +1164,18 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         ro.keyEquivalentModifierMask = [.command, .shift]
         ro.target = self
         deskMenu.addItem(ro)
+        let cv = NSMenuItem(title: "Conversations…", action: #selector(openConversations), keyEquivalent: "h")
+        cv.keyEquivalentModifierMask = [.command, .shift]
+        cv.target = self
+        deskMenu.addItem(cv)
+        let fk = NSMenuItem(title: "Fork Conversation in a Split", action: #selector(forkConversation), keyEquivalent: "")
+        fk.target = self
+        fk.toolTip = "The vendor's own fork (Claude Code, Codex) in a shell beside this desk. The original carries on."
+        deskMenu.addItem(fk)
+        let ho = NSMenuItem(title: "Hand Off to Another Desk…", action: #selector(handOff), keyEquivalent: "")
+        ho.target = self
+        ho.toolTip = "Sends the end of this desk's screen to another running desk as history. Asks first."
+        deskMenu.addItem(ho)
         let chItem = NSMenuItem(title: "Changes…", action: #selector(openChanges), keyEquivalent: "g")
         chItem.keyEquivalentModifierMask = [.command, .shift]
         chItem.target = self
@@ -1301,6 +1339,99 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let rest = sidebar.waiting.filter { $0 != name }
         guard let next = rest.first(where: { sidebar.deferred[$0] == nil }) ?? rest.first else { NSSound.beep(); return }
         showDesk(named: next)
+    }
+
+    // MARK: - conversations
+
+    let transcripts = TranscriptsPanel()
+    /// Every conversation in this desk's folder, to search and resume.
+    @objc func openConversations() {
+        if transcripts.isOpen { transcripts.close(); return }
+        guard let name = waitingName ?? activeSession?.desk.name, let d = desks.first(where: { $0.name == name }) else { NSSound.beep(); return }
+        transcripts.onOpen = { [weak self] cmd in
+            // Beside the desk, in a shell: the desk's own agent carries on.
+            guard let self, let i = self.deskIndex(d.name) else { return }
+            if self.sessions[d.name]?.started != true { self.show(i) }
+            guard let s = self.sessions[d.name] else { return }
+            if !s.splitRunning(cmd) { NSSound.beep(); return }
+            self.updateTermHeader()
+            self.window.makeFirstResponder(s.focusedPane.term)
+        }
+        transcripts.open(over: window, desk: d.name, folder: d.resolvedCwd)
+    }
+
+    // MARK: - fork, and hand off
+
+    /// The desk's conversation, forked by its vendor's own command in a
+    /// shell split beside it. The original carries on untouched.
+    @objc func forkConversation() {
+        guard let s = activeSession, s.started, !s.agentGone else { NSSound.beep(); return }
+        let d = s.desk
+        let folder = d.resolvedCwd
+        let acct = d.claudeAccount()
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Finding the session reads transcripts: not on the main thread.
+            let id = d.runtime == "claude"
+                ? Resume.claudeSession(named: d.conversation ?? d.name, cwd: folder, root: acct?.projectsRoot() ?? Resume.claudeProjectsRoot)
+                : nil
+            let cmd = Handoff.forkCommand(runtime: d.runtime, claudeSession: id, account: acct?.path())
+            DispatchQueue.main.async { [weak self, weak s] in
+                guard let self, let s else { return }
+                guard let cmd else {
+                    let a = NSAlert()
+                    a.messageText = "This desk's conversation can't be forked from here"
+                    a.informativeText = d.runtime == "claude"
+                        ? "Coldfall couldn't find the conversation's id. It can once the desk has been named by Coldfall and has said something."
+                        : "\(AgentOffer.shortName(d.runtime)) has no fork command Coldfall knows. Claude Code and Codex do."
+                    a.runModal()
+                    return
+                }
+                if !s.splitRunning(cmd) { NSSound.beep(); return }
+                self.updateTermHeader()
+                self.window.makeFirstResponder(s.focusedPane.term)
+            }
+        }
+    }
+
+    /// The end of this desk's screen, handed to another running desk as
+    /// history. Asks first, saying how much goes and that nothing is redacted.
+    @objc func handOff() {
+        guard let s = activeSession, s.started else { NSSound.beep(); return }
+        let from = s.desk
+        let others = desks.filter { d in
+            d.name != from.name && !d.hidden && d.runtime != "shell" && sessions[d.name]?.started == true
+        }
+        guard !others.isEmpty else {
+            let a = NSAlert()
+            a.messageText = "No other desk is running"
+            a.informativeText = "Start the desk you want to hand this work to, then try again."
+            a.runModal()
+            return
+        }
+        let history = Handoff.tail(s.screenText(lines: 4000))
+        let pick = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
+        for d in others {
+            pick.addItem(withTitle: "\(d.name)  ·  \(d.claudeAccount()?.vendor ?? AgentOffer.shortName(d.runtime))")
+            pick.lastItem?.representedObject = d.name
+            pick.lastItem?.image = VendorIcon.image(runtime: d.runtime, icon: d.icon, size: 14)
+        }
+        let a = NSAlert()
+        a.messageText = "Hand \(from.name)'s work to another desk?"
+        a.informativeText = Handoff.warning(to: "the desk you choose", history: history)
+            + " The other agent is told it is history to read, to check the folder first, and to change nothing yet."
+        a.accessoryView = pick
+        a.addButton(withTitle: "Hand Off"); a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn, let to = pick.selectedItem?.representedObject as? String else { return }
+        let msg = Handoff.compose(from: from.name, vendor: from.claudeAccount()?.vendor ?? AgentOffer.shortName(from.runtime),
+                                  folder: (from.resolvedCwd as NSString).abbreviatingWithTildeInPath, history: history)
+        let r = inboxSend(to, text: msg)
+        if r.outcome == .sent { showDesk(named: to) }
+        else {
+            let b = NSAlert()
+            b.messageText = "Nothing was handed off"
+            b.informativeText = r.message
+            b.runModal()
+        }
     }
 
     // MARK: - back, forward, reopen

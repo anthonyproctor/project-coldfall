@@ -873,6 +873,15 @@ final class DeskSession {
         return p
     }
 
+    /// A shell split beside the agent with `line` typed into it: for running
+    /// the vendor's own fork command next to the conversation it forks.
+    @discardableResult
+    func splitRunning(_ line: String) -> Bool {
+        guard let p = split(vertical: panes.count == 1 ? true : isVertical) else { return false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak p] in p?.term.sendQuietly(line + "\n") }
+        return true
+    }
+
     /// For --snapshot --split: a second pane, its shell never started.
     func addPaneForPicture() {
         if panes.count == 1 { isVertical = true; container.isVertical = true }
