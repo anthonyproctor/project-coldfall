@@ -98,8 +98,8 @@
   .hero h1 { font-size: clamp(34px, 9vw, 72px); line-height: 1.02; letter-spacing: -.035em; margin: 0 auto 20px; max-width: 13em; }
   .hero .lede { color: var(--dim); font-size: clamp(17px, 2vw, 20px); max-width: 36em; margin: 0 auto 30px; }
   .say { font-size: 15px; color: var(--faint); margin: 0 auto 30px; max-width: 34em; }
-  .say .mono { font-family: var(--mono); color: var(--dim); }
-  .say .mono b { color: var(--green); font-weight: 400; }
+  .say .mono, details .mono { font-family: var(--mono); color: var(--dim); }
+  .say .mono b, details .mono b { color: var(--green); font-weight: 400; }
   .cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   .btn { display: inline-flex; align-items: center; gap: 9px; padding: 13px 22px; border-radius: 11px; text-decoration: none;
          font-weight: 600; font-size: 16px; border: 1px solid var(--line2); background: var(--panel); transition: transform .15s, filter .15s; }
@@ -244,8 +244,7 @@
   <div class="wrap hero">
     <span class="eyebrow"><i aria-hidden="true"></i>Free for Mac · Open source</span>
     <h1>Every AI you pay for, working together.</h1>
-    <p class="lede">Give Claude Code, Codex and Copilot each a desk that remembers its work. Let them check each other's answers, use every subscription you already pay for, and see at a glance which one needs you.</p>
-    <p class="say">It's Project Coldfall. Say it <em>“cold-fall.”</em> The logo, <span class="mono" aria-hidden="true">coldfa<b>||</b></span>, draws the two L's as pipes, the terminal symbol for passing output along.</p>
+    <p class="lede">Claude Code, Codex and Copilot each get a desk that remembers its work. One window shows which one is waiting on you, lets you answer in a click, has them check each other's work, and tells you which plan still has room this week.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/anthonyproctor/project-coldfall/releases/latest/download/Project-Coldfall.app.zip">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
@@ -271,13 +270,62 @@
 
   <div class="wrap three">
     <h2 class="sr">Who it's for</h2>
+    <div><span class="n" aria-hidden="true">If you</span><h2>run more than one agent</h2><p>Stop clicking through terminals to find the one that stopped. Each desk says when it needs you, and why.</p></div>
     <div><span class="n" aria-hidden="true">If you</span><h2>pay for more than one AI</h2><p>Claude and ChatGPT, or Copilot and Google AI too. Use them together instead of paying for one you barely open.</p></div>
     <div><span class="n" aria-hidden="true">If you</span><h2>use agents for more than code</h2><p>Research, writing, planning, your finances. A desk for each job, each remembering its own work.</p></div>
-    <div><span class="n" aria-hidden="true">If you</span><h2>want to know what they run</h2><p>See what every agent has installed, what changed since you looked, and switch off what it doesn't need.</p></div>
   </div>
 
   <section id="features">
     <div class="wrap row">
+      <div class="text">
+        <p class="kicker">Needs you</p>
+        <h2>Know which agent is waiting, and why.</h2>
+        <p>Every desk carries one mark: amber when it has stopped on a question, green when it has an answer you haven't read, blue while it works. Beside its name is the reason, in the agent's own words, like "wants to use Bash". <kbd>⌘0</kbd> takes you to the one that has waited longest.</p>
+        <ul>
+          <li>Each group shows one mark for all its desks, and the bottom of the window counts them: 1 needs you, 2 working, 2 done.</li>
+          <li>Switch the list to <em>By priority</em> to see every running desk, most urgent first.</li>
+        </ul>
+      </div>
+      <div class="pic tall"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="700"><img src="/img/rail.png" width="480" height="700" loading="lazy" decoding="async"
+           alt="The desk list: four groups, one marked 1 needs you, and under it a desk whose row reads wants to use Bash."></picture></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap row flip">
+      <div class="text">
+        <p class="kicker">Answer from one place</p>
+        <h2>Answer five prompts without opening five desks.</h2>
+        <p>Click <em>needs you</em> at the bottom of the window. Every waiting desk is listed with its question, what the question is about, and its choices as buttons. Press one and that desk carries on.</p>
+        <ul>
+          <li>The choices are read off the desk's own screen, and a button only presses its key if that choice is still there.</li>
+          <li>The same choices show in the inbox on your phone.</li>
+        </ul>
+      </div>
+      <div class="pic"><picture><source srcset="/img/feed.webp" type="image/webp" width="1240" height="700"><img src="/img/feed.png" width="1240" height="700" loading="lazy" decoding="async"
+           alt="The Needs You window: a desk asking Do you want to proceed, the command npm test, and three buttons, Yes, Yes and do not ask again, and No."></picture></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap row">
+      <div class="text">
+        <p class="kicker">Review what it did</p>
+        <h2>Read what it changed. Send your comments back.</h2>
+        <p><em>Changes</em> lists the files a desk changed since the last commit, with each one's diff. Select some lines, write a comment, add as many as you like, and send them to the agent together, each with its file, its line and the code it's about.</p>
+        <ul>
+          <li><em>Last turn</em> shows only what the agent changed since your last prompt, for a desk that has been running for weeks.</li>
+          <li>If the branch has a pull request, its failing checks are one click from the agent that can fix them.</li>
+          <li>It only reads the repository. Nothing is staged, committed or reverted.</li>
+        </ul>
+      </div>
+      <div class="pic"><picture><source srcset="/img/changes.webp" type="image/webp" width="1880" height="1040"><img src="/img/changes.png" width="1880" height="1040" loading="lazy" decoding="async"
+           alt="The Changes window: four changed files on the left, a diff with added and removed lines on the right, and one comment ready to send."></picture></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap row flip">
       <div class="text">
         <p class="kicker">Second opinions</p>
         <h2>Have one AI check another's work.</h2>
@@ -293,10 +341,10 @@
   </section>
 
   <section>
-    <div class="wrap row flip">
+    <div class="wrap row">
       <div class="text">
         <p class="kicker">Every plan you pay for</p>
-        <h2>Get your money's worth from each subscription.</h2>
+        <h2>Get your money's worth from every plan.</h2>
         <p>If you pay for Claude and ChatGPT, you're probably using one of them for almost everything. The meter puts each plan's weekly usage side by side and tells you when to switch.</p>
         <ul>
           <li>Codex and Copilot usage is read automatically. Claude needs a one-click recorder in Settings.</li>
@@ -309,7 +357,7 @@
   </section>
 
   <section>
-    <div class="wrap row">
+    <div class="wrap row flip">
       <div class="text">
         <p class="kicker">A desk for every job</p>
         <h2>Specialists that remember, not sessions you lose.</h2>
@@ -317,58 +365,12 @@
         <ul>
           <li>Each desk runs the vendor's own tool, so your logins, settings and hooks work as they already do.</li>
           <li>Put desks in groups. Click a group and the list and the tabs over the terminal switch to it.</li>
-          <li>Drag desks into order, pin the ones you live in, and hide the ones you're not using without losing them.</li>
+          <li>Pin the desks you live in, and hide the ones you're not using without losing them.</li>
+          <li>Turn on <em>Keep desks running</em> and your agents carry on after you quit. Coldfall picks them back up when it opens.</li>
         </ul>
       </div>
       <div class="pic tall"><picture><source srcset="/img/rail-hidden.webp" type="image/webp" width="480" height="840"><img src="/img/rail-hidden.png" width="480" height="840" loading="lazy" decoding="async"
            alt="The desk list grouped by job, with one hidden desk listed at the bottom."></picture></div>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap row flip">
-      <div class="text">
-        <p class="kicker">Needs you</p>
-        <h2>See which one is waiting, and why, without checking each one.</h2>
-        <p>Every desk carries one mark: an amber <em>Needs you</em> when it has stopped on a question, a green dot when it has an answer you haven't seen, a blue ring while it works. Beside its name is the reason, in the agent's own words, like "wants to use Bash". <kbd>⌘0</kbd> takes you to the one that has waited longest.</p>
-        <ul>
-          <li>Each group shows one mark for all its desks, and the bottom of the window counts them: 1 needs you, 2 working, 2 done.</li>
-          <li>Switch the list to <em>By priority</em> to see every running desk, most urgent first.</li>
-        </ul>
-      </div>
-      <div class="pic tall"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="700"><img src="/img/rail.png" width="480" height="700" loading="lazy" decoding="async"
-           alt="The desk list: four groups, one marked 1 needs you, and under it a desk whose row reads wants to use Bash."></picture></div>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap row">
-      <div class="text">
-        <p class="kicker">Answer from one place</p>
-        <h2>Five permission prompts, without opening five desks.</h2>
-        <p>Click <em>needs you</em> at the bottom of the window. Every waiting desk is listed with its question, what the question is about, and its choices as buttons. Press one and that desk carries on.</p>
-        <ul>
-          <li>The choices are read off the desk's own screen, and a button only presses its key if that choice is still there.</li>
-          <li>The same choices show in the inbox on your phone.</li>
-        </ul>
-      </div>
-      <div class="pic"><picture><source srcset="/img/feed.webp" type="image/webp" width="1240" height="700"><img src="/img/feed.png" width="1240" height="700" loading="lazy" decoding="async"
-           alt="The Needs You window: a desk asking Do you want to proceed, the command npm test, and three buttons, Yes, Yes and do not ask again, and No."></picture></div>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap row flip">
-      <div class="text">
-        <p class="kicker">Review what it did</p>
-        <h2>Read the changes, and send your comments back.</h2>
-        <p><em>Changes</em> lists the files a desk changed since the last commit, with each one's diff. Select some lines, write a comment, add as many as you like, and send them to the agent together, each with its file, its line and the code it's about.</p>
-        <ul>
-          <li>It only reads the repository. Nothing is staged, committed or reverted.</li>
-        </ul>
-      </div>
-      <div class="pic"><picture><source srcset="/img/changes.webp" type="image/webp" width="1880" height="1040"><img src="/img/changes.png" width="1880" height="1040" loading="lazy" decoding="async"
-           alt="The Changes window: four changed files on the left, a diff with added and removed lines on the right, and one comment ready to send."></picture></div>
     </div>
   </section>
 
@@ -406,12 +408,16 @@
       <h2>Small things that add up.</h2>
       <div class="grid" style="text-align:left">
         <div class="card"><h3>Quick open</h3><p><kbd>⌘P</kbd> finds any desk or file by a few letters.</p></div>
+        <div class="card"><h3>Two desks side by side</h3><p>Put a second agent next to the first, or a shell beside either. <kbd>⇧⌘↩</kbd> zooms one pane to fill the window.</p></div>
+        <div class="card"><h3>A colour for each desk</h3><p>The pane, its tab and its row take the colour you pick, so you can see which agent you're about to type to.</p></div>
         <div class="card"><h3>A reader beside the terminal</h3><p>Files your agents write open next to them, with Markdown and PDFs shown properly.</p></div>
-        <div class="card"><h3>Splits</h3><p>Add a shell beside or below the agent, in the same desk. Each pane is its own card, and <kbd>⇧⌘↩</kbd> zooms one to fill the desk.</p></div>
-        <div class="card"><h3>Tabs for the group you're in</h3><p>The running desks in the current group sit in a row over the terminal, each with its mark.</p></div>
         <div class="card"><h3>How full is the conversation</h3><p>A pane's header shows the context filling up, orange from 60 percent and red from 80.</p></div>
-        <div class="card"><h3>Stop a desk, free its memory</h3><p>End a desk you're done with for now. Claude, Codex and Antigravity desks pick up their conversation when you start them again.</p></div>
+        <div class="card"><h3>Find any past conversation</h3><p>Search everything Claude Code and Codex have said in a desk's folder, and resume one beside the desk.</p></div>
+        <div class="card"><h3>Schedules</h3><p>Send a desk a prompt at a set time, on the days you name. It can skip when a check fails or a plan is nearly used up.</p></div>
+        <div class="card"><h3>Sleep idle desks</h3><p>A desk you've finished with gives its memory back after a while, and picks its conversation up when you open it.</p></div>
+        <div class="card"><h3>Hand off</h3><p>Out of context or out of quota? Pass the end of one desk's screen to another, or fork the conversation to try something.</p></div>
         <div class="card"><h3>Remote machines too</h3><p>A desk can be an SSH connection to another computer, found from your own SSH settings.</p></div>
+        <div class="card"><h3>Ghostty's terminal, if you like</h3><p>Switch desks to Ghostty's faster terminal in Settings. The classic one stays the default.</p></div>
         <div class="card"><h3>Your file, your rules</h3><p>Every desk lives in one plain text file you can edit by hand. The app picks up changes as you make them.</p></div>
       </div>
     </div>
@@ -477,7 +483,7 @@
       <h2>Good to know.</h2>
       <details>
         <summary>Why not just use terminal tabs?</summary>
-        <p>Tabs hold terminals. They don't tell you which agent is waiting on you, don't reopen a conversation after a restart, can't have one agent review another's work read-only, and can't show you how much of each plan you've used. That's what the app adds.</p>
+        <p>Tabs hold terminals. They can't tell you which agent is waiting or why, let you answer them all from one list, reopen a conversation after a restart, have one agent review another's work read-only, or show how much of each plan you've used. That's what the app adds.</p>
       </details>
       <details>
         <summary>Is it really free?</summary>
@@ -498,6 +504,10 @@
       <details>
         <summary>Why does macOS warn me when I open it?</summary>
         <p>This build isn't signed and notarized through Apple's paid developer program yet, so macOS can't vouch for it and asks first. The install steps above show how to open it, or you can build it from the source yourself.</p>
+      </details>
+      <details>
+        <summary>How do you say it?</summary>
+        <p><em>“Cold-fall.”</em> The logo, <span class="mono" aria-hidden="true">coldfa<b>||</b></span>, draws the two L's as pipes, the terminal symbol for passing output along.</p>
       </details>
       <details>
         <summary>Does it work on Windows or Linux?</summary>
