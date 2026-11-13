@@ -77,7 +77,10 @@ Coldfall, run the built `Coldfall` binary directly with `HOME` and
 `CFFIXED_USER_HOME` pointing at a throwaway folder (short: socket paths must fit
 in 104 bytes), set `COLDFALL_UPDATE_URL` to a dead local address so it never
 counts as an install, open a desk with `coldfall-cli open`, kill that Coldfall,
-and check `coldfall-cli holders` with the same environment.
+and check `coldfall-cli holders` with the same environment. If you are
+running inside a held desk yourself, also `unset COLDFALL_HOLDER_DIR`: a held
+desk's environment carries the real holders folder, and a throwaway Coldfall
+that inherits it shares that folder with the real one.
 
 The inbox (see `Inbox` in the core) can be tried the same way with `"inboxOn":true`
 in the throwaway ui.json: curl `http://127.0.0.1:47100/?t=<inbox-token>` for the
