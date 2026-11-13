@@ -36,7 +36,11 @@ public enum DoneSignal {
         public let event: Event
         /// The desk name as the hook wrote it (see `fileName`).
         public let desk: String
-        public init(at: Date, event: Event, desk: String) { self.at = at; self.event = event; self.desk = desk }
+        /// What the agent said it is waiting for, when the hook passed it on.
+        public let message: String?
+        public init(at: Date, event: Event, desk: String, message: String? = nil) {
+            self.at = at; self.event = event; self.desk = desk; self.message = message
+        }
     }
 
     /// Where the hook writes. Overridable so tests use a temp folder.
@@ -52,11 +56,15 @@ public enum DoneSignal {
         String(desk.map { $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) ? $0 : "_" })
     }
 
-    /// One line of the log: `<epoch seconds> <event> <desk>`.
+    /// One line of the log: `<epoch seconds> <event> <desk> [<message, base64>]`.
+    /// The message is the agent's own words for why it is waiting; lines
+    /// from an older hook have none.
     public static func parse(_ line: Substring) -> Signal? {
-        let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-        guard parts.count == 3, let t = Double(parts[0]), let e = Event(rawValue: String(parts[1])) else { return nil }
-        return Signal(at: Date(timeIntervalSince1970: t), event: e, desk: String(parts[2]))
+        let parts = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
+        guard parts.count >= 3, let t = Double(parts[0]), let e = Event(rawValue: String(parts[1])) else { return nil }
+        let msg = parts.count == 4 ? Data(base64Encoded: String(parts[3])).map { String(decoding: $0, as: UTF8.self) } : nil
+        return Signal(at: Date(timeIntervalSince1970: t), event: e, desk: String(parts[2]),
+                      message: msg.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// Reads what the hook has added since the last read. Starts at the end
@@ -117,17 +125,21 @@ public enum DoneSignal {
         # nothing anywhere. Remove it from the "hooks" in your settings to turn it off.
         [ -n "$CLAUDE_DESK" ] || { cat >/dev/null; exit 0; }
         input=$(cat)
+        msg=
         case "$1" in
           stop) ev=stop ;;
           notify)
             case "$input" in *idle_prompt*) exit 0 ;; esac
-            ev=notify ;;
+            ev=notify
+            # Why it is waiting, in its own words, for the desk list. Kept on
+            # this Mac like the rest; base64 so it can't break the line.
+            msg=$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"\\\\]*\\).*/\\1/p' | head -c 200 | base64 | tr -d '\\n') ;;
           *) exit 0 ;;
         esac
         desk=$(printf '%s' "$CLAUDE_DESK" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')
         log="$HOME/.local/share/coldfall/signals.log"
         mkdir -p "$(dirname "$log")"
-        printf '%s %s %s\\n' "$(date +%s)" "$ev" "$desk" >> "$log"
+        printf '%s %s %s%s\\n' "$(date +%s)" "$ev" "$desk" "${msg:+ $msg}" >> "$log"
         exit 0
         """
     }
@@ -137,6 +149,17 @@ public enum DoneSignal {
         try? FileManager.default.createDirectory(atPath: Limits.configDir, withIntermediateDirectories: true)
         guard (try? script.write(toFile: scriptPath, atomically: true, encoding: .utf8)) != nil else { return false }
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+        return true
+    }
+
+    /// Bring an installed hook up to this version's script. Only ever
+    /// rewrites Coldfall's own file, and only if it is already there:
+    /// installing is the person's choice, not something a launch does.
+    @discardableResult
+    public static func refreshScript(path: String = DoneSignal.scriptPath) -> Bool {
+        guard let old = try? String(contentsOfFile: path, encoding: .utf8), old != script else { return false }
+        guard (try? script.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return false }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
         return true
     }
 

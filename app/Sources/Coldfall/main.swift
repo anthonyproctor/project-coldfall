@@ -176,6 +176,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             case .splitRight: self?.splitRight()
             case .splitDown: self?.splitDown()
             case .close: self?.closePane()
+            case .zoom: self?.zoomPane()
             }
         }
         tabs.onPromptHelper = { [weak self] in self?.openPromptHelper() }
@@ -296,6 +297,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.onUnhideDesk = { [weak self] i in self?.unhideDesk(i) }
         sidebar.onStopDesk = { [weak self] i in self?.stopDesk(i) }
         sidebar.onPeekDesk = { [weak self] i in self?.peekDesk(i) }
+        sidebar.onMarkUnreadDesk = { [weak self] i in
+            guard let self, self.desks.indices.contains(i) else { return }
+            self.sessions[self.desks[i].name]?.markUnread()
+        }
+        sidebar.byPriority = ui.desksByPriority || CommandLine.arguments.contains("--by-priority")
+        sidebar.onTogglePriority = { [weak self] in self?.toggleDeskPriority() }
+        // An installed done hook is brought up to this version's script (it
+        // now passes on why an agent is waiting). Never in a snapshot.
+        if !CommandLine.arguments.contains("--snapshot") { DoneSignal.refreshScript() }
         peek.onGo = { [weak self] d in
             guard let self, let i = self.deskIndex(d) else { return }
             self.show(i)
@@ -377,7 +387,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             for (n, d) in desks.enumerated() {
                 switch n % 4 {
                 case 0: sample[d.name] = DeskStatus(activity: .ready, lastOutput: now.addingTimeInterval(-120), running: true)
-                case 1: sample[d.name] = DeskStatus(activity: .working, lastOutput: now, running: true, memory: "946 MB")
+                case 1: sample[d.name] = DeskStatus(activity: .working, lastOutput: now, running: true, memory: "946 MB",
+                                                    detail: "Tidy the invoice parser")
                 case 2: sample[d.name] = DeskStatus(activity: .quiet, lastOutput: now.addingTimeInterval(-3600), running: true,
                                                     memory: "132 MB", news: 2)
                 default: sample[d.name] = DeskStatus()
@@ -385,7 +396,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             // `--blocked <desk>`: that desk stopped on a question.
             if let k = CommandLine.arguments.firstIndex(of: "--blocked"), k + 1 < CommandLine.arguments.count {
-                sample[CommandLine.arguments[k + 1]] = DeskStatus(activity: .blocked, lastOutput: now.addingTimeInterval(-300), running: true)
+                sample[CommandLine.arguments[k + 1]] = DeskStatus(activity: .blocked, lastOutput: now.addingTimeInterval(-300), running: true,
+                                                                  detail: "wants to use Bash")
             }
             // `--show-hidden`: the rail with its hidden desks listed.
             if CommandLine.arguments.contains("--show-hidden") {
@@ -968,6 +980,19 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         live.state = ui.liveRail ? .on : .off
         deskMenu.addItem(live)
 
+        let pri = NSMenuItem(title: "Desks by Priority", action: #selector(toggleDeskPriority), keyEquivalent: "")
+        pri.target = self
+        pri.state = ui.desksByPriority ? .on : .off
+        deskMenu.addItem(pri)
+        let nd = NSMenuItem(title: "Next Desk", action: #selector(nextDesk), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        nd.keyEquivalentModifierMask = [.command, .option]
+        nd.target = self
+        deskMenu.addItem(nd)
+        let pd = NSMenuItem(title: "Previous Desk", action: #selector(prevDesk), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        pd.keyEquivalentModifierMask = [.command, .option]
+        pd.target = self
+        deskMenu.addItem(pd)
+
         let sortAZ = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortDesks), keyEquivalent: "")
         sortAZ.target = self
         deskMenu.addItem(sortAZ)
@@ -990,6 +1015,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let cp = NSMenuItem(title: "Close Pane", action: #selector(closePane), keyEquivalent: "w")
         cp.target = self
         deskMenu.addItem(cp)
+        let zp = NSMenuItem(title: "Zoom Pane", action: #selector(zoomPane), keyEquivalent: "\r")
+        zp.keyEquivalentModifierMask = [.command, .shift]
+        zp.target = self
+        deskMenu.addItem(zp)
         let nx = NSMenuItem(title: "Next Pane", action: #selector(nextPane), keyEquivalent: "]")
         nx.target = self
         deskMenu.addItem(nx)
@@ -1054,8 +1083,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// Back in front: if keys.json changed meanwhile, apply it.
     func applicationDidBecomeActive(_ n: Notification) {
+        // Back in front of it: the desk on screen is seen again.
+        visible?.isVisible = true
         let stamp = (try? FileManager.default.attributesOfItem(atPath: KeyMap.path))?[.modificationDate] as? Date
         if stamp != keyMapStamp { installMenu() }
+    }
+
+    /// Coldfall behind another app: the desk on screen isn't being looked
+    /// at, so an answer that lands now is still news when you come back.
+    func applicationDidResignActive(_ n: Notification) {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        visible?.isVisible = false
     }
 
     @objc func jump(_ sender: NSMenuItem) { open(sender.tag) }
@@ -1438,6 +1476,25 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var lastVisited: [String: Date] = [:]
     var liveTimer: Timer?
     var lastLiveApply = Date.distantPast
+
+    /// The Desks section by priority, or by group.
+    @objc func toggleDeskPriority() {
+        ui.desksByPriority.toggle()
+        ui.save()
+        sidebar.byPriority = ui.desksByPriority
+        fitRail()
+        installMenu()
+    }
+
+    /// The desk after, or before, this one in the list as it is shown. By
+    /// priority, that walks who needs you first.
+    @objc func nextDesk() { stepDesk(1) }
+    @objc func prevDesk() { stepDesk(-1) }
+    func stepDesk(_ d: Int) {
+        let here = waitingName ?? visible?.desk.name
+        guard let n = DeskOrder.step(sidebar.shownOrder, from: here, by: d) else { NSSound.beep(); return }
+        showDesk(named: n)
+    }
 
     @objc func toggleLiveRail() {
         ui.liveRail.toggle()
@@ -2205,7 +2262,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 for sig in said {
                     // By the name the desk started under: a rename doesn't
                     // reach the agent's environment until it restarts.
-                    for (name, s) in self.sessions where DoneSignal.fileName(s.launchName ?? name) == sig.desk { s.noteSignal(sig.event) }
+                    for (name, s) in self.sessions where DoneSignal.fileName(s.launchName ?? name) == sig.desk { s.noteSignal(sig.event, message: sig.message) }
                 }
             }
             var map: [String: DeskStatus] = [:]
@@ -2217,14 +2274,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 if self.ui.notifyDesks, !CommandLine.arguments.contains("--snapshot") {
                     let alert = NotifyRule.decide(from: self.lastActivity[name] ?? .quiet, to: a, signaled: s.isSignaled,
                                                   appActive: front, deskVisible: s === self.visible)
-                    self.notifier.deliver(alert, desk: name, activity: a)
+                    self.notifier.deliver(alert, desk: name, activity: a, reason: s.detailLine)
                 }
                 self.lastActivity[name] = a
                 map[name] = DeskStatus(activity: a, lastOutput: s.lastOutput, running: s.started,
-                                       memory: self.memory[name], news: self.inventoryNews[name] ?? 0)
+                                       memory: self.memory[name], news: self.inventoryNews[name] ?? 0,
+                                       detail: s.started ? s.detailLine : nil)
                 if a == .ready || a == .blocked { waiting += 1 }
             }
             self.sidebar.tick &+= 1
+            // Context and branch move slowly: every five seconds or so.
+            if self.sidebar.tick % 14 == 0 { self.visible?.refreshHeaders() }
             self.sidebar.status = map
             self.refreshTabs(map)
             self.meter.setCounts(DeskCounts.of(map.values.filter(\.running).map(\.activity)))
@@ -2326,6 +2386,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         window.makeFirstResponder(s.focusedPane.term)
     }
 
+    /// One pane filling the desk; again to bring the others back.
+    @objc func zoomPane() {
+        guard let s = visible else { return }
+        s.toggleZoom()
+        window.makeFirstResponder(s.focusedPane.term)
+    }
     @objc func nextPane() { cyclePane(1) }
     @objc func prevPane() { cyclePane(-1) }
     func cyclePane(_ d: Int) {
@@ -2647,7 +2713,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     // LocalProcessTerminalViewDelegate
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+    /// An agent's terminal title is its own word for what it is working on.
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+        guard let s = sessions.values.first(where: { $0.agentTerm === source && !$0.agentGone }) else { return }
+        s.title = DeskDetail.title(title, desk: s.desk.name, runtime: s.desk.runtime)
+    }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         // A desk exiting is not the app exiting, and a PANE exiting is not the

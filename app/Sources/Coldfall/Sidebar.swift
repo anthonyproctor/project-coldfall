@@ -14,6 +14,35 @@ final class SidebarView: NSView {
     var onRenameDesk: ((Int) -> Void)?
     var onStopDesk: ((Int) -> Void)?
     var onPeekDesk: ((Int) -> Void)?
+    var onMarkUnreadDesk: ((Int) -> Void)?
+    /// The Desks section by priority: every running desk, across groups,
+    /// under Needs you, Done, Working, Idle. Off, it lists the selected group.
+    var byPriority = false { didSet { if byPriority != oldValue, let d = lastDesks { build(desks: d) } } }
+    var onTogglePriority: (() -> Void)?
+    /// The sections as last drawn, to know when the list should change.
+    private var drawnPriority: [DeskOrder.PrioritySection] = []
+    /// The desks in the order the list shows them, for Next and Previous Desk.
+    private(set) var shownOrder: [String] = []
+
+    private func wantedPriority(_ d: [Desk]) -> [DeskOrder.PrioritySection] {
+        var live: [String: DeskOrder.Live] = [:]
+        for (name, st) in status where st.running {
+            let rank: Int
+            switch st.activity { case .blocked: rank = 0; case .ready: rank = 1; case .working: rank = 2; case .quiet: rank = 3 }
+            // Working and idle keep the list's own order: a desk that
+            // prints a line shouldn't jump the queue every second.
+            live[name] = DeskOrder.Live(rank: rank, lastOutput: rank <= 1 ? st.lastOutput : nil)
+        }
+        return DeskOrder.priority(d, live: live)
+    }
+
+    /// Bring the priority list in line with the desks' states, but only at
+    /// a calm moment: never while the pointer is over the list or a drag
+    /// is under way, so a row doesn't move out from under a click.
+    private func syncPriority() {
+        guard byPriority, let d = lastDesks, !pointerInside, !isDragging else { return }
+        if wantedPriority(d) != drawnPriority { build(desks: d) }
+    }
     var onMcpDesk: ((Int) -> Void)?
     var onInventoryDesk: ((Int) -> Void)?
     var onHideDesk: ((Int) -> Void)?
@@ -46,7 +75,7 @@ final class SidebarView: NSView {
                                        owner: self, userInfo: nil))
     }
     override func mouseEntered(with e: NSEvent) { pointerInside = true }
-    override func mouseExited(with e: NSEvent) { pointerInside = false }
+    override func mouseExited(with e: NSEvent) { pointerInside = false; syncPriority() }
 
     /// A group in the Groups section was clicked: go to its desk.
     var onSelectGroup: ((String?) -> Void)?
@@ -106,6 +135,7 @@ final class SidebarView: NSView {
             // changes its group's count and mark. Nothing moves, so there
             // is no rebuild and no row shifts under the pointer.
             for g in groupRows { g.row.configure(name: g.name, desks: g.members.map { status[$0] ?? DeskStatus() }, selected: g.row.selected) }
+            syncPriority()
         }
     }
     /// A desk's right-click menu, for the command palette.
@@ -215,7 +245,27 @@ final class SidebarView: NSView {
         title.translatesAutoresizingMaskIntoConstraints = true
         title.autoresizingMask = [.width]
         addSubview(title)
+        // How the section is ordered, and the way to change it.
+        let mode = NSButton(title: byPriority ? "By priority" : "By group", target: self, action: #selector(togglePriority))
+        mode.isBordered = false
+        mode.bezelStyle = .inline
+        mode.font = .systemFont(ofSize: 11)
+        mode.contentTintColor = Theme.ui.dimText
+        mode.image = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 8.5, weight: .medium))
+        mode.imagePosition = .imageTrailing
+        mode.imageHugsTitle = true
+        mode.toolTip = byPriority
+            ? "Every running desk, most urgent first. Click to list the selected group instead."
+            : "The selected group's desks. Click to list every running desk, most urgent first."
+        mode.sizeToFit()
+        // Beside the title rather than flush right: the first build runs
+        // before the rail has its width, and a right edge would be a guess.
+        mode.frame = NSRect(x: 14 + title.intrinsicContentSize.width + 10, y: y - 2, width: mode.fittingSize.width + 2, height: 18)
+        addSubview(mode)
         y += 22
+        shownOrder = []
+        drawnPriority = []
 
         // Pinned desks: always here, in your order, whatever group they are in.
         for i in zones.pinned {
@@ -223,16 +273,53 @@ final class SidebarView: NSView {
             r.showsPin = true
             r.onHide = { [weak self] in self?.onHideDesk?(i) }
             zoneRows.insert(i)
+            shownOrder.append(desks[i].name)
             y += DeskRow.height + 2
         }
         if !zones.pinned.isEmpty { y += 8 }
 
+        if byPriority {
+            // Who next, not where: running desks from every group, by what
+            // they need from you. Rows don't drag here; the order isn't yours.
+            drawnPriority = wantedPriority(desks)
+            let index = Dictionary(desks.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { a, _ in a })
+            for sec in drawnPriority {
+                let t = SectionTitle("\(sec.urgency.title)  \(sec.names.count)")
+                t.frame = NSRect(x: 16, y: y, width: w - 32, height: 15)
+                t.translatesAutoresizingMaskIntoConstraints = true
+                t.autoresizingMask = [.width]
+                t.font = .systemFont(ofSize: 11, weight: .medium)
+                addSubview(t)
+                y += 19
+                for n in sec.names {
+                    guard let i = index[n] else { continue }
+                    let r = row(i, desks[i], indent: 4, y: y, width: w)
+                    r.onHide = { [weak self] in self?.onHideDesk?(i) }
+                    zoneRows.insert(i)
+                    shownOrder.append(n)
+                    y += DeskRow.height + 2
+                }
+                y += 6
+            }
+            let stopped = desks.filter { !$0.hidden && !$0.pinned && status[$0.name]?.running != true }.count
+            if stopped > 0 || drawnPriority.isEmpty {
+                let t = SectionTitle(drawnPriority.isEmpty && stopped == 0 ? "No desks" : "\(stopped) not running, under By group")
+                t.frame = NSRect(x: 16, y: y, width: w - 32, height: 15)
+                t.translatesAutoresizingMaskIntoConstraints = true
+                t.autoresizingMask = [.width]
+                t.font = .systemFont(ofSize: 11)
+                addSubview(t)
+                y += 22
+            }
+        }
+
         // Only the group on show. Its name is the lit row above, so there
         // is no header here; a desk moves to another group by dragging it
         // onto that group's row.
-        for g in order where selectedGroup == .some(g) {
+        for g in order where !byPriority && selectedGroup == .some(g) {
             let members = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden && !zones.contains($0.offset) }
             for (i, d) in members {
+                shownOrder.append(d.name)
                 let r = row(i, d, indent: 4, y: y, width: w)
                 r.onHide = { [weak self] in self?.onHideDesk?(i) }
                 r.onDragMoved = { [weak self] p in self?.dragMoved(from: i, to: p) }
@@ -294,6 +381,7 @@ final class SidebarView: NSView {
                 r.onRename = { [weak self] in self?.onRenameDesk?(i) }
                 r.onStop = { [weak self] in self?.onStopDesk?(i) }
                 r.onPeek = { [weak self] in self?.onPeekDesk?(i) }
+                r.onMarkUnread = { [weak self] in self?.onMarkUnreadDesk?(i) }
                 if !d.hidden {
                     if d.pinned { r.onUnpin = { [weak self] in self?.onPinDesk?(i, false) } }
                     else { r.onPin = { [weak self] in self?.onPinDesk?(i, true) } }
@@ -443,6 +531,7 @@ final class SidebarView: NSView {
     }
     @objc private func sortAll() { onSortDesks?() }
     @objc private func toggleLive() { onToggleLive?() }
+    @objc private func togglePriority() { onTogglePriority?() }
 
     func select(_ i: Int) {
         lastSelected = i

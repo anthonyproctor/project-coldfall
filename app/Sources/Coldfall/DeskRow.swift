@@ -24,6 +24,9 @@ struct DeskStatus: Equatable {
     var memory: String?
     /// Servers, hooks, skills or plugins new or changed since last looked at.
     var news: Int = 0
+    /// The dim text beside the name: why it is waiting, or what it says
+    /// it is doing (see DeskDetail).
+    var detail: String?
 }
 
 final class DeskRow: NSView {
@@ -50,6 +53,8 @@ final class DeskRow: NSView {
     var onToggleAskResume: (() -> Void)?
     /// Show this desk's screen over the current one (see PeekPanel).
     var onPeek: (() -> Void)?
+    var onMarkUnread: (() -> Void)?
+    private let info = NSTextField(labelWithString: "")
     var asksResume = true
     /// Drag to reorder. Points are in the row's superview (the rail).
     var onDragMoved: ((NSPoint) -> Void)?
@@ -104,7 +109,13 @@ final class DeskRow: NSView {
         icon.image = VendorIcon.image(runtime: desk.runtime, icon: desk.icon, size: 16)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.toolTip = desk.runtime == "shell" ? "shell" : desk.vendorLabel
-        for v in [icon, name, time, mark, pinIcon] as [NSView] {
+        info.lineBreakMode = .byTruncatingTail
+        info.isSelectable = false
+        info.font = .systemFont(ofSize: 11.5)
+        info.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(100), for: .horizontal)
+        info.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        name.setContentHuggingPriority(.required, for: .horizontal)
+        for v in [icon, name, time, mark, pinIcon, info] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -132,6 +143,9 @@ final class DeskRow: NSView {
             pinIcon.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 5),
             pinIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
             pinIcon.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
+            info.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 8),
+            info.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
+            info.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -8),
             name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
 
             time.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -8),
@@ -172,6 +186,11 @@ final class DeskRow: NSView {
         mark.mark = Mark(status)
         name.textColor = status.running || selected ? ui.text : ui.text.withAlphaComponent(0.62)
 
+        // Why it waits, in amber; or what it's on, dim. A pinned desk's pin
+        // sits where this goes, and the pin says more there.
+        info.stringValue = showsPin ? "" : (status.detail ?? "")
+        mark.compact = !info.stringValue.isEmpty
+        info.textColor = Mark(status) == .needsYou ? MarkView.pillInk : ui.dimText
         time.stringValue = status.lastOutput.map(Self.ago) ?? ""
         time.font = .systemFont(ofSize: 11)
         switch budget {
@@ -193,6 +212,7 @@ final class DeskRow: NSView {
         if let b = DeskBudget.short(budget) { parts.append(b) }
         if let m = status.memory { parts.append(m) }
         if status.news > 0 { parts.append("\(status.news) new") }
+        if let d = status.detail { parts.append(d) }
         detail = parts.joined(separator: " \u{00B7} ")
         var tips: [String] = [deskName + ": " + detail + (showsPin ? " · pinned" : "")]
         if let b = DeskBudget.label(budget) { tips.append("\(deskName): \(b)") }
@@ -259,12 +279,14 @@ final class DeskRow: NSView {
                                      hasInventory: onInventory != nil, hasMcp: onMcp != nil,
                                      askResume: onToggleAskResume != nil ? asksResume : nil,
                                      pinned: onUnpin != nil ? true : (onPin != nil ? false : nil),
-                                     news: status.news, canPeek: onPeek != nil && !selected)
+                                     news: status.news, canPeek: onPeek != nil && !selected,
+                                     canMarkUnread: onMarkUnread != nil && Mark(status) != .done && Mark(status) != .needsYou)
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
             let sel: Selector
             switch e.action {
             case .peek:        sel = #selector(peek)
+            case .markUnread:  sel = #selector(markUnread)
             case .reveal:      sel = #selector(reveal)
             case .makeDefault: sel = #selector(makeDefault)
             case .rename:      sel = #selector(rename)
@@ -307,6 +329,7 @@ final class DeskRow: NSView {
     }
     @objc private func remove() { onRemove?() }
     @objc private func peek() { onPeek?() }
+    @objc private func markUnread() { onMarkUnread?() }
     @objc private func rename() { onRename?() }
     @objc private func stop() { onStop?() }
     @objc private func mcp() { onMcp?() }

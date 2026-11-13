@@ -1323,6 +1323,84 @@ do {
     defer { Limits.configDir = wasCfg; DoneSignal.logPath = wasLog; try? fm.removeItem(atPath: root) }
 
     eq("done: a desk name can't break the log line", DoneSignal.fileName("my desk/../x"), "my_desk_.._x")
+    do {
+        let m = Data("Claude needs your permission to use Bash".utf8).base64EncodedString()
+        let sig = DoneSignal.parse(Substring("1700000000 notify hub \(m)"))
+        eq("done: a line can carry why it waits", sig?.message, "Claude needs your permission to use Bash")
+        eq("done: and the desk is still the desk", sig?.desk, "hub")
+        eq("done: an old line has no message", DoneSignal.parse("1700000000 notify hub")?.message, nil)
+        eq("reason: the desk's name already says who", DeskDetail.reason(message: "Claude needs your permission to use Bash"), "wants to use Bash")
+        eq("reason: other words pass through", DeskDetail.reason(message: "Which branch should I use?"), "Which branch should I use?")
+        eq("reason: no message, the kind will do", DeskDetail.reason(message: nil, kind: "permission"), "wants permission")
+        eq("reason: nothing to say", DeskDetail.reason(message: "", kind: nil), nil)
+        check("reason: long ones are cut", (DeskDetail.reason(message: String(repeating: "x", count: 300))?.count ?? 0) == DeskDetail.maxLength)
+        eq("title: the agent's task, without its spinner", DeskDetail.title("✳ Fix the invoice parser", desk: "work"), "Fix the invoice parser")
+        eq("title: the program's own name says nothing", DeskDetail.title("✳ Claude Code", desk: "work"), nil)
+        eq("title: nor the desk's", DeskDetail.title("work", desk: "work"), nil)
+        eq("title: nor a shell's folder", DeskDetail.title("~/srv/demo", desk: "work"), nil)
+        eq("title: nor user@host:path", DeskDetail.title("me@box:/srv/demo", desk: "work"), nil)
+        eq("detail: waiting shows why", DeskDetail.line(blocked: true, reason: "wants to use Bash", title: "Fix it"), "wants to use Bash")
+        eq("detail: otherwise what it's doing", DeskDetail.line(blocked: false, reason: "old", title: "Fix it"), "Fix it")
+        eq("detail: waiting with no reason shows nothing stale", DeskDetail.line(blocked: true, reason: nil, title: "Fix it"), nil)
+
+        let ds = [Desk(name: "a", group: "x"), Desk(name: "b", group: "x"), Desk(name: "c", group: "y"), Desk(name: "d")]
+        typealias L = DeskOrder.Live
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let pr = DeskOrder.priority(ds, live: ["a": L(rank: 2, lastOutput: t0), "b": L(rank: 0, lastOutput: t0),
+                                               "c": L(rank: 0, lastOutput: t0.addingTimeInterval(-60))])
+        eq("priority: sections in order, empty ones left out", pr.map(\.urgency), [.needsYou, .working])
+        eq("priority: the longest wait first, across groups", pr.first?.names, ["c", "b"])
+        eq("priority: a stopped desk isn't listed", pr.flatMap(\.names).contains("d"), false)
+        eq("step: next", DeskOrder.step(["a", "b", "c"], from: "a", by: 1), "b")
+        eq("step: wraps", DeskOrder.step(["a", "b", "c"], from: "c", by: 1), "a")
+        eq("step: back wraps too", DeskOrder.step(["a", "b", "c"], from: "a", by: -1), "c")
+        eq("step: from a desk not listed, the first", DeskOrder.step(["a", "b"], from: "z", by: 1), "a")
+        eq("step: one desk, nowhere to go", DeskOrder.step(["a"], from: "a", by: 1), nil)
+
+        eq("gauge: fine", ContextGauge.level(41), .fine)
+        eq("gauge: high from 60", ContextGauge.level(60), .high)
+        eq("gauge: full from 80", ContextGauge.level(80.5), .full)
+        eq("git: main says nothing", GitTail.branch(head: "ref: refs/heads/main\n"), nil)
+        eq("git: another branch is named", GitTail.branch(head: "ref: refs/heads/fix/parser\n"), "fix/parser")
+        eq("git: detached shows a short hash", GitTail.branch(head: "0123456789abcdef0123456789abcdef01234567\n"), "0123456")
+        eq("git: a worktree's HEAD is in its gitdir",
+           GitTail.headPath(folder: "/srv/demo/wt", read: { _ in "gitdir: /srv/demo/.git/worktrees/wt\n" }, isDir: { _ in false }),
+           "/srv/demo/.git/worktrees/wt/HEAD")
+        eq("git: no repo, no branch", GitTail.headPath(folder: "/srv/demo", read: { _ in nil }, isDir: { _ in false }), nil)
+
+        var u = ActivityState()
+        u.setVisible(true); u.noteOutput(at: t0); u.setVisible(false, at: t0.addingTimeInterval(10))
+        eq("unread: a read desk is quiet", u.activity(now: t0.addingTimeInterval(20)), .quiet)
+        u.markUnread()
+        eq("unread: marked, it is done again", u.activity(now: t0.addingTimeInterval(20)), .ready)
+        u.setVisible(true)
+        eq("unread: and opening it clears it", u.activity(now: t0.addingTimeInterval(30)), .quiet)
+        u.markUnread()
+        eq("unread: marked while on screen, it shows", u.activity(now: t0.addingTimeInterval(30)), .ready)
+        u.setVisible(false, at: t0.addingTimeInterval(31))
+        eq("unread: and stays when you leave", u.activity(now: t0.addingTimeInterval(40)), .ready)
+        u.setVisible(true)
+        eq("unread: until you come back", u.activity(now: t0.addingTimeInterval(50)), .quiet)
+
+        // The hook itself, run for real against a notification.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-hook-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let sh = dir.appendingPathComponent("hook.sh")
+        try? DoneSignal.script.write(to: sh, atomically: true, encoding: .utf8)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = [sh.path, "notify"]
+        p.environment = ["HOME": dir.path, "CLAUDE_DESK": "hub", "PATH": "/usr/bin:/bin"]
+        let inp = Pipe(); p.standardInput = inp
+        try? p.run()
+        inp.fileHandleForWriting.write(Data(#"{"session_id":"x","message":"Claude needs your permission to use Bash","hook_event_name":"Notification"}"#.utf8))
+        inp.fileHandleForWriting.closeFile()
+        p.waitUntilExit()
+        let line = (try? String(contentsOf: dir.appendingPathComponent(".local/share/coldfall/signals.log"), encoding: .utf8)) ?? ""
+        eq("hook: writes why it waits", line.split(separator: "\n").first.flatMap { DoneSignal.parse($0) }?.message,
+           "Claude needs your permission to use Bash")
+        try? FileManager.default.removeItem(at: dir)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

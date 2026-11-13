@@ -12,6 +12,8 @@ public struct UIState: Codable {
     public var meterHidden: Bool = false
     /// "Keep Active Groups on Top" in the rail.
     public var liveRail: Bool = false
+    /// The Desks section by priority (needs you, done, working, idle) rather than by group.
+    public var desksByPriority: Bool = false
     /// Agents whose "add a desk" offer was waved off with Not now.
     public var dismissedOffers: [String] = []
     /// Whether reopening a big, idle conversation asks about starting fresh
@@ -66,6 +68,7 @@ public struct UIState: Codable {
         readerPoppedOut = try c.decodeIfPresent(Bool.self, forKey: .readerPoppedOut) ?? false
         meterHidden     = try c.decodeIfPresent(Bool.self, forKey: .meterHidden) ?? false
         liveRail        = try c.decodeIfPresent(Bool.self, forKey: .liveRail) ?? false
+        desksByPriority = try c.decodeIfPresent(Bool.self, forKey: .desksByPriority) ?? false
         dismissedOffers = try c.decodeIfPresent([String].self, forKey: .dismissedOffers) ?? []
         offerFreshStart = try c.decodeIfPresent(Bool.self, forKey: .offerFreshStart) ?? true
         wrappedUp = try c.decodeIfPresent([String: Double].self, forKey: .wrappedUp) ?? [:]

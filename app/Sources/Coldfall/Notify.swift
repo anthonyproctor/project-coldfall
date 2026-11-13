@@ -31,18 +31,18 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func deliver(_ alert: NotifyRule.Alert, desk: String, activity: DeskActivity) {
+    func deliver(_ alert: NotifyRule.Alert, desk: String, activity: DeskActivity, reason: String? = nil) {
         switch alert {
         case .silent: return
         case .sound: NSSound(named: "Glass")?.play()
-        case .banner: post(desk: desk, activity: activity)
+        case .banner: post(desk: desk, activity: activity, reason: reason)
         }
     }
 
-    private func post(desk: String, activity: DeskActivity) {
+    private func post(desk: String, activity: DeskActivity, reason: String?) {
         guard available else { NSSound(named: "Glass")?.play(); return }
         let send = { [weak self] in
-            let t = NotifyRule.text(desk: desk, activity)
+            let t = NotifyRule.text(desk: desk, activity, reason: reason)
             let c = UNMutableNotificationContent()
             c.title = t.title
             c.body = t.body

@@ -317,7 +317,7 @@ final class Pane {
 
 /// What a pane header's buttons ask for. The controller does the work, on
 /// the pane the button belongs to (it takes focus first).
-enum PaneAction { case splitRight, splitDown, close }
+enum PaneAction { case splitRight, splitDown, zoom, close }
 
 /// A pane's own header, as Herdr heads each pane:
 ///
@@ -335,6 +335,13 @@ final class PaneHeader: NSView {
     private let right = PaneHeader.button("rectangle.split.2x1", tip: "Split right  ⌘D")
     private let down = PaneHeader.button("rectangle.split.1x2", tip: "Split down  ⇧⌘D")
     private let close = PaneHeader.button("xmark", tip: "Close pane  ⌘W")
+    private let zoom = PaneHeader.button("arrow.up.left.and.arrow.down.right", tip: "Zoom this pane  ⇧⌘↩")
+    /// How full the conversation is ("ctx 62%"), from 60% up.
+    private let gauge = NSTextField(labelWithString: "")
+    private var buttons = NSStackView()
+    /// The buttons show while the pointer is over the card (Herdr's rule):
+    /// a row of icons on every pane, all the time, is noise.
+    var hovering = false { didSet { if hovering != oldValue { buttons.animator().alphaValue = hovering ? 1 : 0 } } }
 
     init() {
         super.init(frame: .zero)
@@ -343,14 +350,18 @@ final class PaneHeader: NSView {
         right.target = self; right.action = #selector(splitR)
         down.target = self; down.action = #selector(splitD)
         close.target = self; close.action = #selector(closeP)
+        zoom.target = self; zoom.action = #selector(zoomP)
+        gauge.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .medium)
+        gauge.setContentCompressionResistancePriority(.required, for: .horizontal)
         title.lineBreakMode = .byTruncatingTail
         sub.lineBreakMode = .byTruncatingMiddle
         title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         sub.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let buttons = NSStackView(views: [right, down, close])
+        buttons = NSStackView(views: [right, down, zoom, close])
         buttons.orientation = .horizontal
         buttons.spacing = 0
-        for v in [iconView, title, sub, mark, buttons] as [NSView] {
+        buttons.alphaValue = 0
+        for v in [iconView, title, sub, gauge, mark, buttons] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -364,7 +375,9 @@ final class PaneHeader: NSView {
             title.centerYAnchor.constraint(equalTo: centerYAnchor),
             sub.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 8),
             sub.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
-            mark.leadingAnchor.constraint(greaterThanOrEqualTo: sub.trailingAnchor, constant: 8),
+            gauge.leadingAnchor.constraint(greaterThanOrEqualTo: sub.trailingAnchor, constant: 8),
+            gauge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.leadingAnchor.constraint(equalTo: gauge.trailingAnchor, constant: 8),
             mark.centerYAnchor.constraint(equalTo: centerYAnchor),
             buttons.leadingAnchor.constraint(equalTo: mark.trailingAnchor, constant: 8),
             buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
@@ -374,10 +387,24 @@ final class PaneHeader: NSView {
     }
     required init?(coder: NSCoder) { nil }
 
-    func set(icon: NSImage?, title t: String, detail: String, panes: Int) {
+    /// The conversation's fullness. Quiet under 60%; orange, then red.
+    func setContext(_ pct: Double?) {
+        guard let p = pct, ContextGauge.level(p) != .fine else { gauge.stringValue = ""; gauge.toolTip = nil; return }
+        gauge.stringValue = ContextGauge.text(p)
+        gauge.textColor = ContextGauge.level(p) == .full ? .systemRed : .systemOrange
+        gauge.toolTip = ContextGauge.level(p) == .full
+            ? "This conversation is nearly full. The agent will compact it soon; a fresh start or /compact now keeps its answers sharp."
+            : "This conversation is filling up."
+    }
+
+    func set(icon: NSImage?, title t: String, detail: String, panes: Int, zoomed: Bool = false) {
         iconView.image = icon
         title.stringValue = t
         sub.stringValue = detail
+        zoom.isHidden = panes < 2
+        zoom.image = NSImage(systemSymbolName: zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                             accessibilityDescription: "Zoom")
+        zoom.toolTip = zoomed ? "Show all panes  ⇧⌘↩" : "Zoom this pane  ⇧⌘↩"
         // Closing the last pane would leave a desk with no terminal.
         close.isEnabled = panes > 1
         close.alphaValue = panes > 1 ? 1 : 0.35
@@ -389,7 +416,7 @@ final class PaneHeader: NSView {
         title.textColor = ui.text
         sub.font = .systemFont(ofSize: 11.5)
         sub.textColor = ui.dimText
-        for b in [right, down, close] { b.contentTintColor = ui.dimText }
+        for b in [right, down, zoom, close] { b.contentTintColor = ui.dimText }
         mark.needsDisplay = true
         needsDisplay = true
     }
@@ -403,6 +430,7 @@ final class PaneHeader: NSView {
     @objc private func splitR() { onAction?(.splitRight) }
     @objc private func splitD() { onAction?(.splitDown) }
     @objc private func closeP() { onAction?(.close) }
+    @objc private func zoomP() { onAction?(.zoom) }
 
     private static func button(_ symbol: String, tip: String) -> NSButton {
         let b = NSButton()
@@ -469,6 +497,14 @@ final class PaneBox: NSView {
         restyle()
     }
     required init?(coder: NSCoder) { nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    override func mouseEntered(with e: NSEvent) { header.hovering = true }
+    override func mouseExited(with e: NSEvent) { header.hovering = false }
 
     func restyle() {
         let ui = Theme.ui
@@ -603,7 +639,18 @@ final class DeskSession {
     }
     func markSeen() { activityState.markSeen() }
     func notePeeked() { activityState.notePeeked() }
-    func noteSignal(_ event: DoneSignal.Event) { activityState.noteSignal(event) }
+    func noteSignal(_ event: DoneSignal.Event, message: String? = nil, kind: String? = nil) {
+        activityState.noteSignal(event)
+        // Why it is waiting, kept only while it waits.
+        reason = event == .notify ? DeskDetail.reason(message: message, kind: kind) : nil
+    }
+    /// The agent's own words for why it stopped (hook or OSC 7501).
+    private(set) var reason: String?
+    /// What the agent's terminal title says it is doing, cleaned up.
+    var title: String?
+    /// The dim line for the desk list.
+    var detailLine: String? { DeskDetail.line(blocked: isBlocked, reason: reason, title: title) }
+    func markUnread() { activityState.markUnread() }
 
     /// What the rail should draw right now.
     var activity: DeskActivity { activityState.activity() }
@@ -745,7 +792,16 @@ final class DeskSession {
     func focus(_ i: Int) {
         guard panes.indices.contains(i) else { return }
         focused = i
-        markFocus()
+        // Zoomed, moving focus moves the zoom.
+        if zoomed { rebuild() } else { markFocus() }
+    }
+
+    /// One pane filling the desk, the others still running behind it.
+    private(set) var zoomed = false
+    func toggleZoom() {
+        guard panes.count > 1 || zoomed else { return }
+        zoomed.toggle()
+        rebuild()
     }
 
     /// Move focus by one, wrapping. `cmd-[` and `cmd-]`.
@@ -773,15 +829,19 @@ final class DeskSession {
         }
         // The agent's own word about itself, as the done hook would say it.
         agentTerm.onStatus = { [weak self] r in
-            if let e = ProgramStatus.event(r) { self?.noteSignal(e) }
-            else if r.id.isEmpty, r.state == "working" { self?.activityState.noteResumed() }
+            guard let s = self else { return }
+            if let e = ProgramStatus.event(r) { s.noteSignal(e, message: r.message, kind: r.kind) }
+            else if r.id.isEmpty, r.state == "working" { s.activityState.noteResumed() }
+            // The program's own title for what it is doing, when it sends one.
+            if r.id.isEmpty, !r.title.isEmpty { s.title = DeskDetail.title(r.title, desk: s.desk.name, runtime: s.desk.runtime) }
         }
     }
 
     private func rebuild() {
-        for v in container.arrangedSubviews { container.removeArrangedSubview(v) }
-        for p in panes {
-            container.addArrangedSubview(p.box)
+        for v in container.arrangedSubviews { container.removeArrangedSubview(v); v.removeFromSuperview() }
+        if panes.count < 2 { zoomed = false }
+        for (i, p) in panes.enumerated() {
+            if !zoomed || i == focused { container.addArrangedSubview(p.box) }
             p.box.header.onAction = { [weak self, weak p] a in
                 guard let self, let p, let i = self.panes.firstIndex(where: { $0 === p }) else { return }
                 self.focus(i)
@@ -798,15 +858,18 @@ final class DeskSession {
 
     /// Name each pane: the agent pane by its desk and vendor, shells as shell.
     func refreshHeaders() {
-        let path = (desk.resolvedCwd as NSString).abbreviatingWithTildeInPath
+        var path = (desk.resolvedCwd as NSString).abbreviatingWithTildeInPath
+        // The branch, when it isn't main: which desks are off on their own.
+        if let b = GitTail.branch(folder: desk.resolvedCwd) { path += "  \u{2387} " + b }
         let shellIcon = NSImage(systemSymbolName: "terminal", accessibilityDescription: "shell")
         for p in panes {
             if p.isAgent, desk.runtime != "shell" {
                 p.box.header.set(icon: VendorIcon.image(runtime: desk.runtime, icon: desk.icon, size: 14),
-                                 title: desk.name, detail: "\(desk.claudeAccount()?.vendor ?? AgentOffer.shortName(desk.runtime)) · \(path)", panes: panes.count)
+                                 title: desk.name, detail: "\(desk.claudeAccount()?.vendor ?? AgentOffer.shortName(desk.runtime)) · \(path)", panes: panes.count, zoomed: zoomed)
+                p.box.header.setContext(DeskState.load(desk.name)?.ctxPct)
             } else {
                 p.box.header.set(icon: shellIcon, title: p.isAgent ? desk.name : "shell",
-                                 detail: path, panes: panes.count)
+                                 detail: path, panes: panes.count, zoomed: zoomed)
                 p.box.header.mark.mark = .none
             }
         }

@@ -27,22 +27,27 @@ enum Mark: Equatable {
 final class MarkView: NSView {
     var mark: Mark = .none { didSet { if mark != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     /// The pill's words; "Needs you" unless a count is wanted ("2 need you").
+    /// Needs you as a small "!" instead of the words, where the words are
+    /// already said beside it (the reason in a desk's row).
+    var compact = false { didSet { if compact != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     var pillText = "Needs you" { didSet { if pillText != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
 
     static let amber = NSColor(srgbRed: 0.91, green: 0.65, blue: 0.29, alpha: 1)
     static let green = NSColor.systemGreen
     static var blue: NSColor { Theme.ui.accent }
 
+    /// Amber as text. On a pale ground the mark's amber washes out; a
+    /// darker one reads there.
+    static var pillInk: NSColor { Theme.isDark ? amber : NSColor(srgbRed: 0.62, green: 0.36, blue: 0.02, alpha: 1) }
+
     private var pillAttrs: [NSAttributedString.Key: Any] {
-        // Amber text on a pale amber pill washes out in light mode; a
-        // darker amber reads there.
-        [.font: NSFont.systemFont(ofSize: 10.5, weight: .semibold),
-         .foregroundColor: Theme.isDark ? MarkView.amber : NSColor(srgbRed: 0.62, green: 0.36, blue: 0.02, alpha: 1)]
+        [.font: NSFont.systemFont(ofSize: 10.5, weight: .semibold), .foregroundColor: MarkView.pillInk]
     }
 
     override var intrinsicContentSize: NSSize {
         switch mark {
         case .needsYou:
+            if compact { return NSSize(width: 16, height: 16) }
             let w = (pillText as NSString).size(withAttributes: pillAttrs).width
             return NSSize(width: ceil(w) + 12, height: 16)
         case .none: return NSSize(width: 0, height: 10)
@@ -58,7 +63,7 @@ final class MarkView: NSView {
             let r = NSRect(x: 0, y: (b.height - 16) / 2, width: b.width, height: 16)
             MarkView.amber.withAlphaComponent(0.18).setFill()
             NSBezierPath(roundedRect: r, xRadius: 4.5, yRadius: 4.5).fill()
-            let t = pillText as NSString
+            let t = (compact ? "!" : pillText) as NSString
             let sz = t.size(withAttributes: pillAttrs)
             t.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2), withAttributes: pillAttrs)
         case .working:

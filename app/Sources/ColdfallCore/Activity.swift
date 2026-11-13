@@ -235,6 +235,8 @@ public struct ActivityState {
 
     public mutating func setVisible(_ v: Bool, at now: Date = Date()) {
         if visible, !v { hiddenAt = now }
+        // Held unread on screen: leaving keeps it, the next look clears it.
+        if heldUnread, visible, !v { heldUnread = false; visible = v; return }
         visible = v
         if v {
             // Looking at an answer settles the question. A glance while it is
@@ -259,7 +261,21 @@ public struct ActivityState {
         needsYou = false
     }
 
+    /// "Mark Unread": put the green back on an answer you glanced at but
+    /// haven't dealt with. It stays until you next open the desk. (Opening
+    /// it again clears it, so this is asked for from the desk's menu while
+    /// another desk is on screen, or it lasts until you come back.)
+    public mutating func markUnread(at now: Date = Date()) {
+        unseen = true
+        if lastOutput == nil { lastOutput = now }
+        heldUnread = visible
+    }
+    /// Marked unread while on screen: it reads as done until you leave and
+    /// come back, rather than clearing under your eyes.
+    public private(set) var heldUnread = false
+
     public func activity(now: Date = Date()) -> DeskActivity {
+        if heldUnread { return needsYou ? .blocked : .ready }
         // A desk you are looking at never badges: you can see it. It can
         // still be working, and says so, or the row reads "idle" while the
         // agent is mid-answer in front of you.
@@ -435,8 +451,8 @@ public enum NotifyRule {
 
     /// Title and body. Nothing from the conversation itself: a banner can
     /// show on a locked screen.
-    public static func text(desk: String, _ a: DeskActivity) -> (title: String, body: String) {
-        a == .blocked ? ("\(desk) needs you", "It's waiting for your answer.")
+    public static func text(desk: String, _ a: DeskActivity, reason: String? = nil) -> (title: String, body: String) {
+        a == .blocked ? ("\(desk) needs you", reason.map { "It " + $0 + "." } ?? "It's waiting for your answer.")
                       : ("\(desk) is done", "It finished while you were away.")
     }
 }

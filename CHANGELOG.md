@@ -8,6 +8,30 @@ opens this file.
 
 ## [Unreleased]
 
+Who needs you next, and why.
+
+### Added
+- **Desks by priority.** The button beside "Desks" switches the list between the selected
+  group and every running desk from every group under Needs you, Done, Working and Idle,
+  longest wait first. It re-sorts only while the pointer is away from the list. Also
+  **Desks ▸ Desks by Priority**.
+- **Next Desk and Previous Desk** (⌥⌘↓ and ⌥⌘↑) walk the list in the order shown, so by
+  priority they take you to whoever needs you first.
+- **Why a desk is waiting, beside its name.** "wants to use Bash", or the question it asked,
+  in the desk's row and in its notification. From the agent's own words (the done hook, or a
+  status report); an installed done hook is updated on launch to pass them on.
+- **What a desk is doing, beside its name:** the agent's own terminal title, when it sets one.
+- **Mark Unread** on a desk's right-click menu puts its green mark back until you next open it.
+- **Context gauge.** A pane's header shows "ctx 62%" in orange from 60%, red from 80%.
+- **Zoom Pane** (⇧⌘↩, or the button in a pane's header): one pane fills the desk; again to
+  bring the others back.
+- A pane's header shows the folder's **git branch** when it isn't main or master.
+
+### Changed
+- A pane's split, zoom and close buttons show while the pointer is over the pane.
+- With Coldfall behind another app, the desk on screen no longer counts as being looked at:
+  an answer that lands then is marked, and notified, like any other desk's.
+
 ## [0.3.35] - 2026-11-13
 
 Fixes to the new layout, and a shorter desk list.
