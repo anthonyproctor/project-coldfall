@@ -313,16 +313,124 @@ final class Pane {
     }
 }
 
-// MARK: - the focus ring
+// MARK: - the pane card
 
-/// Holds one terminal and draws a ring around it when it has focus.
+/// What a pane header's buttons ask for. The controller does the work, on
+/// the pane the button belongs to (it takes focus first).
+enum PaneAction { case splitRight, splitDown, close }
+
+/// A pane's own header, as Herdr heads each pane:
 ///
-/// The ring only appears once a desk has more than one pane. A border around a
-/// single pane is noise — there is nowhere else the keystrokes could go.
+///   ✳ work   Claude · ~/Code/work          ○    ⊟ ⊞ ✕
+///
+/// The agent pane names the desk and its vendor; a shell pane says shell.
+final class PaneHeader: NSView {
+    static let height: CGFloat = 28
+    var onAction: ((PaneAction) -> Void)?
+
+    private let iconView = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let sub = NSTextField(labelWithString: "")
+    let mark = MarkView()
+    private let right = PaneHeader.button("rectangle.split.2x1", tip: "Split right  ⌘D")
+    private let down = PaneHeader.button("rectangle.split.1x2", tip: "Split down  ⇧⌘D")
+    private let close = PaneHeader.button("xmark", tip: "Close pane  ⌘W")
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        right.target = self; right.action = #selector(splitR)
+        down.target = self; down.action = #selector(splitD)
+        close.target = self; close.action = #selector(closeP)
+        title.lineBreakMode = .byTruncatingTail
+        sub.lineBreakMode = .byTruncatingMiddle
+        title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        sub.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let buttons = NSStackView(views: [right, down, close])
+        buttons.orientation = .horizontal
+        buttons.spacing = 0
+        for v in [iconView, title, sub, mark, buttons] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: Self.height),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 14),
+            iconView.heightAnchor.constraint(equalToConstant: 14),
+            title.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 7),
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            sub.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 8),
+            sub.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
+            mark.leadingAnchor.constraint(greaterThanOrEqualTo: sub.trailingAnchor, constant: 8),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            buttons.leadingAnchor.constraint(equalTo: mark.trailingAnchor, constant: 8),
+            buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            buttons.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        restyle()
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func set(icon: NSImage?, title t: String, detail: String, panes: Int) {
+        iconView.image = icon
+        title.stringValue = t
+        sub.stringValue = detail
+        // Closing the last pane would leave a desk with no terminal.
+        close.isEnabled = panes > 1
+        close.alphaValue = panes > 1 ? 1 : 0.35
+    }
+
+    func restyle() {
+        let ui = Theme.ui
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        title.textColor = ui.text
+        sub.font = .systemFont(ofSize: 11.5)
+        sub.textColor = ui.dimText
+        for b in [right, down, close] { b.contentTintColor = ui.dimText }
+        mark.needsDisplay = true
+        needsDisplay = true
+    }
+
+    override func draw(_ dirty: NSRect) {
+        // A hairline between the header and the terminal.
+        Theme.ui.border.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+    }
+
+    @objc private func splitR() { onAction?(.splitRight) }
+    @objc private func splitD() { onAction?(.splitDown) }
+    @objc private func closeP() { onAction?(.close) }
+
+    private static func button(_ symbol: String, tip: String) -> NSButton {
+        let b = NSButton()
+        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+        b.symbolConfiguration = .init(pointSize: 11, weight: .regular)
+        b.imagePosition = .imageOnly
+        b.isBordered = false
+        b.bezelStyle = .inline
+        b.toolTip = tip
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        return b
+    }
+}
+
+/// One pane as a card: rounded, its own header, a small gap around it so the
+/// window's chrome shows between panes. With more than one pane the focused
+/// card is outlined and the others dim a little (Ghostty's
+/// unfocused-split-opacity: the eye finds the bright pane first).
 final class PaneBox: NSView {
-    private let ring: CGFloat = 2
+    /// The gap from the card to the edge of its slot; two slots side by side
+    /// make twice this between cards.
+    static let gap: CGFloat = 4
     var showsFocus = false { didSet { if showsFocus != oldValue { restyle() } } }
     var focused = true { didSet { if focused != oldValue { restyle() } } }
+    let header = PaneHeader()
+    private let card = NSView()
     private weak var term: NSView?
 
     init(term: NSView) {
@@ -330,41 +438,54 @@ final class PaneBox: NSView {
         self.term = term
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
-        addSubview(term)
+        card.wantsLayer = true
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer?.cornerRadius = 9
+        card.layer?.masksToBounds = true
+        card.layer?.borderWidth = 1
+        addSubview(card)
+        card.addSubview(header)
+        card.addSubview(term)
 
         // Text butting against the frame is the first thing that makes a
-        // terminal feel cheap, and the box rather than the terminal owns the
+        // terminal feel cheap, and the card rather than the terminal owns the
         // gap so the terminal's own background still fills it.
         let cfg = DeskConfig.themeSettings()
         let x = CGFloat(cfg.padX), y = CGFloat(cfg.padY)
+        let g = Self.gap
         NSLayoutConstraint.activate([
-            term.topAnchor.constraint(equalTo: topAnchor, constant: y),
-            term.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -y),
-            term.leadingAnchor.constraint(equalTo: leadingAnchor, constant: x),
-            term.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -x),
+            card.topAnchor.constraint(equalTo: topAnchor, constant: g),
+            card.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -g),
+            card.leadingAnchor.constraint(equalTo: leadingAnchor, constant: g),
+            card.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -g),
+            header.topAnchor.constraint(equalTo: card.topAnchor),
+            header.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            term.topAnchor.constraint(equalTo: header.bottomAnchor, constant: y),
+            term.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -y),
+            term.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: x),
+            term.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -x),
         ])
-        layer?.backgroundColor = Theme.current().skin.terminal.background.cgColor
+        restyle()
     }
     required init?(coder: NSCoder) { nil }
 
-    /// Dim the unfocused pane rather than only ringing the focused one. Ghostty
-    /// does this (`unfocused-split-opacity`) and it reads faster: the eye finds
-    /// the bright pane without looking for a border.
-    private func restyle() {
-        alphaValue = (showsFocus && !focused) ? 0.72 : 1.0
-        needsDisplay = true
+    func restyle() {
+        let ui = Theme.ui
+        layer?.backgroundColor = ui.sidebar.cgColor
+        card.layer?.backgroundColor = Theme.current().skin.terminal.background.cgColor
+        let lit = showsFocus && focused
+        card.layer?.borderColor = (lit ? NSColor.controlAccentColor.withAlphaComponent(0.75) : ui.border).cgColor
+        card.layer?.borderWidth = lit ? 1.5 : 1
+        alphaValue = (showsFocus && !focused) ? 0.78 : 1.0
+        header.restyle()
     }
+}
 
-    override func draw(_ dirty: NSRect) {
-        Theme.current().skin.terminal.background.setFill()
-        bounds.fill()
-        guard showsFocus, focused else { return }
-        let r = bounds.insetBy(dx: ring / 2, dy: ring / 2)
-        NSColor.controlAccentColor.withAlphaComponent(0.8).setStroke()
-        let p = NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4)
-        p.lineWidth = ring
-        p.stroke()
-    }
+/// The split view that holds a desk's cards. No divider line: the gap
+/// between cards is the divider, and still drags.
+final class CardSplitView: NSSplitView {
+    override var dividerColor: NSColor { .clear }
 }
 
 // MARK: - a desk's panes
@@ -386,7 +507,7 @@ final class DeskSession {
 
     /// The view to put on screen. A single pane is shown bare; a split view is
     /// only introduced once there is something to divide.
-    let container = SoftSplitView()
+    let container = CardSplitView()
 
     init(desk: Desk) {
         self.desk = desk
@@ -597,6 +718,14 @@ final class DeskSession {
         return p
     }
 
+    /// For --snapshot --split: a second pane, its shell never started.
+    func addPaneForPicture() {
+        if panes.count == 1 { isVertical = true; container.isVertical = true }
+        panes.append(Pane(isAgent: false))
+        focused = 0
+        rebuild()
+    }
+
     /// Close a pane, killing its process. Refuses the last one — a desk with no
     /// terminal is managed from the desk list, not from here.
     @discardableResult
@@ -651,8 +780,42 @@ final class DeskSession {
 
     private func rebuild() {
         for v in container.arrangedSubviews { container.removeArrangedSubview(v) }
-        for p in panes { container.addArrangedSubview(p.box) }
+        for p in panes {
+            container.addArrangedSubview(p.box)
+            p.box.header.onAction = { [weak self, weak p] a in
+                guard let self, let p, let i = self.panes.firstIndex(where: { $0 === p }) else { return }
+                self.focus(i)
+                DeskSession.onPaneAction?(a)
+            }
+        }
         markFocus()
+        refreshHeaders()
+    }
+
+    /// The pane headers' buttons go to the controller, which owns splitting
+    /// and closing (and the window's first responder).
+    static var onPaneAction: ((PaneAction) -> Void)?
+
+    /// Name each pane: the agent pane by its desk and vendor, shells as shell.
+    func refreshHeaders() {
+        let path = (desk.resolvedCwd as NSString).abbreviatingWithTildeInPath
+        let shellIcon = NSImage(systemSymbolName: "terminal", accessibilityDescription: "shell")
+        for p in panes {
+            if p.isAgent, desk.runtime != "shell" {
+                p.box.header.set(icon: VendorIcon.image(runtime: desk.runtime, icon: desk.icon, size: 14),
+                                 title: desk.name, detail: "\(desk.claudeAccount()?.vendor ?? AgentOffer.shortName(desk.runtime)) · \(path)", panes: panes.count)
+            } else {
+                p.box.header.set(icon: shellIcon, title: p.isAgent ? desk.name : "shell",
+                                 detail: path, panes: panes.count)
+                p.box.header.mark.mark = .none
+            }
+        }
+    }
+
+    /// The agent pane's state mark, from the same status as the desk list.
+    func setMark(_ m: Mark) {
+        guard let p = panes.first, p.isAgent, desk.runtime != "shell", !agentGone else { return }
+        p.box.header.mark.mark = m
     }
 
     private func markFocus() {

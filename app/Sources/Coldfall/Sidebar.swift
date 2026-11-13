@@ -53,6 +53,8 @@ final class SidebarView: NSView {
     /// below, by group.
     var floatReady = true { didSet { if floatReady != oldValue { syncFloat(force: true) } } }
     var onToggleFloat: (() -> Void)?
+    /// A group in the Groups section was clicked: go to its desk.
+    var onSelectGroup: ((String?) -> Void)?
     /// The desks floated to the top, as last drawn. This follows `waiting`,
     /// but only at a calm moment: never while the pointer is over the rail or
     /// a drag is under way, so a row doesn't move out from under a click.
@@ -72,7 +74,10 @@ final class SidebarView: NSView {
             switch st.activity { case .blocked: rank = 0; case .ready: rank = 1; case .working: rank = 2; case .quiet: rank = 3 }
             live[name] = DeskOrder.Live(rank: rank, lastOutput: st.lastOutput)
         }
-        return DeskOrder.active(d, live: live, enabled: floatReady)
+        // Herdr's structure replaced the Active section: groups carry the
+        // urgency, and desks stay in their groups.
+        _ = live
+        return []
     }
     private var lastReorder = Date.distantPast
 
@@ -177,14 +182,6 @@ final class SidebarView: NSView {
         let w = max(visible, 190)
         var y: CGFloat = 10
 
-        // What this region is, before any of its rows.
-        let title = SectionTitle("Desks")
-        title.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
-        title.translatesAutoresizingMaskIntoConstraints = true
-        title.autoresizingMask = [.width]
-        addSubview(title)
-        y += 24
-
         for rt in offers {
             let o = OfferStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 50))
             o.autoresizingMask = [.width]
@@ -206,6 +203,36 @@ final class SidebarView: NSView {
             y += 58
         }
 
+        // Groups, Herdr's spaces: one line each, carrying the most urgent
+        // thing among its desks. Clicking one goes to its desk you used last,
+        // and the tabs follow.
+        let groupTitle = SectionTitle("Groups")
+        groupTitle.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
+        groupTitle.translatesAutoresizingMaskIntoConstraints = true
+        groupTitle.autoresizingMask = [.width]
+        addSubview(groupTitle)
+        y += 22
+        let selectedGroup: String?? = selected >= 0 && selected < desks.count ? .some(desks[selected].group) : nil
+        for g in DeskOrder.groups(desks) {
+            let members = desks.filter { $0.group == g && !$0.hidden }
+            guard !members.isEmpty else { continue }
+            let gr = GroupRow(frame: NSRect(x: 4, y: y, width: w - 8, height: 30))
+            gr.autoresizingMask = [.width]
+            gr.configure(name: g ?? "General", desks: members.map { status[$0.name] ?? DeskStatus() },
+                         selected: selectedGroup == .some(g))
+            gr.onClick = { [weak self] in self?.onSelectGroup?(g) }
+            addSubview(gr)
+            y += 32
+        }
+        y += 10
+
+        let title = SectionTitle("Desks")
+        title.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
+        title.translatesAutoresizingMaskIntoConstraints = true
+        title.autoresizingMask = [.width]
+        addSubview(title)
+        y += 22
+
         // Pinned desks: always here, in your order, whatever group they are in.
         for i in zones.pinned {
             let r = row(i, desks[i], indent: 4, y: y, width: w)
@@ -215,44 +242,6 @@ final class SidebarView: NSView {
             y += DeskRow.height + 2
         }
         if !zones.pinned.isEmpty { y += 8 }
-
-        let asking = Set(waiting.filter { status[$0]?.activity == .blocked })
-        if let text = NeedsYou.summary(waiting, blocked: asking), let first = waiting.first {
-            let strip = NeedsYouStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 26))
-            strip.autoresizingMask = [.width]
-            strip.configure(text, urgent: status[first]?.activity == .blocked)
-            strip.onClick = { [weak self] in self?.onJumpToWaiting?(first) }
-            strip.onClear = { [weak self] in self?.onClearWaiting?() }
-            addSubview(strip)
-            y += 34
-        }
-
-        // Active: every running desk, by what it needs from you. Each goes
-        // back to its group when it stops.
-        if !zones.floated.isEmpty {
-            let t = SectionTitle("Active")
-            t.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
-            t.translatesAutoresizingMaskIntoConstraints = true
-            t.autoresizingMask = [.width]
-            addSubview(t)
-            y += 22
-        }
-        for i in zones.floated {
-            let r = row(i, desks[i], indent: 4, y: y, width: w)
-            r.onHide = { [weak self] in self?.onHideDesk?(i) }
-            zoneRows.insert(i)
-            y += DeskRow.height + 2
-        }
-        if !zones.floated.isEmpty {
-            y += 8
-            // What's left is what isn't running.
-            let t = SectionTitle("Not running")
-            t.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
-            t.translatesAutoresizingMaskIntoConstraints = true
-            t.autoresizingMask = [.width]
-            addSubview(t)
-            y += 22
-        }
 
         // The live order, if on, with any group it doesn't know yet (just
         // created) after it in your order.
@@ -275,6 +264,7 @@ final class SidebarView: NSView {
                 let upTop = all.filter { zones.floated.contains($0.offset) }.count
                 h.configure(title: g, expanded: isDown, waiting: inside.count,
                             asking: inside.contains { status[$0]?.activity == .blocked }, running: upTop)
+                _ = upTop
                 h.onClick = { [weak self] in self?.onToggleGroup?(g) }
                 h.onRename = { [weak self] in self?.onRenameGroup?(g) }
                 h.onSort = { [weak self] in self?.onSortDesks?() }
@@ -292,7 +282,7 @@ final class SidebarView: NSView {
             let top = y - 22
 
             for (i, d) in members {
-                let r = row(i, d, indent: g == nil ? 4 : 12, y: y, width: w)
+                let r = row(i, d, indent: 4, y: y, width: w)
                 r.onHide = { [weak self] in self?.onHideDesk?(i) }
                 r.onDragMoved = { [weak self] p in self?.dragMoved(from: i, to: p) }
                 r.onDragEnded = { [weak self] p in self?.dragEnded(from: i, at: p) }
@@ -494,13 +484,7 @@ final class SidebarView: NSView {
         live.toolTip = "Groups with a desk that needs you, then the most recently used, rise to the top. "
             + "Your own order is kept underneath: turn this off to get it back."
         m.addItem(live)
-        let up = NSMenuItem(title: "Show Running Desks on Top", action: #selector(toggleFloat), keyEquivalent: "")
-        up.target = self
-        up.state = floatReady ? .on : .off
-        up.toolTip = "Every running desk sits in an Active section at the top, under any pinned desks, "
-            + "sorted by what it needs from you; the rest stay below, by group. "
-            + "and goes back to its place once you've looked at it."
-        m.addItem(up)
+        // (Show Running Desks on Top went with the Groups + Desks layout.)
         let it = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortAll), keyEquivalent: "")
         it.target = self
         m.addItem(it)
@@ -512,8 +496,14 @@ final class SidebarView: NSView {
 
     func select(_ i: Int) {
         lastSelected = i
+        let before = selected
         selected = i
         for (j, r) in rows { r.selected = (j == i) }
+        // A desk in another group: the Groups section shows which one now.
+        if let d = lastDesks, d.indices.contains(i), !d.indices.contains(before) || d[before].group != d[i].group {
+            build(desks: d)
+            for (j, r) in rows { r.selected = (j == i) }
+        }
     }
 
     /// Repaint after a light/dark flip.
@@ -716,4 +706,90 @@ final class OfferStrip: NSView {
     }
     @objc private func addTapped() { onAdd?() }
     @objc private func laterTapped() { onDismiss?() }
+}
+
+
+/// A group in the Groups section, after Herdr's spaces: a coloured initial,
+/// the name, and the one mark that matters most among its desks.
+final class GroupRow: NSView {
+    var onClick: (() -> Void)?
+    private let avatar = NSTextField(labelWithString: "")
+    private let name = NSTextField(labelWithString: "")
+    private let count = NSTextField(labelWithString: "")
+    private let mark = MarkView()
+    private var selected = false
+    private var hovering = false { didSet { needsDisplay = true } }
+
+    /// A steady colour per group name, from a small palette that reads on
+    /// both themes.
+    static func colour(_ name: String) -> NSColor {
+        let palette: [UInt32] = [0x3F7F6E, 0xC96442, 0x5B6FD6, 0x8A6BBF, 0xB5893A, 0x4F8FB3, 0xB0526B, 0x6E8B3D]
+        var h: UInt32 = 2166136261
+        for b in name.utf8 { h = (h ^ UInt32(b)) &* 16777619 }
+        let x = palette[Int(h % UInt32(palette.count))]
+        return NSColor(srgbRed: CGFloat((x >> 16) & 0xff) / 255, green: CGFloat((x >> 8) & 0xff) / 255,
+                       blue: CGFloat(x & 0xff) / 255, alpha: 1)
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        avatar.alignment = .center
+        avatar.font = .systemFont(ofSize: 10.5, weight: .bold)
+        avatar.textColor = .white
+        avatar.wantsLayer = true
+        avatar.layer?.cornerRadius = 5
+        name.font = .systemFont(ofSize: 13.5)
+        name.lineBreakMode = .byTruncatingTail
+        count.font = .systemFont(ofSize: 11)
+        for v in [avatar, name, count, mark] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        mark.setContentHuggingPriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            avatar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            avatar.centerYAnchor.constraint(equalTo: centerYAnchor),
+            avatar.widthAnchor.constraint(equalToConstant: 18), avatar.heightAnchor.constraint(equalToConstant: 18),
+            name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: 9),
+            name.centerYAnchor.constraint(equalTo: centerYAnchor),
+            name.trailingAnchor.constraint(lessThanOrEqualTo: count.leadingAnchor, constant: -6),
+            count.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -8),
+            count.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.heightAnchor.constraint(equalToConstant: 16),
+        ])
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func configure(name n: String, desks: [DeskStatus], selected sel: Bool) {
+        selected = sel
+        name.stringValue = n
+        name.textColor = Theme.ui.text
+        avatar.stringValue = String(n.prefix(1)).uppercased()
+        avatar.layer?.backgroundColor = GroupRow.colour(n).cgColor
+        let marks = desks.map(Mark.init)
+        let asking = marks.filter { $0 == .needsYou }.count
+        let running = marks.filter { $0 != .none }.count
+        if asking > 0 {
+            mark.mark = .needsYou
+            mark.pillText = asking == 1 ? "1 needs you" : "\(asking) need you"
+        } else if marks.contains(.done) { mark.mark = .done }
+        else if marks.contains(.working) { mark.mark = .working }
+        else { mark.mark = .none }
+        // How many are running, of how many, when nothing more urgent shows.
+        count.stringValue = running > 0 ? "\(running)/\(desks.count)" : "\(desks.count)"
+        count.textColor = Theme.ui.dimText
+        toolTip = "\(n): \(running) of \(desks.count) desks running" + (asking > 0 ? ", \(asking) waiting on you" : "")
+        needsDisplay = true
+    }
+
+    override func draw(_ dirty: NSRect) {
+        let fill: NSColor? = selected ? Theme.ui.selected : (hovering ? Theme.ui.hover : nil)
+        guard let fill else { return }
+        fill.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 8, yRadius: 8).fill()
+    }
+    override func mouseEntered(with e: NSEvent) { hovering = true }
+    override func mouseExited(with e: NSEvent) { hovering = false }
+    override func mouseUp(with e: NSEvent) { onClick?() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }

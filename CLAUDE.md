@@ -39,8 +39,8 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --waiting --restore hub,work   # the launch screen offering desks back
 ./.build/release/Coldfall --snapshot /tmp/shot.png --quit-prompt hub,work  # the quit question, to shot-quit.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --blocked api      # the rail with that desk stopped on a question
-./.build/release/Coldfall --snapshot /tmp/shot.png --roomy            # the two-line desk list instead of the compact one (Active is on by default)
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --peek   # that desk peeked at, to shot-peek.png
+./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --split  # that desk as two pane cards
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```

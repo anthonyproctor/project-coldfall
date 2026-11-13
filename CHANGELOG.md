@@ -8,6 +8,30 @@ opens this file.
 
 ## [Unreleased]
 
+A new window layout, after Herdr's: groups, tabs, and panes as cards.
+
+### Added
+- **Groups at the top of the desk list.** Each group has a coloured letter, how many of its
+  desks are running, and one mark for the whole group ("1 needs you", done, working). Click a
+  group to go to the desk you last used in it.
+- **Tabs over the terminal.** One tab for each running desk in the current group, with its
+  logo, name and state. Click to switch; the × on hover stops the desk (it asks first, as
+  Stop Desk does). "+" starts another desk from the group, or a new shell desk.
+- **Panes are cards.** Each pane has its own header: the desk, the agent and folder, its
+  state, and split right, split down and close. With two or more panes the focused card is
+  outlined.
+- **Counts on the status bar.** "1 needs you · 2 working · 3 done" before the usage line.
+  Click "needs you" to go to the desk that has waited longest.
+- **Real logos.** Put `claude.png`, `codex.png` and so on in `~/.config/coldfall/icons/` and
+  the desk list, tabs and pane headers show them. Without them, the letter badges stay.
+
+### Changed
+- **One state mark everywhere:** an amber "Needs you" pill, a blue ring while working, a green
+  dot for an answer you haven't seen, a hollow circle for idle. Desk rows are one line.
+- The Active / Not running split, and the needs-you banner above the list, are gone. The
+  status bar and the group marks carry the same news.
+- The header over the terminal is replaced by the tabs and the pane headers.
+
 ## [0.3.33] - 2026-11-13
 
 Safer around your agents, and a desk list that shows what needs you.

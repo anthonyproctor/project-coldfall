@@ -1,19 +1,14 @@
-// One desk in the rail, laid out the way Cursor lays out a task:
+// One desk in the rail, as Herdr lays out an agent:
 //
-//     ✓  hub                         2m
-//        claude · answered
+//     [logo]  hub                      2m   ●
 //
-// A status glyph, the name, how long ago it last did anything, and a line
-// underneath saying what it is and what it is doing. The question the rail
-// has to answer at a glance is "which of these needs me", and a green dot
-// appended to the end of a name answered it badly — it was the thing the eye
-// missed first.
+// The vendor's icon, the name, how long ago it last did anything, and one
+// mark at the right for what it needs (Needs you, working, done, idle). The
+// details the old second line carried are in the tooltip.
 //
-// This replaces a row that was an NSButton whose title was a single
-// attributed string. The name, vendor and badge were packed into it and then
-// PARSED BACK OUT with string matching on every repaint — which is how an
-// activity badge once shipped that never appeared at all. A row now holds its
-// state as data and draws from it.
+// A row holds its state as data and draws from it. (An earlier row packed
+// everything into one attributed button title and parsed it back out, which
+// is how an activity badge once shipped that never appeared at all.)
 
 import AppKit
 import ColdfallCore
@@ -47,15 +42,9 @@ final class DeskRow: NSView {
     /// is set; a hidden desk gets neither.
     var onPin: (() -> Void)?
     var onUnpin: (() -> Void)?
-    /// A small pin at the right of the second line, for a pinned desk.
-    var showsPin = false {
-        didSet {
-            pinIcon.isHidden = !showsPin || DeskRow.compact
-            subTrailing?.constant = showsPin ? -26 : -10
-        }
-    }
+    /// A small pin after the name, for a pinned desk.
+    var showsPin = false { didSet { pinIcon.isHidden = !showsPin } }
     private let pinIcon = NSImageView()
-    private var subTrailing: NSLayoutConstraint?
     /// Toggle whether opening this desk asks about starting fresh. Nil where
     /// it can't be started fresh, so the item isn't offered.
     var onToggleAskResume: (() -> Void)?
@@ -72,13 +61,16 @@ final class DeskRow: NSView {
     private let label: String
     private let isDefault: Bool
 
-    private let glyph = NSTextField(labelWithString: "")
-    /// Which agent runs it: a letter on the vendor's colour (VendorBadge).
-    private let badge = NSTextField(labelWithString: "")
-    private let badgeInfo: VendorBadge.Badge
+    /// Which agent runs it: the vendor's logo when there's one in
+    /// ~/.config/coldfall/icons, else a letter on its colour (VendorIcon).
+    private let icon = NSImageView()
     private let name = NSTextField(labelWithString: "")
     private let time = NSTextField(labelWithString: "")
-    private let sub = NSTextField(labelWithString: "")
+    /// What it's doing: Needs you, working, done, idle (Mark).
+    private let mark = MarkView()
+    /// What the old second line said (vendor, state, budget, memory, news),
+    /// now the tooltip.
+    private var detail = ""
 
     var selected = false { didSet { if selected != oldValue { restyle() } } }
     /// Restyles only on a real change. The rail sets this for every row on
@@ -99,87 +91,55 @@ final class DeskRow: NSView {
 
     private var hovering = false { didSet { needsDisplay = true } }
 
-    /// One line per desk (dot, name, time), with the rest in the tooltip,
-    /// so a long list fits without scrolling. View, Compact Desk List.
-    static var compact = true
-    static var height: CGFloat { compact ? 30 : 46 }
-
-    /// Working is a still dot in the accent colour, not a spinner. A rail of
-    /// turning spinners is the busiest thing on screen, and it pulls the eye
-    /// away from the one desk that needs you; it also redrew the rail several
-    /// times a second for nothing.
+    static let height: CGFloat = 30
 
     init(desk: Desk) {
         deskName = desk.name
         runtime = desk.runtime
         label = desk.vendorLabel
         isDefault = desk.isDefault
-        badgeInfo = VendorBadge.badge(runtime: desk.runtime, icon: desk.icon)
         super.init(frame: .zero)
         wantsLayer = true
 
-        // The badge: centred letter on a rounded square of the vendor's
-        // colour, or a bare emoji / shell mark.
-        badge.stringValue = badgeInfo.text
-        badge.alignment = .center
-        badge.wantsLayer = true
-        badge.layer?.cornerRadius = 4
-        badge.font = .systemFont(ofSize: badgeInfo.fill == nil ? 12 : 10, weight: .bold)
-        if let hex = badgeInfo.fill {
-            badge.drawsBackground = false
-            badge.layer?.backgroundColor = NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
-                                                   green: CGFloat((hex >> 8) & 0xff) / 255,
-                                                   blue: CGFloat(hex & 0xff) / 255, alpha: 1).cgColor
-            badge.textColor = .white
-        } else {
-            badge.textColor = Theme.ui.dimText
+        icon.image = VendorIcon.image(runtime: desk.runtime, icon: desk.icon, size: 16)
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.toolTip = desk.runtime == "shell" ? "shell" : desk.vendorLabel
+        for v in [icon, name, time, mark, pinIcon] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
         }
-        badge.toolTip = desk.runtime == "shell" ? "shell" : desk.vendorLabel
-        for f in [glyph, badge, name, time, sub] {
-            f.translatesAutoresizingMaskIntoConstraints = false
-            f.lineBreakMode = .byTruncatingTail
-            f.isSelectable = false
-            addSubview(f)
-        }
-        glyph.alignment = .center
-        glyph.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        for f in [name, time] { f.lineBreakMode = .byTruncatingTail; f.isSelectable = false }
         time.alignment = .right
-        time.setContentCompressionResistancePriority(.required, for: .horizontal)
-        time.setContentHuggingPriority(.required, for: .horizontal)
+        for v in [time, mark] as [NSView] {
+            v.setContentCompressionResistancePriority(.required, for: .horizontal)
+            v.setContentHuggingPriority(.required, for: .horizontal)
+        }
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        NSLayoutConstraint.activate([
-            glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            glyph.widthAnchor.constraint(equalToConstant: 16),
-            glyph.centerYAnchor.constraint(equalTo: name.centerYAnchor),
-
-            badge.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 5),
-            badge.centerYAnchor.constraint(equalTo: name.centerYAnchor),
-            badge.widthAnchor.constraint(equalToConstant: 16),
-            badge.heightAnchor.constraint(equalToConstant: 16),
-
-            name.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 7),
-            name.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
-
-            time.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            time.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
-
-            sub.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            sub.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 2),
-        ])
-        subTrailing = sub.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
-        subTrailing?.isActive = true
-
         pinIcon.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "Pinned")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 8.5, weight: .regular))
         pinIcon.contentTintColor = Theme.ui.dimText
         pinIcon.isHidden = true
-        pinIcon.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(pinIcon)
+
         NSLayoutConstraint.activate([
-            pinIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
-            pinIcon.centerYAnchor.constraint(equalTo: sub.centerYAnchor),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+
+            name.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 9),
+            name.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            pinIcon.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 5),
+            pinIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            pinIcon.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
+            name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
+
+            time.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -8),
+            time.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.heightAnchor.constraint(equalToConstant: 16),
         ])
 
         addTrackingArea(NSTrackingArea(rect: .zero,
@@ -206,71 +166,35 @@ final class DeskRow: NSView {
         name.stringValue = deskName
         name.font = .systemFont(ofSize: 14, weight: selected ? .medium : .regular)
 
-        // Status first, so the eye finds "needs you" before anything else.
-        let (g, gColor, state): (String, NSColor, String)
-        switch status.activity {
-        case .blocked:
-            // Stopped on a question: the one state worth more than green.
-            (g, gColor, state) = ("\u{25C9}", .systemOrange, "needs you")       // ◉
-        case .ready:
-            // An agent "answered"; a shell just finished what it was running.
-            (g, gColor, state) = ("\u{2713}", .systemGreen, "done")            // ✓
-        case .working:
-            (g, gColor, state) = ("\u{25CF}", ui.accent, "working")           // ●
-        case .quiet:
-            (g, gColor, state) = status.running
-                ? ("\u{25CF}", ui.dimText, "idle")                            // ●
-                : ("\u{25CB}", ui.dimText.withAlphaComponent(0.6), "not started")  // ○
-        }
-        glyph.stringValue = g
-        glyph.textColor = gColor
-
-        // A finished desk you have not looked at gets a green name as well as
-        // a green check: the word is what you scan, not a 12-point glyph.
-        if case .blocked = status.activity, !selected {
-            name.textColor = .systemOrange
-        } else if case .ready = status.activity, !selected {
-            name.textColor = .systemGreen
-        } else {
-            name.textColor = selected ? ui.text : ui.text.withAlphaComponent(0.92)
-        }
+        // The mark carries the state; the name stays the name. Herdr's
+        // rule, and the one that reads: colour in one small place, not the
+        // whole row.
+        mark.mark = Mark(status)
+        name.textColor = status.running || selected ? ui.text : ui.text.withAlphaComponent(0.62)
 
         time.stringValue = status.lastOutput.map(Self.ago) ?? ""
         time.font = .systemFont(ofSize: 11)
-        time.textColor = ui.dimText
+        switch budget {
+        case .over: time.textColor = .systemRed
+        case .near: time.textColor = .systemOrange
+        default: time.textColor = status.news > 0 ? ui.accent : ui.dimText
+        }
 
-        // What it is, then what it is doing. A plain shell has no vendor, so
-        // it says so rather than implying one.
-        var parts: [String] = []
-        parts.append(runtime == "shell" ? "shell" : label + (isDefault ? " home" : ""))
-        if runtime != "shell" || status.running { parts.append(state) }
-        // Before memory, so a narrow rail cuts memory first, not the budget.
+        // What it is and what it's doing, for the tooltip.
+        let state: String
+        switch Mark(status) {
+        case .needsYou: state = "needs you"
+        case .working: state = "working"
+        case .done: state = "done"
+        case .idle: state = "idle"
+        case .none: state = "not started"
+        }
+        var parts: [String] = [runtime == "shell" ? "shell" : label + (isDefault ? " home" : ""), state]
         if let b = DeskBudget.short(budget) { parts.append(b) }
         if let m = status.memory { parts.append(m) }
-        // Something was added to this desk since it was last looked at, a
-        // plugin's new hooks for example. Say so until someone looks.
         if status.news > 0 { parts.append("\(status.news) new") }
-        sub.stringValue = parts.joined(separator: " \u{00B7} ")                  // ·
-        sub.font = .systemFont(ofSize: 11)
-        // Blue for news, which is information. Orange is the colour of a
-        // warning, and of Stop Desk in the menu.
-        switch budget {
-        case .over:  sub.textColor = .systemRed
-        case .near:  sub.textColor = .systemOrange
-        default:     sub.textColor = status.news > 0 ? ui.accent : ui.dimText
-        }
-        // Compact: one line. What the second line said goes in the tooltip,
-        // and a budget warning or news tints the time so it isn't lost.
-        sub.isHidden = DeskRow.compact
-        if DeskRow.compact {
-            pinIcon.isHidden = true
-            switch budget {
-            case .over: time.textColor = .systemRed
-            case .near: time.textColor = .systemOrange
-            default: if status.news > 0 { time.textColor = ui.accent }
-            }
-        }
-        var tips: [String] = DeskRow.compact ? [deskName + ": " + sub.stringValue + (showsPin ? " · pinned" : "")] : []
+        detail = parts.joined(separator: " \u{00B7} ")
+        var tips: [String] = [deskName + ": " + detail + (showsPin ? " · pinned" : "")]
         if let b = DeskBudget.label(budget) { tips.append("\(deskName): \(b)") }
         if status.news > 0 {
             tips.append("\(status.news) new on this desk: servers, hooks, skills or plugins added since you last looked. "

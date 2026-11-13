@@ -52,6 +52,34 @@ public enum VendorBadge {
         public init(text: String, fill: UInt32?) { self.text = text; self.fill = fill }
     }
 
+    /// Where vendor icons live: a picture per runtime (claude.png, codex.png…),
+    /// chosen by the person, never shipped in the app.
+    public static var iconDir: String {
+        (Limits.configDir as NSString).appendingPathComponent("icons")
+    }
+
+    /// The picture to show for a desk, if there is one: the desk's own
+    /// `icon` when it names an image file, else the runtime's picture in
+    /// `dir`. Nil means draw the letter badge.
+    public static func iconFile(runtime: String, icon: String?, dir: String = VendorBadge.iconDir,
+                                exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String? {
+        let pictures = ["png", "svg", "jpg", "jpeg", "icns", "pdf"]
+        if let i = icon, !i.isEmpty {
+            let path = NSString(string: i).expandingTildeInPath
+            if pictures.contains((path as NSString).pathExtension.lowercased()) {
+                let full = path.hasPrefix("/") ? path : (dir as NSString).appendingPathComponent(path)
+                return exists(full) ? full : nil
+            }
+            return nil          // a letter or an emoji: drawn, not loaded
+        }
+        let base = runtime.hasPrefix("claude") ? "claude" : runtime
+        for ext in pictures {
+            let p = (dir as NSString).appendingPathComponent("\(base).\(ext)")
+            if exists(p) { return p }
+        }
+        return nil
+    }
+
     public static func badge(runtime: String, icon: String?) -> Badge {
         if let i = icon, !i.isEmpty {
             let letter = i.unicodeScalars.allSatisfy { $0.isASCII }

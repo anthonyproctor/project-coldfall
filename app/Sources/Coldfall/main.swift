@@ -28,7 +28,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var rail: NSSplitView!
     /// The middle column: a header naming the desk, and the terminal under it.
     let center = NSView()
-    let termHeader = TerminalHeader()
+    let tabs = TabBar()
     /// The reader's home when it is docked beside the terminal (the default).
     let readerPane = NSView()
     /// Collapses the meter to nothing when it is toggled off.
@@ -45,8 +45,6 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // Before anything builds a row.
-        DeskRow.compact = ui.compactRail || CommandLine.arguments.contains("--compact")
-        if CommandLine.arguments.contains("--roomy") { DeskRow.compact = false }
         // In the rail's order, so cmd-1..9 match what is on screen even when
         // a group's desks are scattered through the file.
         desks = DeskOrder.grouped(DeskConfig.load())
@@ -108,17 +106,18 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Rail | terminal | reader. The reader used to live in a separate
         // floating window you had to arrange by hand; VS Code shows files
         // inside the window, beside the sidebar. It can still pop out.
-        termHeader.translatesAutoresizingMaskIntoConstraints = false
         host.translatesAutoresizingMaskIntoConstraints = false
-        center.addSubview(termHeader); center.addSubview(host)
+        center.addSubview(tabs); center.addSubview(host)
+        // The cards bring their own gap; this keeps them off the window's edges.
+        let inset: CGFloat = 4
         NSLayoutConstraint.activate([
-            termHeader.topAnchor.constraint(equalTo: center.topAnchor),
-            termHeader.leadingAnchor.constraint(equalTo: center.leadingAnchor),
-            termHeader.trailingAnchor.constraint(equalTo: center.trailingAnchor),
-            host.topAnchor.constraint(equalTo: termHeader.bottomAnchor),
-            host.leadingAnchor.constraint(equalTo: center.leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: center.trailingAnchor),
-            host.bottomAnchor.constraint(equalTo: center.bottomAnchor),
+            tabs.topAnchor.constraint(equalTo: center.topAnchor),
+            tabs.leadingAnchor.constraint(equalTo: center.leadingAnchor),
+            tabs.trailingAnchor.constraint(equalTo: center.trailingAnchor),
+            host.topAnchor.constraint(equalTo: tabs.bottomAnchor),
+            host.leadingAnchor.constraint(equalTo: center.leadingAnchor, constant: inset),
+            host.trailingAnchor.constraint(equalTo: center.trailingAnchor, constant: -inset),
+            host.bottomAnchor.constraint(equalTo: center.bottomAnchor, constant: -inset),
         ])
         Theme.paint(readerPane, Theme.ui.editor)
         split.addArrangedSubview(rail)
@@ -172,10 +171,23 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         strip.onToggleReader = { [weak self] in self?.toggleReader() }
         strip.onToggleMeter = { [weak self] in self?.toggleMeter() }
         strip.onUpdate = { [weak self] in self?.updates.openRelease() }
-        termHeader.onSplitRight = { [weak self] in self?.splitRight() }
-        termHeader.onSplitDown = { [weak self] in self?.splitDown() }
-        termHeader.onClosePane = { [weak self] in self?.closePane() }
-        termHeader.onPromptHelper = { [weak self] in self?.openPromptHelper() }
+        DeskSession.onPaneAction = { [weak self] a in
+            switch a {
+            case .splitRight: self?.splitRight()
+            case .splitDown: self?.splitDown()
+            case .close: self?.closePane()
+            }
+        }
+        tabs.onPromptHelper = { [weak self] in self?.openPromptHelper() }
+        tabs.onSelect = { [weak self] n in
+            guard let self, let i = self.deskIndex(n) else { return }
+            self.open(i)
+        }
+        tabs.onStop = { [weak self] n in
+            guard let self, let i = self.deskIndex(n) else { return }
+            self.stopDesk(i)
+        }
+        tabs.plusMenu = { [weak self] in self?.tabPlusMenu() }
         reader.onPopToggle = { [weak self] in self?.popOutOrDock() }
         palette.onPickDesk = { [weak self] i in self?.open(i) }
         palette.onPickFile = { [weak self] u in self?.openReader(u) }
@@ -186,6 +198,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             return (n, m)
         }
         meter.onClick = { [weak self] in self?.openMeter() }
+        meter.onNeedsYou = { [weak self] in self?.jumpToWaiting() }
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
 
         // The VS Code behaviour: files the agent touches open themselves.
@@ -205,6 +218,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.onToggleLive = { [weak self] in self?.toggleLiveRail() }
         sidebar.floatReady = ui.readyOnTop
         sidebar.onToggleFloat = { [weak self] in self?.toggleReadyOnTop() }
+        sidebar.onSelectGroup = { [weak self] g in self?.goToGroup(g) }
         sidebar.onPinDesk = { [weak self] i, on in self?.pinDesk(i, on) }
         sidebar.onAddOffer = { [weak self] rt in self?.addOfferedDesk(rt) }
         sidebar.onDismissOffer = { [weak self] rt in self?.dismissOffer(rt) }
@@ -297,7 +311,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Set the appearance BEFORE showing: every semantic colour in the app
         // resolves off it, so flipping after the fact repaints everything.
         Theme.apply(to: window)
-        Theme.paint(host, Theme.ui.editor)
+        Theme.paint(host, Theme.ui.sidebar)
+        Theme.paint(center, Theme.ui.sidebar)
 
         // `--snapshot <file.png>`: lay the window out, save a picture of it,
         // and quit — WITHOUT starting any desk process and without ever
@@ -321,9 +336,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 tree.setRoot(desks[i].resolvedCwd)
                 let d = desks[i]
                 strip.setContext(d.name)
-                termHeader.set(desk: d.name,
-                               detail: d.runtime == "shell" ? "shell" : d.vendorLabel + (d.isDefault ? " home" : ""),
-                               panes: 1)
+                snapDesk = d.name
             }
             // `--waiting`: the launch screen, the desk shown but not started.
             if CommandLine.arguments.contains("--waiting"), desks.indices.contains(i) {
@@ -350,6 +363,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     s.container.trailingAnchor.constraint(equalTo: host.trailingAnchor),
                 ])
                 s.panes.first?.term.feed(text: text.replacingOccurrences(of: "\n", with: "\r\n"))
+                // `--split`: with a shell pane beside it, to see the cards.
+                if CommandLine.arguments.contains("--split") { s.addPaneForPicture() }
             }
             // `--open <file>`: that file in the reader.
             if let k = CommandLine.arguments.firstIndex(of: "--open"), k + 1 < CommandLine.arguments.count {
@@ -399,6 +414,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 sidebar.build(desks: desks)
             }
             sidebar.status = sample
+            refreshTabs(sample)
+            meter.setCounts(DeskCounts.of(sample.values.filter(\.running).map(\.activity)))
+            for (name, s) in sessions { s.setMark(Mark(sample[name] ?? DeskStatus())) }
             // `--offer <runtime>`: the rail offering a desk for that agent.
             // `--budget-demo`: the first desks near and over a made-up budget.
             if CommandLine.arguments.contains("--budget-demo") {
@@ -951,14 +969,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         live.target = self
         live.state = ui.liveRail ? .on : .off
         deskMenu.addItem(live)
-        let readyUp = NSMenuItem(title: "Show Running Desks on Top", action: #selector(toggleReadyOnTop), keyEquivalent: "")
-        readyUp.target = self
-        readyUp.state = ui.readyOnTop ? .on : .off
-        deskMenu.addItem(readyUp)
-        let compact = NSMenuItem(title: "Compact Desk List", action: #selector(toggleCompactRail), keyEquivalent: "")
-        compact.target = self
-        compact.state = ui.compactRail ? .on : .off
-        deskMenu.addItem(compact)
+
         let sortAZ = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortDesks), keyEquivalent: "")
         sortAZ.target = self
         deskMenu.addItem(sortAZ)
@@ -1438,14 +1449,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         installMenu()
     }
 
-    /// One line per desk, or two. The rail rebuilds and the split follows.
-    @objc func toggleCompactRail() {
-        ui.compactRail.toggle()
-        ui.save()
-        DeskRow.compact = ui.compactRail
-        refreshRail()
-        fitRail()
-        installMenu()
+    /// A group was picked in the Groups section: its desk used most recently,
+    /// else one that's running, else its first.
+    func goToGroup(_ g: String?) {
+        let members = desks.indices.filter { desks[$0].group == g && !desks[$0].hidden }
+        guard !members.isEmpty else { return }
+        let recent = members.max { (lastVisited[desks[$0].name] ?? .distantPast) < (lastVisited[desks[$1].name] ?? .distantPast) }
+        let pick = (recent.flatMap { lastVisited[desks[$0].name] != nil ? $0 : nil })
+            ?? members.first { sessions[desks[$0].name]?.started == true } ?? members[0]
+        if sessions[desks[pick].name]?.started == true { show(pick) } else { showWaiting(pick) }
     }
 
     /// The desks get up to 70% of the left column, as much as they need;
@@ -2169,11 +2181,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             DispatchQueue.main.async {
                 Theme.apply(to: self.window)
                 Theme.paint(self.rail, Theme.ui.sidebar)
-                Theme.paint(self.host, Theme.ui.editor)
+                Theme.paint(self.host, Theme.ui.sidebar)
+                Theme.paint(self.center, Theme.ui.sidebar)
+                self.tabs.restyle()
                 for s in self.sessions.values {
                     for p in s.panes {
                         Theme.apply(to: p.term)
-                        p.box.needsDisplay = true
+                        p.box.restyle()
                     }
                 }
                 self.sidebar.restyle()
@@ -2222,6 +2236,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             self.sidebar.tick &+= 1
             self.sidebar.status = map
+            self.refreshTabs(map)
+            self.meter.setCounts(DeskCounts.of(map.values.filter(\.running).map(\.activity)))
+            for (name, s) in self.sessions { s.setMark(Mark(map[name] ?? DeskStatus())) }
             self.serveRemote(map)
             self.noteRunning()
 
@@ -2592,12 +2609,50 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         palette.open(over: window, desks: desks, root: root, query: "> ")
     }
 
-    /// The header over the terminal follows the desk and its pane count.
+    /// The tabs and the pane headers follow the desk on screen.
     func updateTermHeader() {
-        guard let s = visible else { return }
-        let d = s.desk
-        let detail = d.runtime == "shell" ? "shell" : d.vendorLabel + (d.isDefault ? " home" : "")
-        termHeader.set(desk: d.name, detail: detail, panes: s.panes.count)
+        visible?.refreshHeaders()
+        refreshTabs(sidebar.status)
+    }
+
+    /// The desk in a --snapshot, which starts no session to be visible.
+    var snapDesk: String?
+
+    /// The tab row: the running desks in the on-screen desk's group.
+    func refreshTabs(_ status: [String: DeskStatus]) {
+        let current = waitingName ?? visible?.desk.name ?? snapDesk
+        let running = Set(status.filter { $0.value.running }.map(\.key))
+        let names = DeskTabs.list(desks, current: current, running: running)
+        let list: [TabBar.Tab] = names.compactMap { n in
+            guard let d = desks.first(where: { $0.name == n }) else { return nil }
+            return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus())
+        }
+        tabs.set(list, current: current)
+    }
+
+    /// "+" on the tab row: this group's stopped desks, then a new shell desk.
+    func tabPlusMenu() -> NSMenu {
+        let m = NSMenu()
+        let current = waitingName ?? visible?.desk.name
+        let running = Set(sessions.filter { $0.value.started }.map(\.key))
+        for n in DeskTabs.startable(desks, current: current, running: running) {
+            guard let d = desks.first(where: { $0.name == n }) else { continue }
+            let item = NSMenuItem(title: "Start \(n)", action: #selector(startFromTabs(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = n
+            item.image = VendorIcon.image(runtime: d.runtime, icon: d.icon, size: 14)
+            m.addItem(item)
+        }
+        if !m.items.isEmpty { m.addItem(.separator()) }
+        let shell = NSMenuItem(title: "New Shell Desk", action: #selector(newShellDesk), keyEquivalent: "")
+        shell.target = self
+        m.addItem(shell)
+        return m
+    }
+
+    @objc func startFromTabs(_ item: NSMenuItem) {
+        guard let n = item.representedObject as? String, let i = deskIndex(n) else { return }
+        show(i)
     }
 
     // LocalProcessTerminalViewDelegate

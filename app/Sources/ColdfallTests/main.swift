@@ -1470,6 +1470,25 @@ do {
        DeskOrder.zones(list, floated: []).pinned, [1, 5])
     eq("active: a pinned desk keeps the very top instead",
        DeskOrder.active(list, live: ["cars": L(rank: 0, lastOutput: nil), "golf": L(rank: 3, lastOutput: nil)], enabled: true), ["golf"])
+    do {
+        var t = [Desk(name: "hub"), Desk(name: "work", group: "w"), Desk(name: "a", group: "w"),
+                 Desk(name: "b", group: "w"), Desk(name: "golf", group: "home"), Desk(name: "old", group: "w")]
+        t[5].hidden = true
+        eq("tabs: the running desks in this desk's group, in rail order",
+           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"]), ["work", "b"])
+        eq("tabs: the desk on screen has a tab even when stopped",
+           DeskTabs.list(t, current: "a", running: ["b"]), ["a", "b"])
+        eq("tabs: another group is another set", DeskTabs.list(t, current: "golf", running: ["b", "golf"]), ["golf"])
+        eq("tabs: ungrouped desks share a set", DeskTabs.list(t, current: "hub", running: ["work"]), ["hub"])
+        eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
+        eq("tabs: no desk on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]), [])
+        eq("tabs: + offers this group's stopped desks", DeskTabs.startable(t, current: "work", running: ["work"]), ["a", "b"])
+        eq("counts: one of each", DeskCounts.of([.blocked, .working, .ready, .quiet, .ready]),
+           DeskCounts(needsYou: 1, working: 1, done: 2))
+        eq("counts: chips read as a sentence", DeskCounts(needsYou: 1, working: 2, done: 0).chips, ["1 needs you", "2 working"])
+        eq("counts: plural", DeskCounts(needsYou: 2).chips, ["2 need you"])
+        eq("counts: nothing going on, no chips", DeskCounts().chips, [])
+    }
     eq("badge: Claude is a C on its colour", VendorBadge.badge(runtime: "claude", icon: nil), VendorBadge.Badge(text: "C", fill: 0xC96442))
     eq("badge: Codex an X", VendorBadge.badge(runtime: "codex", icon: nil).text, "X")
     eq("badge: a desk's own letter wins", VendorBadge.badge(runtime: "claude", icon: "m").text, "M")

@@ -1,0 +1,214 @@
+// The tab row over the terminal, after Herdr's:
+//
+//   [✳ work  Needs you] [✳ client-a ○] [◎ client-b ◌]   +      Write a prompt…
+//
+// One tab per running desk in the current desk's group (DeskTabs in the
+// core decides which), each with the vendor's logo, the name and the same
+// state mark as the desk list. Click to switch; the × that shows on hover
+// stops the desk, through the same question Stop Desk asks. "+" starts
+// another desk from this group, or makes a new one.
+
+import AppKit
+import ColdfallCore
+
+final class TabBar: NSView {
+    struct Tab: Equatable {
+        let name: String
+        let runtime: String
+        let icon: String?
+        let status: DeskStatus
+    }
+
+    var onSelect: ((String) -> Void)?
+    var onStop: ((String) -> Void)?
+    /// "+": the menu is built by the controller, which knows the desks.
+    var plusMenu: (() -> NSMenu?)?
+    var onPromptHelper: (() -> Void)?
+
+    static let height: CGFloat = 36
+
+    private let row = NSStackView()
+    private let plus = NSButton()
+    private let prompt = NSButton(title: "Write a prompt…", target: nil, action: nil)
+    private var views: [TabView] = []
+    private var shown: [Tab] = []
+    private var current: String?
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+
+        row.orientation = .horizontal
+        row.spacing = 4
+        row.alignment = .centerY
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.setHuggingPriority(.defaultLow, for: .horizontal)
+        row.setClippingResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(row)
+
+        plus.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Start a desk")
+        plus.imagePosition = .imageOnly
+        plus.isBordered = false
+        plus.bezelStyle = .inline
+        plus.toolTip = "Start another desk in this group"
+        plus.target = self; plus.action = #selector(showPlus)
+        plus.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(plus)
+
+        prompt.target = self; prompt.action = #selector(writePrompt)
+        prompt.bezelStyle = .inline
+        prompt.isBordered = false
+        prompt.font = .systemFont(ofSize: 12)
+        prompt.toolTip = "Build and copy a prompt. Nothing is sent."
+        prompt.translatesAutoresizingMaskIntoConstraints = false
+        prompt.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSubview(prompt)
+
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: Self.height),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 1),
+            plus.leadingAnchor.constraint(equalTo: row.trailingAnchor, constant: 4),
+            plus.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            plus.widthAnchor.constraint(equalToConstant: 24),
+            plus.heightAnchor.constraint(equalToConstant: 24),
+            plus.trailingAnchor.constraint(lessThanOrEqualTo: prompt.leadingAnchor, constant: -8),
+            prompt.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            prompt.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ])
+        restyle()
+    }
+    required init?(coder: NSCoder) { nil }
+
+    /// Show these tabs, `current` selected. Views are reused when the set of
+    /// names is unchanged, so a state tick only repaints marks.
+    func set(_ tabs: [Tab], current: String?) {
+        if tabs.map(\.name) != shown.map(\.name) {
+            for v in views { row.removeArrangedSubview(v); v.removeFromSuperview() }
+            views = tabs.map { t in
+                let v = TabView(name: t.name)
+                v.onClick = { [weak self] in self?.onSelect?(t.name) }
+                v.onClose = { [weak self] in self?.onStop?(t.name) }
+                row.addArrangedSubview(v)
+                return v
+            }
+        }
+        for (v, t) in zip(views, tabs) {
+            v.configure(t, selected: t.name == current)
+        }
+        shown = tabs
+        self.current = current
+    }
+
+    func restyle() {
+        let ui = Theme.ui
+        layer?.backgroundColor = ui.sidebar.cgColor
+        plus.contentTintColor = ui.dimText
+        prompt.contentTintColor = ui.dimText
+        for (v, t) in zip(views, shown) { v.configure(t, selected: t.name == current, force: true) }
+    }
+
+    @objc private func showPlus() {
+        guard let m = plusMenu?() else { return }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: plus.bounds.height + 4), in: plus)
+    }
+    @objc private func writePrompt() { onPromptHelper?() }
+}
+
+/// One tab: logo, name, mark; an × in place of the mark under the pointer.
+private final class TabView: NSView {
+    var onClick: (() -> Void)?
+    var onClose: (() -> Void)?
+
+    private let iconView = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    private let mark = MarkView()
+    private let close = NSButton()
+    private var tab: TabBar.Tab?
+    private var selected = false
+    private var hovering = false { didSet { if hovering != oldValue { refresh() } } }
+
+    init(name: String) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 7
+
+        label.stringValue = name
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Stop desk")
+        close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+        close.imagePosition = .imageOnly
+        close.isBordered = false
+        close.bezelStyle = .inline
+        close.toolTip = "Stop this desk"
+        close.target = self; close.action = #selector(closeIt)
+
+        for v in [iconView, label, mark, close] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(v)
+        }
+        let tail = NSLayoutGuide()
+        addLayoutGuide(tail)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 220),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 15),
+            iconView.heightAnchor.constraint(equalToConstant: 15),
+            label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 7),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 8),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            close.centerXAnchor.constraint(equalTo: mark.trailingAnchor, constant: -5),
+            close.centerYAnchor.constraint(equalTo: centerYAnchor),
+            close.widthAnchor.constraint(equalToConstant: 16),
+            close.heightAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func configure(_ t: TabBar.Tab, selected: Bool, force: Bool = false) {
+        guard force || t != tab || selected != self.selected else { return }
+        let iconChanged = force || t.runtime != tab?.runtime || t.icon != tab?.icon
+        tab = t
+        self.selected = selected
+        if iconChanged { iconView.image = VendorIcon.image(runtime: t.runtime, icon: t.icon, size: 15) }
+        mark.mark = Mark(t.status)
+        var tip = t.name
+        if !t.status.running { tip += " · not running" }
+        toolTip = tip
+        refresh()
+    }
+
+    private func refresh() {
+        let ui = Theme.ui
+        let running = tab?.status.running ?? false
+        layer?.backgroundColor = selected ? ui.selected.cgColor : (hovering ? ui.hover.cgColor : NSColor.clear.cgColor)
+        label.font = .systemFont(ofSize: 12.5, weight: selected ? .semibold : .regular)
+        label.textColor = selected ? ui.text : (running ? ui.text.withAlphaComponent(0.82) : ui.dimText)
+        // The × takes the mark's place under the pointer, so the tab keeps
+        // its width; a stopped desk has nothing to stop.
+        let showClose = hovering && running
+        close.isHidden = !showClose
+        mark.isHidden = showClose
+        close.contentTintColor = ui.dimText
+        iconView.alphaValue = running ? 1 : 0.55
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                       owner: self))
+    }
+    override func mouseEntered(with e: NSEvent) { hovering = true }
+    override func mouseExited(with e: NSEvent) { hovering = false }
+    override func mouseDown(with e: NSEvent) { onClick?() }
+    @objc private func closeIt() { onClose?() }
+}

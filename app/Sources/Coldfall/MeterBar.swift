@@ -10,6 +10,13 @@ final class MeterBar: NSView {
     private var lastScan = Date.distantPast
     private var timer: Timer?
     var onClick: (() -> Void)?
+    /// The "needs you" chip: go to the desk that has waited longest.
+    var onNeedsYou: (() -> Void)?
+    private let chips = NSStackView()
+    private let needsChip = MarkView()
+    private let workingChip = CountChip(mark: .working)
+    private let doneChip = CountChip(mark: .done)
+    private var counts = DeskCounts()
     /// Which desk is on screen. Context belongs to it, not to the vendor.
     var currentDesk: String? {
         didSet {
@@ -37,7 +44,19 @@ final class MeterBar: NSView {
         hint.layer?.cornerRadius = 4
         hint.drawsBackground = false
 
-        let stack = NSStackView(views: [summary, NSView(), hint])
+        // Herdr's status line: what the desks are doing, before the usage.
+        needsChip.mark = .needsYou
+        needsChip.toolTip = "Go to the desk that has waited longest  ⌘0"
+        let tap = NSClickGestureRecognizer(target: self, action: #selector(needsYouClicked))
+        needsChip.addGestureRecognizer(tap)
+        chips.setViews([needsChip, workingChip, doneChip], in: .leading)
+        chips.orientation = .horizontal
+        chips.spacing = 12
+        chips.alignment = .centerY
+        chips.setHuggingPriority(.required, for: .horizontal)
+        for c in [needsChip, workingChip, doneChip] as [NSView] { c.isHidden = true }
+
+        let stack = NSStackView(views: [chips, summary, NSView(), hint])
         stack.orientation = .horizontal
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
@@ -189,10 +208,52 @@ final class MeterBar: NSView {
         return WeekPace.line(vendor: soonest.0, soonest.1)
     }
 
+    /// The desks' counts, from the activity tick.
+    func setCounts(_ c: DeskCounts) {
+        guard c != counts else { return }
+        counts = c
+        needsChip.pillText = c.needsYou == 1 ? "1 needs you" : "\(c.needsYou) need you"
+        needsChip.isHidden = c.needsYou == 0
+        workingChip.set(c.working, word: "working")
+        doneChip.set(c.done, word: "done")
+        chips.isHidden = c.chips.isEmpty
+    }
+
+    @objc private func needsYouClicked() { onNeedsYou?() }
+
     /// Repaint after a light/dark flip.
     func restyle() {
+        workingChip.restyle(); doneChip.restyle()
         layer?.backgroundColor = Theme.ui.status.cgColor
         summary.textColor = Theme.ui.text
         needsDisplay = true
+    }
+}
+
+/// "2 working", "3 done": a mark and a count, as the status line shows them.
+private final class CountChip: NSStackView {
+    private let markView = MarkView()
+    private let label = NSTextField(labelWithString: "")
+
+    init(mark: Mark) {
+        super.init(frame: .zero)
+        markView.mark = mark
+        orientation = .horizontal
+        spacing = 5
+        alignment = .centerY
+        setViews([markView, label], in: .leading)
+        label.font = .systemFont(ofSize: 11)
+        restyle()
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func set(_ n: Int, word: String) {
+        label.stringValue = "\(n) \(word)"
+        isHidden = n == 0
+    }
+
+    func restyle() {
+        label.textColor = Theme.ui.dimText
+        markView.needsDisplay = true
     }
 }
