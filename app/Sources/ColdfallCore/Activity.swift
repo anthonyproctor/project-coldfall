@@ -93,6 +93,7 @@ public struct ActivityState {
             if !visible { unseen = true }
         case .stop:
             needsYou = false
+            turnEndedAt = now
             if visible { asked = false }           // you watched it finish
             else if asked { unseen = true }
         }
@@ -103,6 +104,8 @@ public struct ActivityState {
     /// agent getting going again (answered from your phone) does.
     public private(set) var needsYou = false
     private var needsYouAt: Date?
+    /// When the agent last said its turn was over.
+    public private(set) var turnEndedAt: Date?
     /// Work this long after the question means it was answered somewhere else.
     public static let answeredElsewhereAfter: TimeInterval = 5
 

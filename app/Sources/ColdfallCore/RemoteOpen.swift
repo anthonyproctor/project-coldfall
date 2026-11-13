@@ -67,11 +67,92 @@ public enum RemoteOpen {
     public struct DeskState: Codable, Equatable {
         public var name: String
         public var running: Bool
-        /// "working", "ready" (an answer waiting) or "quiet".
+        /// "working", "ready" (an answer waiting), "blocked" or "quiet".
         public var activity: String
-        public init(name: String, running: Bool, activity: String) {
+        /// When the agent last said its turn was over (done hook or 7501).
+        public var turnEndedAt: Double?
+        /// Stopped on a question for you.
+        public var needsYou: Bool?
+        /// When the desk last wrote anything.
+        public var outputAt: Double?
+        /// Whether the agent reports for itself; without it, "done" is a
+        /// guess from output stopping.
+        public var signaled: Bool?
+        public init(name: String, running: Bool, activity: String, turnEndedAt: Double? = nil,
+                    needsYou: Bool? = nil, outputAt: Double? = nil, signaled: Bool? = nil) {
             self.name = name; self.running = running; self.activity = activity
+            self.turnEndedAt = turnEndedAt; self.needsYou = needsYou; self.outputAt = outputAt; self.signaled = signaled
         }
+    }
+
+    /// What a desk added to its screen between two reads: everything after
+    /// the old screen's last real line, without the agent's input box and
+    /// status rows at the foot. Paragraph breaks are kept. Falls back to the
+    /// lines that weren't there before when the old screen can't be found
+    /// (the agent cleared or redrew it).
+    public static func reply(before: String, after: String) -> String {
+        func rows(_ s: String) -> [String] {
+            var r = s.components(separatedBy: "\n").map { l -> String in var t = l; while t.last == " " { t.removeLast() }; return t }
+            while r.last?.isEmpty == true { r.removeLast() }
+            return r
+        }
+        let b = rows(before), a = rows(after)
+        // The foot both screens share is the agent's input box and status
+        // rows, the same but for numbers ticking in them. An agent without
+        // one shares nothing there, and keeps every row.
+        func masked(_ l: String) -> String { String(l.map { $0.isNumber ? "#" : $0 }) }
+        var footer = 0
+        while footer < min(a.count, b.count, 12),
+              masked(a[a.count - 1 - footer]) == masked(b[b.count - 1 - footer]) { footer += 1 }
+        // Only an input box is a footer: a prompt row or a box border. Two
+        // replies that happen to end alike are not one.
+        func isBox(_ l: String) -> Bool {
+            let t = l.trimmingCharacters(in: .whitespaces)
+            return t.hasPrefix("❯") || t.hasPrefix("›") || t.filter({ $0 == "─" }).count >= 8
+        }
+        if footer == b.count || !a.suffix(footer).contains(where: isBox) { footer = 0 }
+        let bBody = Array(b.dropLast(min(footer, b.count)))
+        let aBody = Array(a.dropLast(min(footer, a.count)))
+        // The old screen's last few real lines, found together in the new one.
+        let anchor = Array(bBody.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.suffix(3))
+        var start: Int?
+        if !anchor.isEmpty, let lastLine = anchor.last {
+            for i in stride(from: aBody.count - 1, through: 0, by: -1) where aBody[i] == lastLine {
+                // Check the lines before it match too, ignoring blanks.
+                let prior = aBody[..<i].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.suffix(anchor.count - 1)
+                if Array(prior) == Array(anchor.dropLast()) { start = i + 1; break }
+            }
+        }
+        var out: [String]
+        if let s = start { out = Array(aBody[s...]) }
+        else { out = ScreenChange.newLines(before: b, after: a, footer: 0).filter { !aBody.isEmpty && aBody.contains($0) } }
+        while out.first?.trimmingCharacters(in: .whitespaces).isEmpty == true { out.removeFirst() }
+        while out.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { out.removeLast() }
+        return out.joined(separator: "\n")
+    }
+
+    /// `coldfall-cli wait`: whether a desk has finished what it was asked
+    /// since `since`.
+    public enum WaitResult: Equatable {
+        /// Its turn ended. `guessed` when the agent doesn't report and the
+        /// output simply stopped.
+        case done(guessed: Bool)
+        case needsYou
+        case stopped
+    }
+
+    /// Output stopping this long is taken as done for an agent that doesn't
+    /// say so itself.
+    public static let quietMeansDone: TimeInterval = 10
+
+    public static func waitResult(_ d: DeskState, since: Double, now: Double) -> WaitResult? {
+        guard d.running else { return .stopped }
+        if d.needsYou == true { return .needsYou }
+        if let t = d.turnEndedAt, t > since { return .done(guessed: false) }
+        if d.signaled != true, let o = d.outputAt, o > since, now - o >= quietMeansDone {
+            return .done(guessed: true)
+        }
+        return nil
     }
 
     public struct Status: Codable, Equatable {

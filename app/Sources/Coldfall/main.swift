@@ -1435,7 +1435,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 RemoteOpen.answer(r, a)
             }
         }
-        if changed || now.timeIntervalSince(lastRemoteStatus) >= 3 {
+        // Every second: `coldfall-cli wait` is watching it.
+        if changed || now.timeIntervalSince(lastRemoteStatus) >= 1 {
             lastRemoteStatus = now
             RemoteOpen.writeStatus(RemoteOpen.Status(desks: desks.map { d in
                 let s = sessions[d.name]
@@ -1446,7 +1447,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 case .blocked?: act = "blocked"
                 default: act = "quiet"
                 }
-                return RemoteOpen.DeskState(name: d.name, running: s.map { $0.started || $0.resolving } ?? false, activity: act)
+                return RemoteOpen.DeskState(name: d.name, running: s.map { $0.started || $0.resolving } ?? false, activity: act,
+                                            turnEndedAt: s?.turnEndedAt?.timeIntervalSince1970,
+                                            needsYou: s?.isBlocked, outputAt: s?.lastOutput?.timeIntervalSince1970,
+                                            signaled: s?.isSignaled)
             }))
         }
     }

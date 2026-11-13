@@ -8,6 +8,14 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Hand a desk work and wait for the answer.** `coldfall-cli wait <desk>` returns when the
+  desk's turn ends or it needs you (exit 0 done, 2 needs you, 3 still working after
+  `--timeout`, default ten minutes). `coldfall-cli ask <desk> "message"` sends it, waits, and
+  prints just what the desk added: its reply, without the agent's input box. An agent that
+  doesn't report for itself counts as done once its output has been quiet for ten seconds,
+  and `wait` says that was a guess.
+
 ## [0.3.31] - 2026-11-13
 
 Everything from the keyboard, and a look without switching.

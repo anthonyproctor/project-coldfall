@@ -2926,6 +2926,41 @@ do {
     eq("keys: a broken file says so", KeyMap.parse(json: "[1,2]").problems.count, 1)
 }
 
+// MARK: - wait and ask
+
+do {
+    typealias D = RemoteOpen.DeskState
+    let t0 = 1000.0
+    eq("wait: a turn ending after the send is done", RemoteOpen.waitResult(D(name: "a", running: true, activity: "ready", turnEndedAt: 1005, signaled: true), since: t0, now: 1006), .done(guessed: false))
+    eq("wait: one from before the send isn't", RemoteOpen.waitResult(D(name: "a", running: true, activity: "working", turnEndedAt: 990, signaled: true), since: t0, now: 1006), nil)
+    eq("wait: a question for you ends the wait", RemoteOpen.waitResult(D(name: "a", running: true, activity: "blocked", needsYou: true), since: t0, now: 1006), .needsYou)
+    eq("wait: a stopped desk ends it", RemoteOpen.waitResult(D(name: "a", running: false, activity: "quiet"), since: t0, now: 1006), .stopped)
+    eq("wait: an agent that doesn't report is done when it goes quiet",
+       RemoteOpen.waitResult(D(name: "a", running: true, activity: "quiet", outputAt: 1003, signaled: false), since: t0, now: 1003 + RemoteOpen.quietMeansDone), .done(guessed: true))
+    eq("wait: but not while output is fresh",
+       RemoteOpen.waitResult(D(name: "a", running: true, activity: "working", outputAt: 1003, signaled: false), since: t0, now: 1005), nil)
+    eq("wait: a reporting agent's quiet isn't taken as done",
+       RemoteOpen.waitResult(D(name: "a", running: true, activity: "quiet", outputAt: 1003, signaled: true), since: t0, now: 1100), nil)
+    let old = try? JSONDecoder().decode(D.self, from: Data(#"{"name":"a","running":true,"activity":"quiet"}"#.utf8))
+    check("wait: an older app's status still reads", old?.turnEndedAt == nil && old?.name == "a")
+
+    let foot = "\n────\n❯ \n────\n  status\n  mode"
+    let before = "● earlier answer\n\n> previous question\n\n● previous reply line" + foot
+    let after = "● earlier answer\n\n> previous question\n\n● previous reply line\n\n> new question\n\n● First paragraph.\n\n  Second paragraph." + foot
+    eq("ask: the reply is what came after, breaks kept, footer dropped",
+       RemoteOpen.reply(before: before, after: after), "> new question\n\n● First paragraph.\n\n  Second paragraph.")
+    eq("ask: an agent with no input box keeps its last rows",
+       RemoteOpen.reply(before: "● starting bot\n  sh bot.sh\n$ sh bot.sh", after: "● starting bot\n  sh bot.sh\n$ sh bot.sh\n● Reply to: hi\n\n  A second paragraph."),
+       "● Reply to: hi\n\n  A second paragraph.")
+    eq("ask: a status row whose numbers tick is still the footer",
+       RemoteOpen.reply(before: "old\n❯\nctx 40% $1.20", after: "old\nnew line\n❯\nctx 41% $1.35"), "new line")
+    eq("ask: two replies ending alike aren't a footer",
+       RemoteOpen.reply(before: "$ run\n● Reply to: one\n\n  Same ending.", after: "$ run\n● Reply to: one\n\n  Same ending.\n● Reply to: two\n\n  Same ending."),
+       "● Reply to: two\n\n  Same ending.")
+    eq("ask: a redrawn screen falls back to the new lines",
+       RemoteOpen.reply(before: "a\nb\nc" + foot, after: "x\ny\nz" + foot), "x\ny\nz")
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

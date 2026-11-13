@@ -22,6 +22,42 @@ func out(_ any: Any) {
        let s = String(data: d, encoding: .utf8) { print(s) }
 }
 
+/// One request to the running Coldfall and its answer, or a line saying why not.
+func remote(_ r: RemoteOpen.Request, timeout: TimeInterval = 10) -> RemoteOpen.Answer? {
+    guard RemoteOpen.status() != nil else { print("Project Coldfall isn't running. Open the app on the Mac first."); return nil }
+    do { try RemoteOpen.submit(r) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); return nil }
+    guard let a = RemoteOpen.wait(for: r, timeout: timeout) else {
+        print("Coldfall didn't answer within \(Int(timeout)) seconds, so the request was withdrawn."); return nil
+    }
+    return a
+}
+
+/// Wait until `desk` has finished since `since`, needs you, or stops.
+/// Prints what happened; returns the exit code.
+func waitFor(_ desk: String, since: Double, timeout: TimeInterval) -> (code: Int32, result: RemoteOpen.WaitResult?) {
+    let until = Date().addingTimeInterval(timeout)
+    while Date() < until {
+        guard let st = RemoteOpen.status() else { print("Project Coldfall isn't running."); return (1, nil) }
+        guard let d = st.desks.first(where: { $0.name == desk }) else { print("There's no desk called \"\(desk)\"."); return (1, nil) }
+        if let r = RemoteOpen.waitResult(d, since: since, now: Date().timeIntervalSince1970) {
+            switch r {
+            case .done(let guessed):
+                print(guessed ? "\(desk) went quiet, so it's probably done (it doesn't report for itself)." : "\(desk) is done.")
+                return (0, r)
+            case .needsYou:
+                print("\(desk) is waiting on a question for you. `coldfall-cli read \(desk)` shows it.")
+                return (2, r)
+            case .stopped:
+                print("\(desk) isn't running.")
+                return (1, r)
+            }
+        }
+        Thread.sleep(forTimeInterval: 1)
+    }
+    print("\(desk) is still working after \(Int(timeout)) seconds. Nothing was interrupted.")
+    return (3, nil)
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first ?? "help" {
 
@@ -213,6 +249,44 @@ case "send":
     print(a.message)
     exit(a.outcome == .sent ? 0 : 1)
 
+case "wait":
+    // Until a desk finishes, needs you, or --timeout seconds (default 600).
+    // Exit 0 done, 2 needs you, 3 still working, 1 otherwise.
+    let rest = Array(args.dropFirst())
+    guard let name = rest.first(where: { !$0.hasPrefix("--") }) else { print("usage: coldfall-cli wait <desk> [--timeout S]"); exit(2) }
+    var timeout: TimeInterval = 600
+    if let k = rest.firstIndex(of: "--timeout"), k + 1 < rest.count, let t = Double(rest[k + 1]) { timeout = t }
+    // A turn that ended in the last moment counts: wait is often run just
+    // after the send that started it.
+    exit(waitFor(name, since: Date().timeIntervalSince1970 - 2, timeout: timeout).code)
+
+case "ask":
+    // Send a desk a message, wait for its turn to end, and print what it
+    // added to its screen. For an agent handing work to another.
+    let rest = Array(args.dropFirst())
+    guard rest.count >= 2 else { print("usage: coldfall-cli ask <desk> \"message\" [--timeout S]"); exit(2) }
+    let name = rest[0]
+    var timeout: TimeInterval = 600
+    var words = Array(rest.dropFirst())
+    if let k = words.firstIndex(of: "--timeout"), k + 1 < words.count, let t = Double(words[k + 1]) {
+        timeout = t; words.removeSubrange(k...(k + 1))
+    }
+    let text = words.joined(separator: " ")
+    guard let before = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)) else { exit(1) }
+    guard before.outcome == .read else { print(before.message); exit(1) }
+    let since = Date().timeIntervalSince1970
+    guard let sent = remote(RemoteOpen.Request(desk: name, action: "send", text: text), timeout: ActivityState.draftHold + 15) else { exit(1) }
+    guard sent.outcome == .sent else { print(sent.message); exit(1) }
+    // Give the agent a moment to start before watching for the end.
+    Thread.sleep(forTimeInterval: 2)
+    let w = waitFor(name, since: since, timeout: timeout)
+    if let after = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)), let t = after.text {
+        let reply = RemoteOpen.reply(before: before.text ?? "", after: t)
+        print("")
+        print(reply.isEmpty ? RemoteOpen.lastLines(t, lines: 40) : reply)
+    }
+    exit(w.code)
+
 case "running":
     // What the running Coldfall says about its desks: which are running, and
     // whether each is working or has an answer waiting.
@@ -256,6 +330,8 @@ default:
       running            which desks the running Coldfall has going, and how each is doing
       read <desk> [--lines N]  a desk's screen as text, without opening it
       send <desk> "message"    type a message into a desk's agent and press Enter
+      wait <desk> [--timeout S]  until it's done or needs you (exit 0 done, 2 needs you, 3 still working)
+      ask <desk> "message"     send, wait for it to finish, and print what it added
       holders [end <desk>]  desks kept running outside the app; end one
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
