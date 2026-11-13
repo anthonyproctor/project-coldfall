@@ -1638,6 +1638,24 @@ do {
            Transcripts.resumeCommand(Transcripts.Conversation(vendor: "claude", id: "x; rm -rf ~", path: "", folder: nil, modified: Date(), bytes: 1, title: nil, firstPrompt: nil)), nil)
         try? fm.removeItem(atPath: root)
     }
+    do {
+        let j = #"{"number":12,"title":"Cart totals","state":"OPEN","isDraft":false,"url":"https://example.com/pr/12","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://example.com/1"},{"name":"test","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/2"},{"name":"lint","status":"IN_PROGRESS","conclusion":""},{"context":"deploy/preview","state":"ERROR","targetUrl":"https://example.com/3"},{"name":"docs","status":"COMPLETED","conclusion":"SKIPPED"}]}"#
+        let pr = PullRequest.parse(j)
+        eq("pr: its number", pr?.number, 12)
+        eq("pr: what failed, a check run and a commit status alike", pr?.failed.map(\.name), ["test", "deploy/preview"])
+        eq("pr: what's still running", pr?.pending.map(\.name), ["lint"])
+        eq("pr: what passed (skipped isn't passed)", pr?.passed.map(\.name), ["build"])
+        eq("pr: one line", pr?.summary, "PR #12 · 2 checks failing · changes requested")
+        check("pr: the fix message names each failing check and its link",
+              pr?.fixChecksMessage?.contains("- test (https://example.com/2)") == true && pr?.fixChecksMessage?.contains("- deploy/preview") == true)
+        check("pr: and asks not to push yet", pr?.fixChecksMessage?.contains("Don't push") == true)
+        let ok = PullRequest.parse(#"{"number":3,"title":"t","state":"OPEN","isDraft":true,"url":"u","reviewDecision":"","statusCheckRollup":[{"name":"a","status":"COMPLETED","conclusion":"SUCCESS"}]}"#)
+        eq("pr: all green", ok?.summary, "PR #3 · draft · all 1 checks passed")
+        eq("pr: nothing failing, nothing to fix", ok?.fixChecksMessage, nil)
+        eq("pr: merged says so", PullRequest.parse(#"{"number":4,"state":"MERGED"}"#)?.summary, "PR #4 · merged")
+        eq("pr: not JSON, no pull request", PullRequest.parse("no pull requests found"), nil)
+        eq("pr: no gh, no answer", PullRequest.fetch(folder: "/srv/demo", gh: nil), nil)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

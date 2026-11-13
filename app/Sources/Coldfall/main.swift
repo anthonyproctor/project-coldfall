@@ -785,7 +785,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     me.changes.show(desk: d.name, folder: "/srv/demo/work", files: files, lines: lines,
                                     comments: [Changes.Comment(file: "Sources/Parser/Invoice.swift", line: 45, quote: "return Invoice.empty",
                                                                text: "An empty file should still be nil.")],
-                                    size: NSSize(width: 940, height: 520))
+                                    size: NSSize(width: 940, height: 520),
+                                    pr: PullRequest.parse(#"{"number":12,"title":"Cart totals","state":"OPEN","isDraft":false,"url":"https://example.com","reviewDecision":"","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}"#))
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         guard let pv = me.changes.contentView,
                               let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }

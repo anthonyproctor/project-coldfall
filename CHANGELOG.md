@@ -9,6 +9,10 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **The pull request and its checks, in Changes.** When the desk's branch has a pull request,
+  the top of Changes says "PR #12 · 2 checks failing" (click to open it), and **Send Failing
+  Checks to** the desk asks the agent to find the cause and fix it, without pushing. It asks
+  your own `gh`, and only when you open or refresh Changes: no background calls to GitHub.
 - **Conversations** (**Desks ▸ Conversations…**, ⇧⌘H): every conversation Claude Code and
   Codex have had in the desk's folder, with when, how big, and the first thing you asked.
   Type to search everything said in them. **Open in a Split** resumes one in a shell beside

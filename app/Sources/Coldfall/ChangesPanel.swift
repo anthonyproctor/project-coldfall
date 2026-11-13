@@ -29,6 +29,10 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
     /// The folder now, for the same comparison.
     private var turnNow: String?
     private var lastTurn: Bool { scope.selectedSegment == 0 && turnBase != nil }
+    /// The branch's pull request and its checks, when there is one.
+    private let prLine = NSButton(title: "", target: nil, action: nil)
+    private let fixBtn = NSButton(title: "Send Failing Checks to Agent", target: nil, action: nil)
+    private var pr: PullRequest?
 
     private var desk = ""
     private var folder = ""
@@ -122,7 +126,17 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
         scope.target = self; scope.action = #selector(scopeChanged)
         scope.controlSize = .small
         scope.selectedSegment = 1
-        let head = NSStackView(views: [heading, sub, NSView(), scope, refreshBtn])
+        prLine.isBordered = false
+        prLine.bezelStyle = .inline
+        prLine.font = .systemFont(ofSize: 12, weight: .medium)
+        prLine.target = self; prLine.action = #selector(openPR)
+        prLine.toolTip = "Open the pull request in your browser"
+        prLine.isHidden = true
+        fixBtn.bezelStyle = .rounded
+        fixBtn.controlSize = .small
+        fixBtn.target = self; fixBtn.action = #selector(sendFix)
+        fixBtn.isHidden = true
+        let head = NSStackView(views: [heading, sub, prLine, fixBtn, NSView(), scope, refreshBtn])
         head.orientation = .horizontal
         head.alignment = .firstBaseline
         head.spacing = 10
@@ -193,8 +207,10 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
     }
 
     /// For --snapshot: this content, nothing read from disk.
-    func show(desk: String, folder: String, files: [Changes.File], lines: [Changes.Line], comments: [Changes.Comment], size: NSSize) {
+    func show(desk: String, folder: String, files: [Changes.File], lines: [Changes.Line], comments: [Changes.Comment], size: NSSize,
+              pr: PullRequest? = nil) {
         self.desk = desk; self.folder = folder
+        showPR(pr)
         heading.stringValue = "Changes  ·  \(desk)"
         sub.stringValue = folder
         panel.setContentSize(size)
@@ -212,6 +228,22 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
 
     @objc private func scopeChanged() { current = nil; reload() }
 
+    private func showPR(_ p: PullRequest?) {
+        pr = p
+        prLine.isHidden = p == nil
+        fixBtn.isHidden = p?.fixChecksMessage == nil
+        guard let p else { return }
+        prLine.title = p.summary
+        prLine.contentTintColor = !p.failed.isEmpty ? .systemRed : (!p.pending.isEmpty ? .systemOrange : (p.passed.isEmpty ? Theme.ui.dimText : .systemGreen))
+        fixBtn.title = p.failed.count == 1 ? "Send Failing Check to \(desk)" : "Send Failing Checks to \(desk)"
+    }
+    @objc private func openPR() { if let u = pr.flatMap({ URL(string: $0.url) }) { NSWorkspace.shared.open(u) } }
+    @objc private func sendFix() {
+        guard let m = pr?.fixChecksMessage else { return }
+        let r: (sent: Bool, message: String) = onSend?(desk, m) ?? (false, "Nothing to send to.")
+        note.stringValue = r.sent ? "Sent the failing checks to \(desk)." : r.message
+    }
+
     @objc private func reload() {
         generation += 1
         let gen = generation, folder = self.folder, keep = current?.path
@@ -226,8 +258,12 @@ final class ChangesPanel: NSObject, NSTextFieldDelegate {
             } else {
                 list = Changes.files(in: folder)
             }
+            // The branch's pull request, if GitHub has one. A network call
+            // through your own gh, made only here: when you look.
+            let pull = list == nil ? nil : PullRequest.fetch(folder: folder)
             DispatchQueue.main.async { [weak self] in
                 guard let self, gen == self.generation else { return }
+                self.showPR(pull)
                 self.turnNow = now
                 guard let list else {
                     self.files = []; self.current = nil
