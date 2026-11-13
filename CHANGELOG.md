@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.30] - 2026-11-12
+
+Know which desk needs you, and reach it from anywhere.
+
 ### Added
 - **Read a desk and send it work from outside the app.** `coldfall-cli read <desk>` prints a
   desk's screen as text, scrollback included (`--lines N`). `coldfall-cli send <desk> "message"`
@@ -748,7 +752,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...HEAD
+[0.3.30]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...v0.3.28
 [0.3.27]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.26...v0.3.27

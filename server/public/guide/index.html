@@ -350,6 +350,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     </figure>
     <ul>
       <li><strong>A green check</strong> on a desk means it finished while you were looking at something else, and its screen changed. It might want an answer, or it's just done. Its row also moves up to the top of the list, under the green line, until you've looked at it.</li>
+      <li><strong>Orange means it needs you.</strong> A desk stopped on a question (a permission, a choice) turns orange and stays that way until you answer it. Green means it finished. With Coldfall in the background you get a notification for either; click it to go there. Settings, Agents turns it off.</li>
       <li><strong>Make green exact.</strong> Settings, Agents, <strong>Let agents say when they're done</strong>. Claude Code and Codex then tell Coldfall when a desk finishes or needs you, so a desk turns green on the agent's word rather than a guess from its output. It writes one line to a file on your Mac and sends nothing. Codex asks you to trust the new hook once: run <code>/hooks</code> in a Codex desk.</li>
       <li><strong>The green line</strong> at the top names every waiting desk, oldest first. Click it, or press <kbd>⌘0</kbd>, to go to the one that's waited longest. The <strong>×</strong> clears it without visiting them.</li>
       <li><strong>Jump around</strong> with <kbd>⌘1</kbd> to <kbd>⌘9</kbd> for your first nine desks, or <kbd>⌘P</kbd> to find any desk or file by a few letters.</li>
@@ -405,6 +406,8 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <h3>Desks that keep running when Coldfall quits</h3>
     <p>Turn on <strong>Keep desks running when Coldfall quits</strong> in <strong>Settings ▸ Desks</strong>. Desks you start from then on carry on working while Coldfall is closed, updating or crashed, and come back exactly as they were when you open it. To try it on one desk first, add <code>keep_running = true</code> under that desk in desks.toml.</p>
     <p>Quitting then asks whether to keep them running or end them. Keeping them is the default; each agent holds about 400 to 600 MB of memory while Coldfall is closed. <code>coldfall-cli holders</code> lists them, and <code>coldfall-cli holders end &lt;desk&gt;</code> ends one.</p>
+    <h3>From your phone, or another computer</h3>
+    <p>Ask any running desk to open, check on or hand work to another. It uses <code>coldfall-cli open &lt;desk&gt;</code>, <code>coldfall-cli read &lt;desk&gt;</code> (the desk's screen as text) and <code>coldfall-cli send &lt;desk&gt; "message"</code> (typed in and sent, as if by you). A send waits while you're halfway through typing into that desk, and never goes to a desk waiting on a question, so it can't answer a permission prompt for you.</p>
     <h3>After a restart of the Mac</h3>
     <p>A restart ends every desk. Coldfall remembers which ones were running, and the next time it opens it offers them back with one button. Each picks up its conversation.</p>
 
