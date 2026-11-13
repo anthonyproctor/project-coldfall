@@ -84,7 +84,7 @@ final class SidebarView: NSView {
 
     private var rows: [Int: DeskRow] = [:]
     /// The Groups section's rows, with the desks each one counts.
-    private var groupRows: [(name: String, members: [String], row: GroupRow)] = []
+    private var groupRows: [(group: String?, name: String, members: [String], row: GroupRow)] = []
     private var selected = -1
     private(set) var contentHeight: CGFloat = 0
     var collapsed: Set<String> = []
@@ -101,14 +101,11 @@ final class SidebarView: NSView {
             // The line and the header counts change the layout, so a change
             // in who is waiting rebuilds. Not mid-drag: that would pull the
             // row out from under the pointer. The next tick catches up.
-            if q != waiting, dropLine.superview == nil, let d = lastDesks {
-                waiting = q
-                build(desks: d)
-            } else {
-                // A desk starting, stopping, or going to work changes its
-                // group's count and mark without changing who is waiting.
-                for g in groupRows { g.row.configure(name: g.name, desks: g.members.map { status[$0] ?? DeskStatus() }, selected: g.row.selected) }
-            }
+            waiting = q
+            // A desk starting, stopping, going to work or waiting on you
+            // changes its group's count and mark. Nothing moves, so there
+            // is no rebuild and no row shifts under the pointer.
+            for g in groupRows { g.row.configure(name: g.name, desks: g.members.map { status[$0] ?? DeskStatus() }, selected: g.row.selected) }
         }
     }
     /// A desk's right-click menu, for the command palette.
@@ -127,6 +124,12 @@ final class SidebarView: NSView {
 
     private(set) var lastDesks: [Desk]?
     private(set) var lastSelected: Int?
+
+    /// Groups in the order shown: the live order when on, else yours.
+    private func order0(_ desks: [Desk]) -> [String?] {
+        let saved = DeskOrder.groups(desks)
+        return groupOrder.map { live in live.filter { saved.contains($0) } + saved.filter { !live.contains($0) } } ?? saved
+    }
 
     func build(desks: [Desk]) {
         lastDesks = desks
@@ -176,11 +179,12 @@ final class SidebarView: NSView {
         groupTitle.autoresizingMask = [.width]
         addSubview(groupTitle)
         y += 22
-        let selectedGroup: String?? = selected >= 0 && selected < desks.count ? .some(desks[selected].group) : nil
-        // The live order, if on, with any group it doesn't know yet (just
-        // created) after it in your order. Both sections follow it.
-        let saved = DeskOrder.groups(desks)
-        let order = groupOrder.map { live in live.filter { saved.contains($0) } + saved.filter { !live.contains($0) } } ?? saved
+        // The group on show: the selected desk's, else the first with a
+        // desk in it. The Desks section lists that group only.
+        let order = order0(desks)
+        let withDesks = order.filter { g in desks.contains { $0.group == g && !$0.hidden } }
+        let selectedGroup: String?? = selected >= 0 && selected < desks.count && !desks[selected].hidden
+            ? .some(desks[selected].group) : withDesks.first
         for g in order {
             let members = desks.filter { $0.group == g && !$0.hidden }
             guard !members.isEmpty else { continue }
@@ -189,8 +193,19 @@ final class SidebarView: NSView {
             gr.configure(name: g ?? "General", desks: members.map { status[$0.name] ?? DeskStatus() },
                          selected: selectedGroup == .some(g))
             gr.onClick = { [weak self] in self?.onSelectGroup?(g) }
+            if let g {
+                gr.onRename = { [weak self] in self?.onRenameGroup?(g) }
+                gr.onSort = { [weak self] in self?.onSortDesks?() }
+                // While groups sort themselves, dragging one would edit an
+                // order you can't see, so groups don't drag then.
+                if !liveOn {
+                    gr.onDragMoved = { [weak self] p in self?.groupDragMoved(g, to: p) }
+                    gr.onDragEnded = { [weak self] p in self?.groupDragEnded(g, at: p) }
+                }
+                spans.append((g, gr.frame.minY, gr.frame.maxY))
+            }
             addSubview(gr)
-            groupRows.append((g ?? "General", members.map(\.name), gr))
+            groupRows.append((g, g ?? "General", members.map(\.name), gr))
             y += 32
         }
         y += 10
@@ -212,38 +227,11 @@ final class SidebarView: NSView {
         }
         if !zones.pinned.isEmpty { y += 8 }
 
-        for g in order {
-            let all = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden }
-            // A desk shown in a zone above is not shown again here. A group
-            // whose desks are all up there still shows its header, so the
-            // group doesn't seem to vanish.
-            let members = all.filter { !zones.contains($0.offset) }
-            if all.isEmpty || (g == nil && members.isEmpty) { continue }
-
-            if let g {
-                let isDown = !collapsed.contains(g)
-                let h = GroupHeader(frame: NSRect(x: 10, y: y, width: w - 20, height: 20))
-                h.autoresizingMask = [.width]
-                // Folded, a group would hide a waiting desk entirely.
-                let inside = isDown ? [] : members.filter { waiting.contains($0.element.name) }.map(\.element.name)
-                h.configure(title: g, expanded: isDown, waiting: inside.count,
-                            asking: inside.contains { status[$0]?.activity == .blocked }, running: 0)
-                h.onClick = { [weak self] in self?.onToggleGroup?(g) }
-                h.onRename = { [weak self] in self?.onRenameGroup?(g) }
-                h.onSort = { [weak self] in self?.onSortDesks?() }
-                // While groups sort themselves, dragging one would edit an
-                // order you can't see, so headers don't drag then.
-                if !liveOn {
-                    h.onDragMoved = { [weak self] p in self?.groupDragMoved(g, to: p) }
-                    h.onDragEnded = { [weak self] p in self?.groupDragEnded(g, at: p) }
-                }
-                addSubview(h)
-                headers.append((g, h))
-                y += 22
-                if !isDown { spans.append((g, h.frame.minY, y)); y += 4; continue }
-            }
-            let top = y - 22
-
+        // Only the group on show. Its name is the lit row above, so there
+        // is no header here; a desk moves to another group by dragging it
+        // onto that group's row.
+        for g in order where selectedGroup == .some(g) {
+            let members = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden && !zones.contains($0.offset) }
             for (i, d) in members {
                 let r = row(i, d, indent: 4, y: y, width: w)
                 r.onHide = { [weak self] in self?.onHideDesk?(i) }
@@ -251,7 +239,6 @@ final class SidebarView: NSView {
                 r.onDragEnded = { [weak self] p in self?.dragEnded(from: i, at: p) }
                 y += DeskRow.height + 2
             }
-            if let g { spans.append((g, top, y)) }
             y += 8
         }
 
@@ -380,8 +367,10 @@ final class SidebarView: NSView {
     /// What a drop at `p` means: onto a header is the end of that group;
     /// onto a row is before or after it, by which half the pointer is in.
     private func drop(at p: NSPoint, from: Int) -> (DeskDrop, CGFloat)? {
-        for h in headers where h.view.frame.insetBy(dx: -10, dy: -2).contains(p) {
-            return (.endOfGroup(h.group), h.view.frame.maxY)
+        // Onto a group's row: into that group, at its end.
+        for g in groupRows where g.row.frame.contains(p) {
+            if lastDesks?.indices.contains(from) == true, lastDesks?[from].group == g.group { return nil }
+            return (.endOfGroup(g.group), g.row.frame.maxY)
         }
         let ordered = rows.filter { !zoneRows.contains($0.key) }.sorted { $0.value.frame.minY < $1.value.frame.minY }
         guard let first = ordered.first else { return nil }
@@ -751,6 +740,37 @@ final class GroupRow: NSView {
     }
     override func mouseEntered(with e: NSEvent) { hovering = true }
     override func mouseExited(with e: NSEvent) { hovering = false }
-    override func mouseUp(with e: NSEvent) { onClick?() }
+    // A click goes to the group; a drag of more than a few points moves it.
+    var onRename: (() -> Void)?
+    var onSort: (() -> Void)?
+    var onDragMoved: ((NSPoint) -> Void)?
+    var onDragEnded: ((NSPoint) -> Void)?
+    private var downAt: NSPoint?
+    private var dragging = false
+    override func mouseDown(with e: NSEvent) { downAt = e.locationInWindow; dragging = false }
+    override func mouseDragged(with e: NSEvent) {
+        guard let start = downAt, onDragMoved != nil else { return }
+        let p = e.locationInWindow
+        if !dragging, hypot(p.x - start.x, p.y - start.y) > 4 { dragging = true; alphaValue = 0.45 }
+        if dragging, let sv = superview { onDragMoved?(sv.convert(p, from: nil)) }
+    }
+    override func mouseUp(with e: NSEvent) {
+        defer { downAt = nil; dragging = false; alphaValue = 1 }
+        if dragging, let sv = superview { onDragEnded?(sv.convert(e.locationInWindow, from: nil)) }
+        else if downAt != nil { onClick?() }
+    }
+    override func rightMouseDown(with e: NSEvent) {
+        guard onRename != nil else { return }
+        let m = NSMenu()
+        let it = NSMenuItem(title: "Rename Group…", action: #selector(renameIt), keyEquivalent: "")
+        it.target = self
+        m.addItem(it)
+        let s = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortIt), keyEquivalent: "")
+        s.target = self
+        m.addItem(s)
+        NSMenu.popUpContextMenu(m, with: e, for: self)
+    }
+    @objc private func renameIt() { onRename?() }
+    @objc private func sortIt() { onSort?() }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }

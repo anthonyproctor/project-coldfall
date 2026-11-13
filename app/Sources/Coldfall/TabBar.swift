@@ -37,6 +37,8 @@ final class TabBar: NSView {
     private var all: [Tab] = []
     private var overflow: [Tab] = []
     private let more = NSButton()
+    /// Takes no room while there is nothing behind it.
+    private lazy var moreGone = more.widthAnchor.constraint(equalToConstant: 0)
     /// Narrower than this and a tab's name is unreadable.
     private static let tabRoom: CGFloat = 104
 
@@ -71,6 +73,7 @@ final class TabBar: NSView {
         more.setContentCompressionResistancePriority(.required, for: .horizontal)
         more.isHidden = true
         addSubview(more)
+        moreGone.isActive = true
 
         prompt.target = self; prompt.action = #selector(writePrompt)
         prompt.bezelStyle = .inline
@@ -111,6 +114,7 @@ final class TabBar: NSView {
         let tabs = fit.shown.compactMap { n in wanted.first { $0.name == n } }
         overflow = fit.more.compactMap { n in wanted.first { $0.name == n } }
         more.isHidden = overflow.isEmpty
+        moreGone.isActive = overflow.isEmpty
         if !overflow.isEmpty {
             // The count turns amber when a desk behind it needs you.
             let asking = overflow.contains { Mark($0.status) == .needsYou }

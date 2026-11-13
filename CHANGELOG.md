@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.35] - 2026-11-13
+
+Fixes to the new layout, and a shorter desk list.
+
+### Changed
+- **The Desks section lists the selected group only** (plus pinned desks). Click a group and
+  the list and the tabs both switch to it, so a long list of desks no longer scrolls. To
+  move a desk to another group, drag it onto that group's row. Groups are renamed, sorted
+  and reordered from their rows in the Groups section (right-click, or drag).
+
 ### Fixed
 - **Group marks keep up.** A group's running count and mark in the desk list now change the
   moment one of its desks starts, stops or goes to work. In 0.3.34 they only caught up when
@@ -911,7 +921,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.34...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.35...HEAD
+[0.3.35]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.34...v0.3.35
 [0.3.34]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.33...v0.3.34
 [0.3.33]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.32...v0.3.33
 [0.3.32]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...v0.3.32
