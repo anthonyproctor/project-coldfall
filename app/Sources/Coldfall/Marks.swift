@@ -84,6 +84,28 @@ final class MarkView: NSView {
     }
 }
 
+/// A desk's own colour (see DeskColor), as something to draw with.
+enum DeskTint {
+    static func color(_ value: String?) -> NSColor? {
+        guard let rgb = DeskColor.rgb(value) else { return nil }
+        return NSColor(srgbRed: CGFloat((rgb >> 16) & 0xff) / 255, green: CGFloat((rgb >> 8) & 0xff) / 255,
+                       blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
+    }
+    /// `base` with the desk's colour washed into it.
+    static func wash(_ base: NSColor, _ value: String?, amount: Double = DeskColor.wash) -> NSColor {
+        guard let t = color(value) else { return base }
+        return base.blended(withFraction: CGFloat(amount), of: t) ?? base
+    }
+    /// A small round swatch, for the Colour menu.
+    static func swatch(_ c: NSColor?) -> NSImage {
+        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { r in
+            let p = NSBezierPath(ovalIn: r.insetBy(dx: 1, dy: 1))
+            if let c { c.setFill(); p.fill() } else { NSColor.secondaryLabelColor.setStroke(); p.lineWidth = 1; p.stroke() }
+            return true
+        }
+    }
+}
+
 /// A desk's vendor, as a picture: the real logo from ~/.config/coldfall/icons
 /// when the person has put one there, otherwise a letter on the vendor's
 /// colour (or the desk's own emoji). Rounded, and cached by what it shows.

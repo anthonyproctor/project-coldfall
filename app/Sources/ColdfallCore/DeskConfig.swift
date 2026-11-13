@@ -58,6 +58,10 @@ public struct Desk {
     /// The badge in the desk list, if not the vendor's letter: one
     /// character or emoji (`icon` in desks.toml).
     public var icon: String?
+    /// The desk's own colour: a name from DeskColor.palette, or "#rrggbb".
+    /// Tints its pane, its tab and its row, so you can tell at a glance
+    /// which agent you are about to type into.
+    public var color: String?
     /// Whether this desk is held, given the global setting.
     public func keepsRunning(global: Bool) -> Bool {
         guard runtime != "shell" || command != nil else { return keepRunning ?? false }
@@ -422,6 +426,7 @@ public enum DeskConfig {
             case "hidden":  current?.hidden = val == "true"
             case "pinned":  current?.pinned = val == "true"
             case "icon":    current?.icon = val.isEmpty ? nil : String(val.prefix(2))
+            case "color", "colour": current?.color = DeskColor.rgb(val) == nil ? nil : val.lowercased()
             case "keep_running": current?.keepRunning = val == "true" ? true : (val == "false" ? false : nil)
             case "session": current?.session = UUID(uuidString: val) != nil ? val.lowercased() : nil
             case "cwd":     current?.cwd = val
@@ -573,6 +578,7 @@ public enum DeskConfig {
             if d.pinned { out += "pinned = true\n" }
             if let k = d.keepRunning { out += "keep_running = \(k)\n" }
             if let i = d.icon { out += "icon = \"\(TomlText.escape(i))\"\n" }
+            if let c = d.color { out += "color = \"\(TomlText.escape(c))\"\n" }
             if !d.mcpOff.isEmpty {
                 out += "mcp_off = [" + d.mcpOff.map { "\"\(TomlText.escape($0))\"" }.joined(separator: ", ") + "]\n"
             }

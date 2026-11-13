@@ -17,6 +17,7 @@ final class TabBar: NSView {
         let runtime: String
         let icon: String?
         let status: DeskStatus
+        var color: String? = nil
     }
 
     var onSelect: ((String) -> Void)?
@@ -199,6 +200,7 @@ private final class TabView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let mark = MarkView()
     private let close = NSButton()
+    private let bar = NSView()
     private var tab: TabBar.Tab?
     private var selected = false
     private var hovering = false { didSet { if hovering != oldValue { refresh() } } }
@@ -220,10 +222,18 @@ private final class TabView: NSView {
         close.toolTip = "Stop this desk"
         close.target = self; close.action = #selector(closeIt)
 
-        for v in [iconView, label, mark, close] as [NSView] {
+        for v in [iconView, label, mark, close, bar] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
+        bar.wantsLayer = true
+        bar.layer?.cornerRadius = 1
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            bar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+            bar.heightAnchor.constraint(equalToConstant: 2),
+        ])
         let tail = NSLayoutGuide()
         addLayoutGuide(tail)
         NSLayoutConstraint.activate([
@@ -263,6 +273,9 @@ private final class TabView: NSView {
         let ui = Theme.ui
         let running = tab?.status.running ?? false
         layer?.backgroundColor = selected ? ui.selected.cgColor : (hovering ? ui.hover.cgColor : NSColor.clear.cgColor)
+        // The desk's own colour, as a line under its tab.
+        bar.isHidden = tab?.color == nil
+        bar.layer?.backgroundColor = DeskTint.color(tab?.color)?.cgColor
         label.font = .systemFont(ofSize: 12.5, weight: selected ? .semibold : .regular)
         label.textColor = selected ? ui.text : (running ? ui.text.withAlphaComponent(0.82) : ui.dimText)
         // The × takes the mark's place under the pointer, so the tab keeps

@@ -9,6 +9,11 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **A colour for each desk.** Right-click a desk, **Colour**, and pick one of eight (or set
+  `color = "teal"` or `color = "#3aa0ff"` in desks.toml). The desk's pane takes it as its
+  outline, its header and a faint wash on the terminal; its tab gets a line under it and
+  its row a bar. So you can see which agent you are about to type into without reading
+  its name.
 - More groundwork for Ghostty's terminal, still off in every release: a pane view that hosts
   it (keys, input methods, mouse, paste, copy, resize, Coldfall's theme), tried with
   `--ghostty-demo` in a build made with `COLDFALL_GHOSTTY=1`.

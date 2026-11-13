@@ -54,6 +54,9 @@ final class DeskRow: NSView {
     /// Show this desk's screen over the current one (see PeekPanel).
     var onPeek: (() -> Void)?
     var onMarkUnread: (() -> Void)?
+    /// Give the desk a colour (a palette name), or nil to take it away.
+    var onColor: ((String?) -> Void)?
+    private var colorName: String?
     private let info = NSTextField(labelWithString: "")
     var asksResume = true
     /// Drag to reorder. Points are in the row's superview (the rail).
@@ -100,6 +103,7 @@ final class DeskRow: NSView {
 
     init(desk: Desk) {
         deskName = desk.name
+        colorName = desk.color
         runtime = desk.runtime
         label = desk.vendorLabel
         isDefault = desk.isDefault
@@ -169,9 +173,15 @@ final class DeskRow: NSView {
         // A soft rounded fill for the selected and hovered rows, VS Code's
         // treatment, rather than a hard full-width band.
         let fill: NSColor? = selected ? Theme.ui.selected : (hovering ? Theme.ui.hover : nil)
-        guard let fill else { return }
-        fill.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 9, yRadius: 9).fill()
+        if let fill {
+            fill.setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 9, yRadius: 9).fill()
+        }
+        // The desk's own colour, as a bar down the row's leading edge.
+        if let t = DeskTint.color(colorName) {
+            t.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 5, y: 6, width: 3, height: bounds.height - 12), xRadius: 1.5, yRadius: 1.5).fill()
+        }
     }
 
     func restyle() {
@@ -283,10 +293,34 @@ final class DeskRow: NSView {
                                      canMarkUnread: onMarkUnread != nil && Mark(status) != .done && Mark(status) != .needsYou)
         for e in entries {
             guard e.action != .separator else { m.addItem(NSMenuItem.separator()); continue }
+            if e.action == .color {
+                guard onColor != nil else { continue }
+                let item = NSMenuItem(title: e.title, action: nil, keyEquivalent: "")
+                item.image = e.symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+                let sub = NSMenu()
+                let none = NSMenuItem(title: "None", action: #selector(pickColor(_:)), keyEquivalent: "")
+                none.target = self
+                none.image = DeskTint.swatch(nil)
+                none.state = colorName == nil ? .on : .off
+                sub.addItem(none)
+                sub.addItem(.separator())
+                for c in DeskColor.palette {
+                    let it = NSMenuItem(title: c.name.capitalized, action: #selector(pickColor(_:)), keyEquivalent: "")
+                    it.target = self
+                    it.representedObject = c.name
+                    it.image = DeskTint.swatch(DeskTint.color(c.name))
+                    it.state = colorName == c.name ? .on : .off
+                    sub.addItem(it)
+                }
+                item.submenu = sub
+                m.addItem(item)
+                continue
+            }
             let sel: Selector
             switch e.action {
             case .peek:        sel = #selector(peek)
             case .markUnread:  sel = #selector(markUnread)
+            case .color:       continue
             case .reveal:      sel = #selector(reveal)
             case .makeDefault: sel = #selector(makeDefault)
             case .rename:      sel = #selector(rename)
@@ -330,6 +364,7 @@ final class DeskRow: NSView {
     @objc private func remove() { onRemove?() }
     @objc private func peek() { onPeek?() }
     @objc private func markUnread() { onMarkUnread?() }
+    @objc private func pickColor(_ item: NSMenuItem) { onColor?(item.representedObject as? String) }
     @objc private func rename() { onRename?() }
     @objc private func stop() { onStop?() }
     @objc private func mcp() { onMcp?() }

@@ -23,7 +23,7 @@ public enum DeskMenu {
     }
 
     public enum Action: String, Equatable {
-        case peek, markUnread, reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
+        case peek, markUnread, color, reveal, makeDefault, rename, inventory, mcp, askResume, stop, pin, unpin, hide, unhide, remove, separator
     }
 
     public struct Entry: Equatable {
@@ -87,6 +87,10 @@ public enum DeskMenu {
             out.append(.separator)
         }
         out.append(Entry(.rename, "Rename Desk…", symbol: "pencil"))
+        if !hidden {
+            out.append(Entry(.color, "Colour", subtitle: "Tints this desk's pane, tab and row, so you can tell which agent you're in.",
+                             symbol: "paintpalette"))
+        }
         if hasInventory, news == 0 {
             out.append(Entry(.inventory, "What This Desk Has…", symbol: "list.bullet.rectangle"))
         }

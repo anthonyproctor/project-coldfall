@@ -248,11 +248,13 @@ enum Theme {
         window.backgroundColor = ui.editor
     }
 
-    static func apply(to term: TerminalView) {
+    /// `wash`: a desk's own colour (see DeskColor), mixed faintly into the
+    /// background so each desk's terminal is its own shade.
+    static func apply(to term: TerminalView, wash: String? = nil) {
         let (skin, font) = current()
         let pal = skin.terminal
         term.font = font
-        term.nativeBackgroundColor = pal.background
+        term.nativeBackgroundColor = DeskTint.wash(pal.background, wash)
         term.nativeForegroundColor = pal.foreground
         term.caretColor = pal.cursor
         term.caretTextColor = pal.background

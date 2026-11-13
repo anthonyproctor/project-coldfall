@@ -459,6 +459,9 @@ final class PaneBox: NSView {
     var focused = true { didSet { if focused != oldValue { restyle() } } }
     let header = PaneHeader()
     private let card = NSView()
+    /// The desk's own colour: the card's outline and a wash on its header
+    /// and background, so the pane says which desk it is without being read.
+    var tint: String? { didSet { if tint != oldValue { restyle() } } }
     private weak var term: NSView?
 
     init(term: NSView) {
@@ -509,10 +512,18 @@ final class PaneBox: NSView {
     func restyle() {
         let ui = Theme.ui
         layer?.backgroundColor = ui.sidebar.cgColor
-        card.layer?.backgroundColor = Theme.current().skin.terminal.background.cgColor
+        card.layer?.backgroundColor = DeskTint.wash(Theme.current().skin.terminal.background, tint).cgColor
         let lit = showsFocus && focused
-        card.layer?.borderColor = (lit ? NSColor.controlAccentColor.withAlphaComponent(0.75) : ui.border).cgColor
-        card.layer?.borderWidth = lit ? 1.5 : 1
+        if let t = DeskTint.color(tint) {
+            // Its own colour all the time; brighter and thicker with focus.
+            card.layer?.borderColor = t.withAlphaComponent(lit || !showsFocus ? 0.9 : 0.45).cgColor
+            card.layer?.borderWidth = lit ? 2 : 1.5
+            header.layer?.backgroundColor = t.withAlphaComponent(0.16).cgColor
+        } else {
+            card.layer?.borderColor = (lit ? NSColor.controlAccentColor.withAlphaComponent(0.75) : ui.border).cgColor
+            card.layer?.borderWidth = lit ? 1.5 : 1
+            header.layer?.backgroundColor = NSColor.clear.cgColor
+        }
         alphaValue = (showsFocus && !focused) ? 0.78 : 1.0
         header.restyle()
     }
@@ -530,7 +541,16 @@ final class CardSplitView: NSSplitView {
 final class DeskSession {
     /// A var so a rename reaches a desk that is already running. The launch
     /// command was read when it started, so the running process is unaffected.
-    var desk: Desk
+    var desk: Desk { didSet { if desk.color != oldValue.color { applyColor() } } }
+
+    /// The desk's colour on every pane: terminal wash, card outline, header.
+    func applyColor() {
+        for p in panes {
+            Theme.apply(to: p.term, wash: desk.color)
+            p.box.tint = desk.color
+            p.box.restyle()
+        }
+    }
     /// Every pane reports process exit to the same delegate, so a shell pane
     /// closing is handled the same way the agent's own exit is.
     weak var processDelegate: LocalProcessTerminalViewDelegate? {
@@ -850,6 +870,7 @@ final class DeskSession {
         }
         markFocus()
         refreshHeaders()
+        applyColor()
     }
 
     /// The pane headers' buttons go to the controller, which owns splitting

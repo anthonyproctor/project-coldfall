@@ -219,6 +219,8 @@ It **follows the system** light/dark switch by default, repainting live — incl
 
 The unfocused pane dims rather than relying on the focus ring alone: the eye finds the bright pane without hunting for a border.
 
+**Give a desk its own colour** (right-click, Colour, or `color = "teal"` in desks.toml) and its pane takes that colour as an outline, a tinted header and a faint wash on the terminal, with a matching line under its tab and a bar on its row. With a dozen agents open, the expensive mistake is typing into the wrong one; a colour makes "which one am I in" something you see rather than read.
+
 A desk's vendor shows as a letter on the vendor's colour. Put `claude.png`, `codex.png` and so on in `~/.config/coldfall/icons/` and the desk list, tabs and pane headers show those pictures instead, as in the screenshot above; the logos are the vendors' own and do not ship with Project Coldfall.
 
 ```toml

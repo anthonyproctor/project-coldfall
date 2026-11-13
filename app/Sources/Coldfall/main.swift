@@ -256,6 +256,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.onToggleLive = { [weak self] in self?.toggleLiveRail() }
         sidebar.onSelectGroup = { [weak self] g in self?.goToGroup(g) }
         sidebar.onPinDesk = { [weak self] i, on in self?.pinDesk(i, on) }
+        sidebar.onColorDesk = { [weak self] i, c in self?.colorDesk(i, c) }
         sidebar.onAddOffer = { [weak self] rt in self?.addOfferedDesk(rt) }
         sidebar.onDismissOffer = { [weak self] rt in self?.dismissOffer(rt) }
         sidebar.build(desks: desks)
@@ -1735,6 +1736,16 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// Pin a desk to the top of the rail, or take it back off. Saved in
     /// desks.toml as `pinned = true`.
+    /// Give a desk its own colour, or take it away. Saved to desks.toml.
+    func colorDesk(_ i: Int, _ color: String?) {
+        guard desks.indices.contains(i), desks[i].color != color else { return }
+        desks[i].color = color
+        persist()
+        sessions[desks[i].name]?.desk = desks[i]
+        refreshRail()
+        refreshTabs(sidebar.status)
+    }
+
     func pinDesk(_ i: Int, _ on: Bool) {
         guard desks.indices.contains(i), desks[i].pinned != on else { return }
         desks[i].pinned = on
@@ -2341,10 +2352,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 Theme.paint(self.center, Theme.ui.sidebar)
                 self.tabs.restyle()
                 for s in self.sessions.values {
-                    for p in s.panes {
-                        Theme.apply(to: p.term)
-                        p.box.restyle()
-                    }
+                    s.applyColor()
                 }
                 self.sidebar.restyle()
                 self.tree.restyle()
@@ -2828,7 +2836,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let names = DeskTabs.list(desks, current: current, running: running)
         let list: [TabBar.Tab] = names.compactMap { n in
             guard let d = desks.first(where: { $0.name == n }) else { return nil }
-            return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus())
+            return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus(), color: d.color)
         }
         tabs.set(list, current: current)
     }

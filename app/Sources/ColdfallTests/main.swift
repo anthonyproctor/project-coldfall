@@ -1479,6 +1479,24 @@ do {
         eq("git: not a repository, no list", Changes.files(in: FileManager.default.temporaryDirectory.path + "/coldfall-none-\(UUID().uuidString)") == nil, true)
         try? FileManager.default.removeItem(atPath: repo)
     }
+    do {
+        eq("colour: a palette name", DeskColor.rgb("teal"), 0x39C5BB)
+        eq("colour: a hex value, with or without #", DeskColor.rgb("#FF8800"), DeskColor.rgb("ff8800"))
+        eq("colour: nonsense is no colour", DeskColor.rgb("sparkly"), nil)
+        eq("colour: nothing is no colour", DeskColor.rgb(nil), nil)
+        eq("colour: none of it leaves the base", DeskColor.mix(0x202020, 0xFF0000, amount: 0), 0x202020)
+        eq("colour: all of it is the colour", DeskColor.mix(0x202020, 0xFF0000, amount: 1), 0xFF0000)
+        eq("colour: half way", DeskColor.mix(0x000000, 0xFF8000, amount: 0.5), 0x804000)
+        let cd = parse("[desk.a]\ncolor = \"Teal\"\n[desk.b]\ncolor = \"sparkly\"\n[desk.c]\ncolour = \"#ff8800\"\n")
+        eq("colour: read from the file, in either spelling", cd.map(\.color), ["teal", nil, "#ff8800"])
+        let cf = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-colour-\(UUID().uuidString).toml")
+        DeskConfig.write(cd, to: cf.path)
+        eq("colour: and survives a save", DeskConfig.load(path: cf.path).map(\.color), ["teal", nil, "#ff8800"])
+        try? FileManager.default.removeItem(at: cf)
+        let cm = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: false,
+                                canMakeDefault: false, hasInventory: true, hasMcp: true)
+        check("menu: a desk can be given a colour", cm.contains { $0.action == .color })
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)
