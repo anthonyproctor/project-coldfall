@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.33] - 2026-11-13
+
+Safer around your agents, and a desk list that shows what needs you.
+
 ### Added
 - **Active and Not running.** The desk list now has an Active section at the top: every
   running desk, sorted by what it needs from you (needs you, done, working, idle). Everything
@@ -869,7 +873,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.32...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.33...HEAD
+[0.3.33]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.32...v0.3.33
 [0.3.32]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...v0.3.32
 [0.3.31]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...v0.3.31
 [0.3.30]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...v0.3.30
