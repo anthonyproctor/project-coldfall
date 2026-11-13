@@ -12,7 +12,8 @@ extension Controller: InboxHost {
         desks.filter { !$0.hidden }.map { d in
             let s = sessions[d.name]
             return Inbox.Row(name: d.name, group: d.group, runtime: d.runtime, running: s?.started ?? false,
-                             activity: Controller.activityWord(s?.activity), lastOutput: s?.lastOutput?.timeIntervalSince1970)
+                             activity: Controller.activityWord(s?.activity), lastOutput: s?.lastOutput?.timeIntervalSince1970,
+                             detail: s?.started == true ? s?.detailLine : nil)
         }
     }
 
@@ -22,7 +23,8 @@ extension Controller: InboxHost {
         let running = s?.started ?? false
         return Inbox.DeskView(text: running ? (s?.screenText(lines: lines) ?? "") : "", running: running,
                               activity: Controller.activityWord(s?.activity), runtime: d.runtime == "shell" ? "shell" : d.vendorLabel,
-                              agent: running && !(s?.agentGone ?? true) && d.runtime != "shell")
+                              agent: running && !(s?.agentGone ?? true) && d.runtime != "shell",
+                              prompt: s?.isBlocked == true ? Prompt.parse(screen: s?.screenText(lines: 60) ?? "") : nil)
     }
 
     private func inboxTarget(_ name: String) -> RemoteOpen.Target? { sessions[name]?.remoteTarget() }

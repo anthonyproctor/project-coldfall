@@ -47,6 +47,7 @@ textarea{flex:1;min-height:46px;max-height:30vh;resize:vertical;background:var(-
   <section id="detail" class="hidden">
     <div><span class="state" id="state"></span> <span class="muted" id="runtime"></span></div>
     <div id="screen"></div>
+    <div class="keys hidden" id="opts"></div>
     <div class="keys hidden" id="keys"></div>
     <button class="open hidden" id="open">Start this desk</button>
     <div class="send" id="sendrow">
@@ -91,7 +92,7 @@ function renderList(desks) {
     const [letter, colour] = badges[d.runtime] || [(d.runtime || "?").slice(0,1).toUpperCase(), "#6b6b6b"];
     bd.textContent = letter; if (colour) bd.style.background = colour; else { bd.style.background = "none"; bd.style.color = "var(--dim)"; }
     const n = document.createElement("span"); n.className = "name"; n.textContent = d.name;
-    const s = document.createElement("span"); s.className = "sub"; s.textContent = [d.group, ago(d.lastOutput)].filter(Boolean).join(" · ");
+    const s = document.createElement("span"); s.className = "sub"; s.textContent = [d.detail, d.group, ago(d.lastOutput)].filter(Boolean).join(" · ");
     b.append(dot, bd, n, s);
     b.onclick = () => { location.hash = "desk=" + encodeURIComponent(d.name); };
     list.appendChild(b);
@@ -119,6 +120,19 @@ function refreshDesk() {
     $("state").style.color = k === "blocked" ? "var(--orange)" : k === "ready" ? "var(--green)" : "";
     $("runtime").textContent = r.runtime || "";
     $("keys").classList.toggle("hidden", k !== "blocked");
+    // Its own choices, by name, when they could be read off the screen.
+    const opts = (k === "blocked" && r.options) || [];
+    const sig = JSON.stringify(opts);
+    if ($("opts").dataset.sig !== sig) {
+      $("opts").dataset.sig = sig;
+      $("opts").textContent = "";
+      for (const o of opts) {
+        const b = document.createElement("button"); b.textContent = o.key + "  " + o.label;
+        b.onclick = () => { const desk = current; api("/api/keys", {desk, key: o.key}).then(a => { if (current === desk) { $("note").textContent = a.message || ""; setTimeout(refreshDesk, 400); } }); };
+        $("opts").appendChild(b);
+      }
+    }
+    $("opts").classList.toggle("hidden", !opts.length);
     $("open").classList.toggle("hidden", r.running);
     $("sendrow").classList.toggle("hidden", !r.running || k === "blocked" || !r.agent);
   }).catch(e => { $("note").textContent = e.message; });

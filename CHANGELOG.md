@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Needs You: answer waiting desks from one window.** Click "needs you" on the status bar
+  (or **Desks ▸ Needs You…**, ⌥⌘0) for every desk stopped on a question, each with its
+  question, what it is about, and its choices as buttons. The choices are read off the
+  desk's own screen, and a button presses its key only if that choice is still there. A
+  desk whose question can't be read offers Go to Desk instead of a guess. ⌘0 still goes
+  straight to the desk that has waited longest.
+- **The phone inbox names the choices** ("1 Yes", "3 No…") above its plain keys, and shows
+  why each desk is waiting in the list.
+
 ## [0.3.36] - 2026-11-13
 
 Who needs you next, and why.

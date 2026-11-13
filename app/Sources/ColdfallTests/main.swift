@@ -1401,6 +1401,37 @@ do {
            "Claude needs your permission to use Bash")
         try? FileManager.default.removeItem(at: dir)
     }
+    do {
+        let screen = """
+        ● Edited 3 files
+
+        ╭──────────────────────────────────────────────╮
+        │ Bash command                                 │
+        │                                              │
+        │   npm test                                   │
+        │   Run the test suite                         │
+        │                                              │
+        │ Do you want to proceed?                      │
+        │ ❯ 1. Yes                                     │
+        │   2. Yes, and don't ask again for npm        │
+        │      commands in /srv/demo                   │
+        │   3. No, and tell Claude what to do (esc)    │
+        ╰──────────────────────────────────────────────╯
+        """
+        let p = Prompt.parse(screen: screen)
+        eq("prompt: the question", p?.question, "Do you want to proceed?")
+        eq("prompt: its options, by key", p?.options.map(\.key), ["1", "2", "3"])
+        eq("prompt: a wrapped label is one label", p?.options[1].label, "Yes, and don't ask again for npm commands in /srv/demo")
+        eq("prompt: what it's about", p?.context, ["npm test", "Run the test suite"])
+        eq("prompt: no numbered choice, no prompt", Prompt.parse(screen: "● Reading files\n> tidy the parser\n"), nil)
+        eq("prompt: a numbered list in prose isn't one unless it starts at 1",
+           Prompt.parse(screen: "steps:\n2. build\n3. ship\n"), nil)
+        eq("prompt: one line isn't a choice", Prompt.parse(screen: "1. only\n"), nil)
+        let yes = Prompt.Option(key: "1", label: "Yes")
+        eq("prompt: an option still on screen is pressed by its key", Prompt.key(for: yes, on: screen), [49])
+        eq("prompt: one that has gone is not", Prompt.key(for: yes, on: "Which file?\n1. a.txt\n2. b.txt\n"), nil)
+        eq("prompt: button labels drop the key hint", Prompt.short("No, and tell Claude what to do (esc)"), "No, and tell Claude what to do")
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

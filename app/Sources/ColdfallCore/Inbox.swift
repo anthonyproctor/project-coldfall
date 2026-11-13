@@ -233,9 +233,12 @@ public enum Inbox {
         /// "blocked", "ready", "working" or "quiet".
         public var activity: String
         public var lastOutput: Double?
-        public init(name: String, group: String?, runtime: String, running: Bool, activity: String, lastOutput: Double?) {
+        /// Why it is waiting, or what it is doing (see DeskDetail).
+        public var detail: String?
+        public init(name: String, group: String?, runtime: String, running: Bool, activity: String, lastOutput: Double?,
+                    detail: String? = nil) {
             self.name = name; self.group = group; self.runtime = runtime; self.running = running
-            self.activity = activity; self.lastOutput = lastOutput
+            self.activity = activity; self.lastOutput = lastOutput; self.detail = detail
         }
         /// Needs you, done, working, idle, then not started.
         public var rank: Int {
@@ -258,6 +261,7 @@ public enum Inbox {
             var o: [String: Any] = ["name": r.name, "runtime": r.runtime, "running": r.running, "activity": r.activity]
             if let g = r.group { o["group"] = g }
             if let l = r.lastOutput { o["lastOutput"] = l }
+            if let d = r.detail { o["detail"] = d }
             return o
         }
     }
@@ -299,8 +303,11 @@ extension Inbox {
         public var runtime: String
         /// An agent is in its pane (not a shell): it can take a message.
         public var agent: Bool
-        public init(text: String, running: Bool, activity: String, runtime: String, agent: Bool) {
+        /// The question it has stopped on, read off its screen, if any.
+        public var prompt: Prompt?
+        public init(text: String, running: Bool, activity: String, runtime: String, agent: Bool, prompt: Prompt? = nil) {
             self.text = text; self.running = running; self.activity = activity; self.runtime = runtime; self.agent = agent
+            self.prompt = prompt
         }
     }
 
@@ -319,7 +326,12 @@ extension Inbox {
             guard let name = r.query["desk"], let v = host.inboxDesk(name, lines: lines) else {
                 return .json(["message": "No such desk."], status: 404)
             }
-            return .json(["text": v.text, "running": v.running, "activity": v.activity, "runtime": v.runtime, "agent": v.agent])
+            var o: [String: Any] = ["text": v.text, "running": v.running, "activity": v.activity, "runtime": v.runtime, "agent": v.agent]
+            if let p = v.prompt {
+                o["question"] = p.question
+                o["options"] = p.options.map { ["key": $0.key, "label": Prompt.short($0.label, max: 60)] }
+            }
+            return .json(o)
         case ("POST", "/api/send"):
             let f = fields(r.body)
             guard let name = f["desk"], let text = f["text"] else { return .json(["message": "Send needs a desk and text."], status: 400) }

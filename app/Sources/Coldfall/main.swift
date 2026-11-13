@@ -199,7 +199,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             return (n, m)
         }
         meter.onClick = { [weak self] in self?.openMeter() }
-        meter.onNeedsYou = { [weak self] in self?.jumpToWaiting() }
+        meter.onNeedsYou = { [weak self] in self?.openFeed() }
+        feed.items = { [weak self] in self?.feedItems() ?? [] }
+        feed.onGo = { [weak self] n in self?.showDesk(named: n) }
+        feed.onAnswer = { [weak self] n, o in self?.answer(desk: n, with: o) }
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
 
         // The VS Code behaviour: files the agent touches open themselves.
@@ -667,6 +670,31 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     }
                     return
                 }
+                // `--feed` (with `--terminal <file>`): Needs You showing that
+                // desk's question as read from the file, to shot-feed.png.
+                if CommandLine.arguments.contains("--feed"), let me = self, me.desks.indices.contains(i),
+                   let s = me.sessions[me.desks[i].name] {
+                    let d = me.desks[i]
+                    let screen = s.screenText(lines: 60)
+                    var list = [FeedPanel.Item(desk: d.name, runtime: d.runtime, icon: d.icon, reason: "wants to use Bash",
+                                               prompt: Prompt.parse(screen: screen),
+                                               tail: screen.split(separator: "\n", omittingEmptySubsequences: true).suffix(10).joined(separator: "\n"))]
+                    if let o = me.desks.first(where: { $0.name != d.name && $0.runtime != "shell" }) {
+                        list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: "asked a question",
+                                                   prompt: nil, tail: "Which of these should I keep?\n  the old parser, or the new one"))
+                    }
+                    me.feed.show(list, size: NSSize(width: 620, height: 500))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard let pv = me.feed.contentView,
+                              let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
+                        pv.cacheDisplay(in: pv.bounds, to: prep)
+                        if let png = prep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-feed.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 // `--quit-prompt a,b`: the question quitting asks with those
                 // desks held, to shot-quit.png. An alert can't be caught in a
                 // window snapshot, so its own window is drawn.
@@ -965,6 +993,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let waitingItem = NSMenuItem(title: "Go to Desk That Needs You", action: #selector(jumpToWaiting), keyEquivalent: "0")
         waitingItem.target = self
         deskMenu.addItem(waitingItem)
+        let feedItem = NSMenuItem(title: "Needs You…", action: #selector(openFeed), keyEquivalent: "0")
+        feedItem.keyEquivalentModifierMask = [.command, .option]
+        feedItem.target = self
+        deskMenu.addItem(feedItem)
         let shellItem = NSMenuItem(title: "New Shell Desk", action: #selector(newShellDesk), keyEquivalent: "n")
         shellItem.target = self
         deskMenu.addItem(shellItem)
@@ -2303,6 +2335,35 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     let notifier = Notifier()
     var inboxServer: InboxServer?
     let peek = PeekPanel()
+    let feed = FeedPanel()
+
+    /// Needs You: the desks stopped on a question, to answer from one place.
+    @objc func openFeed() { feed.toggle(over: window) }
+
+    /// The desks waiting on an answer, longest wait first, each with the
+    /// question read off its screen.
+    func feedItems() -> [FeedPanel.Item] {
+        sidebar.waiting.compactMap { name in
+            guard let s = sessions[name], s.isBlocked, let d = desks.first(where: { $0.name == name }), !d.hidden else { return nil }
+            let screen = s.screenText(lines: 60)
+            let tail = screen.split(separator: "\n", omittingEmptySubsequences: true).suffix(10).joined(separator: "\n")
+            return FeedPanel.Item(desk: name, runtime: d.runtime, icon: d.icon, reason: s.reason,
+                                  prompt: Prompt.parse(screen: screen), tail: tail)
+        }
+    }
+
+    /// Press an option in a waiting desk. Only while it is still asking,
+    /// its agent is there, and that option is still what its screen offers.
+    /// Nil when pressed; otherwise why not.
+    func answer(desk name: String, with option: Prompt.Option) -> String? {
+        guard let s = sessions[name], s.agentAlive() else { return "\(name) isn't running." }
+        guard s.isBlocked else { return "\(name) isn't asking anything now." }
+        guard let key = Prompt.key(for: option, on: s.screenText(lines: 60)) else {
+            return "Its question has changed. Open the desk to answer."
+        }
+        s.typeOnBehalf(key)
+        return nil
+    }
 
     /// Memory per desk, sampled every five seconds from one `ps` call off the
     /// main thread. Cheap enough to leave on, and it answers "which desk is
