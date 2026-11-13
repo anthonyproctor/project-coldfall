@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.37] - 2026-11-13
+
+Answer waiting desks from one window, and review what a desk changed.
+
 ### Added
 - **Changes: read what a desk changed, and send comments back.** The Changes button over
   the terminal (or **Desks ▸ Changes…**, ⇧⌘G) lists the files changed in the desk's folder
@@ -964,7 +968,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.36...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...HEAD
+[0.3.37]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.36...v0.3.37
 [0.3.36]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.35...v0.3.36
 [0.3.35]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.34...v0.3.35
 [0.3.34]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.33...v0.3.34
