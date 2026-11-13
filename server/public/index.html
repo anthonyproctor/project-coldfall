@@ -258,11 +258,11 @@
     <div class="window">
       <div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
       <picture>
-        <source media="(max-width: 640px)" srcset="/img/rail.webp" type="image/webp" width="480" height="714">
-        <source media="(max-width: 640px)" srcset="/img/rail.png" width="480" height="714">
-        <source srcset="/img/app.webp" type="image/webp" width="2360" height="1560">
-        <img src="/img/app.png" width="2360" height="1560" fetchpriority="high"
-             alt="The Project Coldfall window: a list of desks on the left, a terminal in the middle and a formatted document on the right.">
+        <source media="(max-width: 640px)" srcset="/img/rail.webp" type="image/webp" width="480" height="700">
+        <source media="(max-width: 640px)" srcset="/img/rail.png" width="480" height="700">
+        <source srcset="/img/app.webp" type="image/webp" width="2480" height="1640">
+        <img src="/img/app.png" width="2480" height="1640" fetchpriority="high"
+             alt="The Project Coldfall window: groups and desks on the left with a mark for what each one needs, tabs and a terminal in the middle, and a formatted document on the right.">
       </picture>
       <div class="glow" aria-hidden="true"></div>
     </div>
@@ -316,10 +316,11 @@
         <p>A desk is one agent with its own folder, instructions and conversation, that you come back to for weeks. One for your code, one for research, one for writing, one for your budget. Claude, Codex and Antigravity desks that Project Coldfall starts pick up their conversation after a restart.</p>
         <ul>
           <li>Each desk runs the vendor's own tool, so your logins, settings and hooks work as they already do.</li>
-          <li>Group desks, drag them into order, and hide the ones you're not using without losing them.</li>
+          <li>Put desks in groups. Click a group and the list and the tabs over the terminal switch to it.</li>
+          <li>Drag desks into order, pin the ones you live in, and hide the ones you're not using without losing them.</li>
         </ul>
       </div>
-      <div class="pic tall"><picture><source srcset="/img/rail-hidden.webp" type="image/webp" width="480" height="692"><img src="/img/rail-hidden.png" width="480" height="692" loading="lazy" decoding="async"
+      <div class="pic tall"><picture><source srcset="/img/rail-hidden.webp" type="image/webp" width="480" height="840"><img src="/img/rail-hidden.png" width="480" height="840" loading="lazy" decoding="async"
            alt="The desk list grouped by job, with one hidden desk listed at the bottom."></picture></div>
     </div>
   </section>
@@ -328,15 +329,46 @@
     <div class="wrap row flip">
       <div class="text">
         <p class="kicker">Needs you</p>
-        <h2>See which one is waiting, without checking each one.</h2>
-        <p>When a desk finishes while you're looking at another one, and its screen has changed, it's marked. A green line at the top names those desks, oldest first, and <kbd>⌘0</kbd> takes you straight there.</p>
+        <h2>See which one is waiting, and why, without checking each one.</h2>
+        <p>Every desk carries one mark: an amber <em>Needs you</em> when it has stopped on a question, a green dot when it has an answer you haven't seen, a blue ring while it works. Beside its name is the reason, in the agent's own words, like "wants to use Bash". <kbd>⌘0</kbd> takes you to the one that has waited longest.</p>
         <ul>
-          <li>A folded group still shows how many of its desks are waiting.</li>
-          <li>Turn on <em>Keep Active Groups on Top</em>: groups with waiting desks rise first, then the most recently used.</li>
+          <li>Each group shows one mark for all its desks, and the bottom of the window counts them: 1 needs you, 2 working, 2 done.</li>
+          <li>Switch the list to <em>By priority</em> to see every running desk, most urgent first.</li>
         </ul>
       </div>
-      <div class="pic tall"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="714"><img src="/img/rail.png" width="480" height="714" loading="lazy" decoding="async"
-           alt="The desk list, with a green line reading 3 need you and a folded group showing one waiting desk."></picture></div>
+      <div class="pic tall"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="700"><img src="/img/rail.png" width="480" height="700" loading="lazy" decoding="async"
+           alt="The desk list: four groups, one marked 1 needs you, and under it a desk whose row reads wants to use Bash."></picture></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap row">
+      <div class="text">
+        <p class="kicker">Answer from one place</p>
+        <h2>Five permission prompts, without opening five desks.</h2>
+        <p>Click <em>needs you</em> at the bottom of the window. Every waiting desk is listed with its question, what the question is about, and its choices as buttons. Press one and that desk carries on.</p>
+        <ul>
+          <li>The choices are read off the desk's own screen, and a button only presses its key if that choice is still there.</li>
+          <li>The same choices show in the inbox on your phone.</li>
+        </ul>
+      </div>
+      <div class="pic"><picture><source srcset="/img/feed.webp" type="image/webp" width="1240" height="700"><img src="/img/feed.png" width="1240" height="700" loading="lazy" decoding="async"
+           alt="The Needs You window: a desk asking Do you want to proceed, the command npm test, and three buttons, Yes, Yes and do not ask again, and No."></picture></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap row flip">
+      <div class="text">
+        <p class="kicker">Review what it did</p>
+        <h2>Read the changes, and send your comments back.</h2>
+        <p><em>Changes</em> lists the files a desk changed since the last commit, with each one's diff. Select some lines, write a comment, add as many as you like, and send them to the agent together, each with its file, its line and the code it's about.</p>
+        <ul>
+          <li>It only reads the repository. Nothing is staged, committed or reverted.</li>
+        </ul>
+      </div>
+      <div class="pic"><picture><source srcset="/img/changes.webp" type="image/webp" width="1880" height="1040"><img src="/img/changes.png" width="1880" height="1040" loading="lazy" decoding="async"
+           alt="The Changes window: four changed files on the left, a diff with added and removed lines on the right, and one comment ready to send."></picture></div>
     </div>
   </section>
 
@@ -375,7 +407,9 @@
       <div class="grid" style="text-align:left">
         <div class="card"><h3>Quick open</h3><p><kbd>⌘P</kbd> finds any desk or file by a few letters.</p></div>
         <div class="card"><h3>A reader beside the terminal</h3><p>Files your agents write open next to them, with Markdown and PDFs shown properly.</p></div>
-        <div class="card"><h3>Splits</h3><p>Add a shell beside or below the agent, in the same desk.</p></div>
+        <div class="card"><h3>Splits</h3><p>Add a shell beside or below the agent, in the same desk. Each pane is its own card, and <kbd>⇧⌘↩</kbd> zooms one to fill the desk.</p></div>
+        <div class="card"><h3>Tabs for the group you're in</h3><p>The running desks in the current group sit in a row over the terminal, each with its mark.</p></div>
+        <div class="card"><h3>How full is the conversation</h3><p>A pane's header shows the context filling up, orange from 60 percent and red from 80.</p></div>
         <div class="card"><h3>Stop a desk, free its memory</h3><p>End a desk you're done with for now. Claude, Codex and Antigravity desks pick up their conversation when you start them again.</p></div>
         <div class="card"><h3>Remote machines too</h3><p>A desk can be an SSH connection to another computer, found from your own SSH settings.</p></div>
         <div class="card"><h3>Your file, your rules</h3><p>Every desk lives in one plain text file you can edit by hand. The app picks up changes as you make them.</p></div>

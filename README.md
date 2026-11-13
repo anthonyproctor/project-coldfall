@@ -6,7 +6,7 @@
 
 Project Coldfall is a macOS terminal for running several long-lived AI agents side by side: Claude Code, Codex, Antigravity, Copilot, or a local model through Ollama. A strip along the bottom reads each vendor's real remaining quota and shows it in one place, so you find out on Tuesday that Claude is nearly spent for the week and Codex still has room, not on Thursday when a session dies mid-task. Each agent lives on a persistent desk that keeps its own folder, its own memory and its own conversation, so you switch between them instead of starting over.
 
-<p align="center"><img src="server/public/img/app.png" width="820" alt="Project Coldfall with a demo project open: desks for api, review, docs and notes in the rail, a test run in the terminal, and a plan file in the reader"></p>
+<p align="center"><img src="server/public/img/app.png" width="820" alt="Project Coldfall with a demo project open: groups and desks on the left, each desk with a mark for what it needs and one reading wants to use Bash; tabs and a test run in the terminal; a plan file in the reader"></p>
 
 <p align="center"><img src="server/public/img/meter.png" width="820" alt="The cost meter: claude 72 percent of the week used, codex only 12 percent, with the hint to send the next task to codex"></p>
 
@@ -19,7 +19,8 @@ macOS 13 or later · Swift · MIT licensed · early, but it runs
 ### Why it exists
 
 - **The meter.** Live quota for Claude and Codex, side by side, with the week's reset time. When one vendor is far ahead of the other, it says so and names where to send the next task. Click the strip for quota bars, which desk used what, and fourteen days of history. Copilot shows tokens and premium requests but no quota, and Antigravity shows nothing yet.
-- **Desks, not threads.** One desk per specialist. Switch desks and the others keep running. Green tells you which one has finished answering; orange, which one is waiting on you.
+- **Desks, not threads.** One desk per specialist. Switch desks and the others keep running. A green dot tells you which one has finished answering; an amber *Needs you*, which one is waiting on you, with the reason beside its name.
+- **Answer and review without opening each one.** One window lists every waiting desk with its question and its choices as buttons. Another shows what a desk changed, and sends your comments on it back to the agent.
 - **Your own agents, untouched.** Project Coldfall launches the vendor's real CLI in a real terminal, so your agent definitions, hooks, memory files and model pins all still apply. It never reimplements an agent.
 - **Yours to leave.** Everything it writes is in two folders, and Settings can list and remove all of it.
 
@@ -47,11 +48,19 @@ Project Coldfall calls one of those a **desk**, and makes the desk the unit.
 
 **Pasting a screenshot works too.** `cmd-ctrl-shift-4` puts an image on the clipboard and nowhere else; paste it into a desk and Project Coldfall writes it to `~/.local/share/coldfall/pasted/` and types that path instead. Pasting text is untouched, and a file copied in Finder still pastes as a path the normal way.
 
-**It tells you when a desk answered.** The point of desks is running several agents at once, which means you are never watching more than one of them — so a desk that finishes while you are elsewhere gets a **green check** in the rail, one stopped on a question for you (a permission, a choice) turns **orange**, and the Dock icon carries a count of how many are waiting. A desk mid-thought shows a still blue dot, so "working", "needs you" and "done" are three different signals.
+**It tells you when a desk answered.** The point of desks is running several agents at once, which means you are never watching more than one of them — so every desk carries one mark, drawn the same way in the desk list, the tabs and the pane headers. A desk that finishes while you are elsewhere gets a **green dot**. One stopped on a question for you (a permission, a choice) gets an amber **Needs you**. A desk mid-thought shows a still blue ring, and a running desk with nothing new a hollow circle. The Dock icon carries a count of how many are waiting, and the bottom of the window says it in words: *1 needs you · 2 working · 2 done*.
+
+**And why.** Beside a waiting desk's name is the reason in the agent's own words — "wants to use Bash", or the question it asked — and the notification says the same. When a desk is not waiting, that spot shows what the agent says it is working on, taken from its own terminal title. Triage is reading a column, not opening twenty desks.
 
 An agent can say it has finished or needs you, through Coldfall's done hook (Claude Code and Codex, one click in Settings) or the OSC 7501 status protocol, and then that is what turns a desk green or orange. Without either, all that reaches Project Coldfall is bytes on a pty, so "finished" is inferred from bytes stopping for two seconds. Looking at the desk is the only thing that clears the dot — not hovering, not bringing the app forward. A badge that clears itself is worse than none, because you stop trusting it was ever set.
 
-**Splits, when one terminal is not enough.** `cmd-d` and `cmd-shift-d` give a desk a second pane: the agent in one, a shell in the other to look at what it just did. Pane 0 is the agent and confirms before you close it; the rest are login shells in the same directory and close for free. A desk keeps one axis and stops at four panes, because past that it is a mosaic rather than a workspace.
+**Groups, tabs, and a list that follows them.** The desk list opens with your groups: a coloured letter, how many of the group's desks are running, and one mark for all of them. Click a group and the list under it, and the tabs over the terminal, switch to that group's desks. Drag a desk onto a group to move it there. The button beside **Desks** flips the list to **By priority** — every running desk from every group under Needs you, Done, Working and Idle, longest wait first — and `opt-cmd-down` / `opt-cmd-up` walk whichever order is showing. Rows only re-sort while the pointer is away from the list, so nothing moves out from under a click.
+
+**Answer waiting desks from one window.** Click *needs you* at the bottom of the window (`opt-cmd-0`) and every desk stopped on a question is listed with the question, what it is about, and its choices as buttons. The choices are read off the desk's own screen, and a button presses its key only if that choice is still there when you click: a prompt that has changed is never answered blind. A desk whose question cannot be read offers *Go to Desk* instead of a guess.
+
+**Read what a desk changed, and send comments back.** *Changes* (`cmd-shift-g`) lists the files changed in the desk's folder since the last commit, each with its diff. Select lines, write a comment, add as many as you like across files, and send: the agent gets them as one message, each with its file, line and the code it is about. Project Coldfall only reads the repository — nothing is staged, committed or reverted from here.
+
+**Splits, when one terminal is not enough.** `cmd-d` and `cmd-shift-d` give a desk a second pane: the agent in one, a shell in the other to look at what it just did. Pane 0 is the agent and confirms before you close it; the rest are login shells in the same directory and close for free. A desk keeps one axis and stops at four panes, because past that it is a mosaic rather than a workspace. Each pane is a card with its own header — the desk, the agent and folder, the branch when it is not main, how full the conversation is once it passes 60% — and `cmd-shift-return` zooms one pane to fill the desk.
 
 **A folder tree and a reader, with tabs.** Agents write, you read. Files an agent touches **open themselves** — you cannot pre-open a file when you do not know which one it will edit. Those tabs are transient and render italic, like a preview tab, and recycle past four so a busy desk cannot bury you; clicking one pins it. Each tab watches its file and refreshes in place. PDFs, images and text, with shallow syntax highlighting. Read-only is what keeps the reader small — and why a PDF opens here at all.
 
@@ -210,6 +219,8 @@ It **follows the system** light/dark switch by default, repainting live — incl
 
 The unfocused pane dims rather than relying on the focus ring alone: the eye finds the bright pane without hunting for a border.
 
+A desk's vendor shows as a letter on the vendor's colour. Put `claude.png`, `codex.png` and so on in `~/.config/coldfall/icons/` and the desk list, tabs and pane headers show those pictures instead, as in the screenshot above; the logos are the vendors' own and do not ship with Project Coldfall.
+
 ```toml
 [theme]
 palette   = "vscode"      # vscode | gruvbox | nord | solarized
@@ -229,7 +240,12 @@ A font that is not installed falls back to the next one that is, and an unrecogn
 | | |
 |---|---|
 | `cmd-1` … `cmd-9` | jump to a desk |
+| `cmd-0` | the desk that has waited longest |
+| `opt-cmd-0` | Needs You: answer waiting desks from one window |
+| `opt-cmd-down` / `opt-cmd-up` | next / previous desk, in the order shown |
+| `cmd-shift-g` | Changes: what this desk changed |
 | `cmd-d` / `cmd-shift-d` | split the desk right / down |
+| `cmd-shift-return` | zoom a pane to fill the desk |
 | `cmd-w` | close the focused pane |
 | `cmd-[` / `cmd-]` | move between panes |
 | `cmd-r` | refresh the folder tree |
@@ -241,7 +257,7 @@ A font that is not installed falls back to the next one that is, and an unrecogn
 | `cmd-,` | settings |
 | `cmd-opt-shift-u` | update Project Coldfall from source |
 
-Click a group header to collapse it, right-click to rename it.
+Right-click a group to rename it or sort its desks; drag it to reorder.
 
 ## The bridge is a mailbox, not a protocol
 
@@ -294,11 +310,11 @@ Threads land in `~/.local/share/coldfall/mail/`. If you already have a handoff s
 
 It runs and it is useful. It is also early.
 
-Working: desks that resume their conversation, groups, the folder tree, the reader, the bridge, the cross-vendor meter, per-desk MCP servers, settings, first run.
+Working: desks that resume their conversation, groups and tabs, the priority list, answering waiting desks from one window, a changes view with comments back to the agent, the folder tree, the reader, the bridge, the cross-vendor meter, per-desk MCP servers, settings, first run.
 
 Not built yet:
 
-- No diff view. The reader shows a file, not what changed in it.
+- The changes view is read-only: no staging, committing or reverting from it.
 - No syntax highlighting.
 - Live quota works for Claude and Codex. Copilot shows tokens and premium requests but no quota. Antigravity shows nothing yet.
 

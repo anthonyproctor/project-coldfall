@@ -331,7 +331,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       <li><strong>Point each desk at its own folder.</strong> The agent reads and writes there, and its memory files there apply.</li>
       <li><strong>Group them.</strong> Desks with the same <code>group</code> fold together. Drag desks and whole groups into the order you like, or right-click and sort A to Z.</li>
       <li><strong>Pin the ones you live in.</strong> Right-click, Pin to Top. A pinned desk stays at the very top of the rail, above everything else, and cmd-1 goes to the first one.</li>
-      <li><strong>Let the desks that need you come to you.</strong> Running desks sit in Active at the top, under your pinned desks: orange (a question) first, then green (finished), then working and idle. Rows only move while the pointer is away from the list, so nothing jumps under a click. Right-click the list to turn <strong>Show Running Desks on Top</strong> off.</li>
+      <li><strong>Let the desks that need you come to you.</strong> Switch the desk list to <strong>By priority</strong> (the button beside Desks): every running desk under Needs you, Done, Working and Idle, longest wait first. Rows only move while the pointer is away from the list, so nothing jumps under a click.</li>
       <li><strong>Hide what you're not using.</strong> Right-click, Hide Desk. It stays in the file and comes back with one click.</li>
     </ul>
     <h3>Two Claude plans</h3>
@@ -345,15 +345,18 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
     <h2 id="day">A normal day</h2>
     <p>Hand a desk a job, move on to another desk, and let Coldfall tell you when to come back.</p>
     <figure>
-      <div class="pic"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="714"><img src="/img/rail.png" width="480" height="714" loading="lazy" decoding="async" alt="The desk list, with a green line reading 3 need you."></picture></div>
-      <figcaption>The desk list. The green line names the desks waiting on you.</figcaption>
+      <div class="pic"><picture><source srcset="/img/rail.webp" type="image/webp" width="480" height="700"><img src="/img/rail.png" width="480" height="700" loading="lazy" decoding="async" alt="The desk list: four groups, one marked 1 needs you, and under it a desk whose row reads wants to use Bash."></picture></div>
+      <figcaption>Groups on top, the selected group's desks under them. Each desk has one mark for what it needs.</figcaption>
     </figure>
     <ul>
-      <li><strong>A green check</strong> on a desk means it finished while you were looking at something else, and its screen changed. It might want an answer, or it's just done. Its row also moves up to the top of the list, under the green line, until you've looked at it.</li>
-      <li><strong>Running desks sit in Active.</strong> The top of the desk list shows every running desk, the ones that need you first; the rest are below under Not running, in their groups. The small letter beside a name says which agent runs it (C Claude, X Codex, A Antigravity, G Copilot); <code>icon = "⛳️"</code> in desks.toml gives a desk its own.</li>
-      <li><strong>Orange means it needs you.</strong> A desk stopped on a question (a permission, a choice) turns orange and stays that way until you answer it. Green means it finished. With Coldfall in the background you get a notification for either; click it to go there. Settings, Agents turns it off.</li>
+      <li><strong>One mark per desk.</strong> A green dot means it finished while you were looking at something else. An amber <strong>Needs you</strong> means it stopped on a question (a permission, a choice) and stays until you answer. A blue ring means it's working; a hollow circle, running with nothing new. With Coldfall in the background you get a notification for the first two; click it to go there. Settings, Agents turns it off.</li>
+      <li><strong>Why it's waiting</strong> is beside the desk's name, in the agent's own words: "wants to use Bash", or the question it asked. When it isn't waiting, that spot shows what the agent says it's working on.</li>
+      <li><strong>Groups on top, desks under them.</strong> Each group has a coloured letter, how many of its desks are running, and one mark for all of them. Click a group and the list, and the tabs over the terminal, switch to it. Drag a desk onto a group to move it there. The button beside <strong>Desks</strong> switches to <strong>By priority</strong>: every running desk from every group, most urgent first.</li>
+      <li><strong>Which agent runs a desk</strong> is the small letter beside its name (C Claude, X Codex, A Antigravity, G Copilot). To show a logo instead, put <code>claude.png</code>, <code>codex.png</code> and so on in <code>~/.config/coldfall/icons/</code>. <code>icon = "⛳️"</code> in desks.toml gives one desk its own.</li>
+      <li><strong>Answer from one place.</strong> Click <strong>needs you</strong> at the bottom of the window (or <kbd>⌥⌘0</kbd>) to see every waiting desk with its question and its choices as buttons. A button presses its key only if that choice is still on the desk's screen.</li>
+      <li><strong>Review what it did.</strong> <strong>Changes</strong>, over the terminal (or <kbd>⇧⌘G</kbd>), lists the files changed since the last commit with their diffs. Select lines, write a comment, and send them all to the agent as one message. It only reads the repository.</li>
       <li><strong>Make green exact.</strong> Settings, Agents, <strong>Let agents say when they're done</strong>. Claude Code and Codex then tell Coldfall when a desk finishes or needs you, so a desk turns green on the agent's word rather than a guess from its output. It writes one line to a file on your Mac and sends nothing. Codex asks you to trust the new hook once: run <code>/hooks</code> in a Codex desk.</li>
-      <li><strong>The green line</strong> at the top names every waiting desk, oldest first. Click it, or press <kbd>⌘0</kbd>, to go to the one that's waited longest. The <strong>×</strong> clears it without visiting them.</li>
+      <li><strong>Who next?</strong> <kbd>⌘0</kbd> goes to the desk that's waited longest. <kbd>⌥⌘↓</kbd> and <kbd>⌥⌘↑</kbd> step through the list in the order shown. Glanced at an answer but not dealt with it? Right-click the desk, <strong>Mark Unread</strong>.</li>
       <li><strong>Jump around</strong> with <kbd>⌘1</kbd> to <kbd>⌘9</kbd> for your first nine desks, or <kbd>⌘P</kbd> to find any desk or file by a few letters.</li>
       <li><strong>Need a plain shell?</strong> <kbd>⌘D</kbd> splits one in beside the agent, in the same desk and folder. For a shell of its own in the list, <kbd>⌘N</kbd> makes a new shell desk.</li>
       <li><strong>Files your agents write</strong> open in the reader on the right, with Markdown and PDFs shown properly.</li>
@@ -425,6 +428,9 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       <tbody>
         <tr><td><kbd>⌘1</kbd> to <kbd>⌘9</kbd></td><td>Go to one of your first nine desks, pinned ones first</td></tr>
         <tr><td><kbd>⌘0</kbd></td><td>Go to the desk that's waited longest</td></tr>
+        <tr><td><kbd>⌥⌘0</kbd></td><td>Needs You: answer waiting desks from one window</td></tr>
+        <tr><td><kbd>⌥⌘↓</kbd> / <kbd>⌥⌘↑</kbd></td><td>Next / previous desk, in the order the list shows</td></tr>
+        <tr><td><kbd>⇧⌘G</kbd></td><td>Changes: what this desk changed, with comments back to the agent</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Find any desk or file</td></tr>
         <tr><td><kbd>⇧⌘P</kbd></td><td>Run any command, the desk on screen's own first (or type <code>&gt;</code> in <kbd>⌘P</kbd>)</td></tr>
         <tr><td><kbd>⌥</kbd>-click a desk</td><td>Peek at it: its live screen over this one, without switching</td></tr>
@@ -434,6 +440,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
         <tr><td><kbd>⌘N</kbd></td><td>New shell desk, in the folder you're in</td></tr>
         <tr><td><kbd>⌘D</kbd> / <kbd>⇧⌘D</kbd></td><td>Split a shell in to the right / below</td></tr>
         <tr><td><kbd>⌘]</kbd> / <kbd>⌘[</kbd></td><td>Next / previous pane</td></tr>
+        <tr><td><kbd>⇧⌘↩</kbd></td><td>Zoom a pane to fill the desk, and back</td></tr>
         <tr><td><kbd>⌘W</kbd></td><td>Close a pane</td></tr>
         <tr><td><kbd>⌘B</kbd></td><td>Show or hide the desk list</td></tr>
         <tr><td><kbd>⌥⌘B</kbd></td><td>Show or hide the reader</td></tr>
@@ -443,7 +450,7 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
       </tbody>
     </table>
     <p>Any of these can be changed: <strong>Settings ▸ General ▸ Edit Shortcuts</strong> opens <code>keys.json</code>, a command's name to a shortcut such as <code>"cmd+shift+k"</code>, or <code>"none"</code>.</p>
-    <p>Right-click almost anything, a desk, a group, the green line, for more.</p>
+    <p>Right-click almost anything, a desk or a group, for more.</p>
 
     <h2 id="leaving">If you want out</h2>
     <p>Coldfall runs your agents; it never replaces them. So leaving costs nothing: Claude Code, Codex and the rest keep their logins, conversations, settings, hooks and memory files, and work from a plain terminal exactly as before. Desks that run your own script are your script.</p>
