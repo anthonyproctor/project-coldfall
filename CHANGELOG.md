@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.40] - 2026-11-13
+
+Sleep idle desks, the last turn's diff, schedules, conversation search, and a calmer waiting queue.
+
 ### Added
 - **Schedules** (**Desks ▸ Schedules…**): a prompt sent to a desk at a set time, on the days
   you name. Each can have a **precheck** (a command that must succeed, such as "are there
@@ -1042,7 +1046,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...HEAD
+[0.3.40]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...v0.3.40
 [0.3.39]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...v0.3.39
 [0.3.38]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.37...v0.3.38
 [0.3.37]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.36...v0.3.37
