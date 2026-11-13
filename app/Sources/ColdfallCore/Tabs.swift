@@ -50,6 +50,27 @@ public enum DeskPair {
         guard let main, name != main else { return nil }
         return (main, name)
     }
+
+    /// One line of the Desks menu's Open Beside list.
+    public struct Choice: Equatable {
+        public var name: String, group: String?, running: Bool
+        public init(name: String, group: String?, running: Bool) {
+            self.name = name; self.group = group; self.running = running
+        }
+        public var title: String { group.map { "\(name)  ·  \($0)" } ?? name }
+    }
+
+    /// Every desk that can go beside the one on screen, whatever group the
+    /// list is showing: running ones first, then the rest, each in the order
+    /// given. Not the desk on screen, not the one already beside, not hidden
+    /// ones. Empty when nothing is on screen to be beside.
+    public static func choices(_ desks: [(name: String, group: String?, running: Bool, hidden: Bool)],
+                               main: String?, beside: String?) -> [Choice] {
+        guard let main else { return [] }
+        let ok = desks.filter { !$0.hidden && $0.name != main && $0.name != beside }
+            .map { Choice(name: $0.name, group: $0.group, running: $0.running) }
+        return ok.filter(\.running) + ok.filter { !$0.running }
+    }
 }
 
 /// The counts along the status bar: "1 needs you · 2 working · 3 done".

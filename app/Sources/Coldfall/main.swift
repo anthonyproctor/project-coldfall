@@ -10,7 +10,7 @@ import ColdfallCore
 
 // MARK: - app
 
-final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalViewDelegate, NSSplitViewDelegate, NSWindowDelegate {
+final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalViewDelegate, NSSplitViewDelegate, NSWindowDelegate, NSMenuDelegate {
     var window: NSWindow!
     let sidebar = SidebarView()
     let tree = FileTreeView()
@@ -1315,6 +1315,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         zp.keyEquivalentModifierMask = [.command, .shift]
         zp.target = self
         deskMenu.addItem(zp)
+        // Every desk, whatever group the list is on: the list only shows one
+        // group, and clicking another group moves the desk on screen.
+        let ob = NSMenuItem(title: "Open Beside", action: nil, keyEquivalent: "")
+        besideMenu.delegate = self
+        ob.submenu = besideMenu
+        deskMenu.addItem(ob)
         let cb = NSMenuItem(title: "Close Beside Desk", action: #selector(closeBeside), keyEquivalent: "w")
         cb.keyEquivalentModifierMask = [.command, .option]
         cb.target = self
@@ -2828,6 +2834,31 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// Which of the two the keys last went to: pane commands act on it.
     var keyIsBeside = false
     var activeSession: DeskSession? { keyIsBeside ? (beside ?? visible) : visible }
+
+    let besideMenu = NSMenu(title: "Open Beside")
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === besideMenu else { return }
+        menu.removeAllItems()
+        let all = desks.map { (name: $0.name, group: $0.group, running: sessions[$0.name]?.started == true, hidden: $0.hidden) }
+        let list = DeskPair.choices(all, main: visible?.desk.name, beside: beside?.desk.name)
+        if list.isEmpty {
+            menu.addItem(NSMenuItem(title: visible == nil ? "No desk on screen" : "No other desks", action: nil, keyEquivalent: ""))
+            return
+        }
+        var wasRunning = list.first?.running ?? false
+        for c in list {
+            if wasRunning && !c.running { menu.addItem(.separator()) }
+            wasRunning = c.running
+            let it = NSMenuItem(title: c.title, action: #selector(openBesideFromMenu(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = c.name
+            menu.addItem(it)
+        }
+    }
+    @objc func openBesideFromMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String, let i = deskIndex(name) else { return }
+        openBeside(i)
+    }
 
     /// Put a desk next to the one on screen, starting it if need be.
     func openBeside(_ i: Int) {

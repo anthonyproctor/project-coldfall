@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Desks ▸ Open Beside** lists every desk, whatever group the list is showing, running
+  ones first and each with its group. The desk list shows one group at a time and clicking
+  another group moves you to it, so a desk in a different group could only be put beside
+  the one on screen by switching the list to By priority first.
+
 ## [0.3.42] - 2026-11-13
 
 Held desks stand apart from Coldfall, so ending one can never end the other.

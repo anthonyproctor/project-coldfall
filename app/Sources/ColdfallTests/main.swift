@@ -1881,6 +1881,16 @@ do {
         check("pair: no desk beside, nothing to keep", DeskPair.show("b", main: "a", beside: nil) == ("b", nil))
         check("pair: open beside the one on screen", DeskPair.openBeside("b", main: "a", beside: nil).map { $0 == ("a", "b") } == true)
         check("pair: a desk can't be beside itself", DeskPair.openBeside("a", main: "a", beside: nil) == nil)
+        do {
+            let all: [(name: String, group: String?, running: Bool, hidden: Bool)] = [
+                ("a", "one", true, false), ("b", "one", false, false), ("c", "two", true, false),
+                ("d", "two", true, true), ("e", nil, true, false)]
+            let c = DeskPair.choices(all, main: "a", beside: "e")
+            eq("pair: choices cross groups, running first, no main, beside or hidden", c.map(\.name), ["c", "b"])
+            eq("pair: a choice names its group", c.first?.title, "c  ·  two")
+            eq("pair: a desk with no group is just its name", DeskPair.Choice(name: "e", group: nil, running: true).title, "e")
+            check("pair: nothing on screen, nothing to be beside", DeskPair.choices(all, main: nil, beside: nil).isEmpty)
+        }
         check("pair: nothing on screen, nothing to be beside", DeskPair.openBeside("a", main: nil, beside: nil) == nil)
         let bm = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: false, canMakeDefault: false,
                                 hasInventory: true, hasMcp: true, canBeside: true)
