@@ -1483,6 +1483,11 @@ do {
         eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
         eq("tabs: no desk on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]), [])
         eq("tabs: + offers this group's stopped desks", DeskTabs.startable(t, current: "work", running: ["work"]), ["a", "b"])
+        let many = ["a", "b", "c", "d", "e"]
+        check("tabs: all shown when there is room", DeskTabs.fit(many, current: "a", room: 5) == (many, []))
+        check("tabs: the rest go to the more menu", DeskTabs.fit(many, current: "a", room: 3) == (["a", "b", "c"], ["d", "e"]))
+        check("tabs: the desk on screen always keeps a tab", DeskTabs.fit(many, current: "e", room: 3) == (["a", "b", "e"], ["c", "d"]))
+        check("tabs: no room, no tabs", DeskTabs.fit(many, current: "a", room: 0) == ([], many))
         eq("counts: one of each", DeskCounts.of([.blocked, .working, .ready, .quiet, .ready]),
            DeskCounts(needsYou: 1, working: 1, done: 2))
         eq("counts: chips read as a sentence", DeskCounts(needsYou: 1, working: 2, done: 0).chips, ["1 needs you", "2 working"])
@@ -2647,6 +2652,14 @@ do {
 do {
     let fm = FileManager.default
     // The wire: frames survive being cut anywhere.
+    do {
+        var d = Holder.Decoder()
+        let f = d.push(Holder.Wire.encode(.tap, Holder.Wire.tap()) + Holder.Wire.encode(.output, Array("hi".utf8)))
+        check("holder: a tap is its own kind", f.first?.0 == .tap)
+        eq("holder: and carries the version", f.first.flatMap { Holder.Wire.readVersion($0.1) }, Holder.protocolVersion)
+        check("holder: a tap doesn't break the stream after it", !d.broken && f.count == 2)
+        eq("holder: a hello's version reads the same way", Holder.Wire.readVersion(Holder.Wire.hello(cols: 1, rows: 1)), Holder.protocolVersion)
+    }
     let frames = Holder.Wire.encode(.hello, Holder.Wire.hello(cols: 120, rows: 40))
         + Holder.Wire.encode(.input, Array("ls\r".utf8))
         + Holder.Wire.encode(.exit, Holder.Wire.status(7))

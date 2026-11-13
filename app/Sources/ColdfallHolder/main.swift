@@ -246,7 +246,7 @@ func serve() -> Never {
     /// passer-by (a liveness check, an end request) until then. Only a hello
     /// takes over the terminal, so checking on a holder never cuts off the
     /// Coldfall attached to it.
-    struct Conn { var fd: Int32; var dec = Holder.Decoder(); var attached = false; var out: [UInt8] = [] }
+    struct Conn { var fd: Int32; var dec = Holder.Decoder(); var attached = false; var tap = false; var out: [UInt8] = [] }
     var conns: [Conn] = []
     /// A terminal this far behind isn't reading; it's let go rather than
     /// holding the program's output in memory.
@@ -345,7 +345,7 @@ func serve() -> Never {
                 let b = Array(buf[0..<n])
                 replay.append(b)
                 let frame = Holder.Wire.encode(.output, b)
-                for i in conns.indices where conns[i].attached { queue(i, frame) }
+                for i in conns.indices where conns[i].attached || conns[i].tap { queue(i, frame) }
             } else if n == 0 || (errno != EAGAIN && errno != EINTR) {
                 // The program's side closed: collect it and pass the status on.
                 for _ in 0..<20 { if let c = reap() { done(c) }; usleep(50_000) }
@@ -391,7 +391,16 @@ func serve() -> Never {
                     if conns[i].attached {
                         toProgram += payload
                         if !flush(master, &toProgram) { toProgram = [] }
+                        // Taps see the keys too, so Coldfall can tell typing
+                        // from answering without the terminal telling it.
+                        let echo = Holder.Wire.encode(.input, payload)
+                        for j in conns.indices where conns[j].tap { queue(j, echo) }
                     }
+                case .tap:
+                    // Watching only: same version or nothing, and never the terminal.
+                    guard Holder.Wire.readVersion(payload) == Holder.protocolVersion, !conns[i].attached
+                    else { close(conns[i].fd); conns[i].fd = -1; break }
+                    conns[i].tap = true
                 case .resize:
                     if conns[i].attached, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 { setSize(s.cols, s.rows) }
                 case .end:

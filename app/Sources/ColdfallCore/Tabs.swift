@@ -15,6 +15,17 @@ public enum DeskTabs {
         }.map(\.name)
     }
 
+    /// The tabs that fit, and the ones that don't (shown in a "more" menu).
+    /// The first `room` in order, except that the desk on screen always
+    /// has a tab: if it falls past the edge it takes the last place.
+    public static func fit(_ names: [String], current: String?, room: Int) -> (shown: [String], more: [String]) {
+        guard room > 0 else { return ([], names) }
+        guard names.count > room else { return (names, []) }
+        var shown = Array(names.prefix(room))
+        if let c = current, names.contains(c), !shown.contains(c) { shown[room - 1] = c }
+        return (shown, names.filter { !shown.contains($0) })
+    }
+
     /// The desks in this group that are not running, for the "+" menu.
     public static func startable(_ desks: [Desk], current: String?, running: Set<String>) -> [String] {
         guard let cur = current, let here = desks.first(where: { $0.name == cur }) else { return [] }

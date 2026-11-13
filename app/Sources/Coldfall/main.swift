@@ -216,8 +216,6 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.collapsed = Set(ui.collapsed)
         sidebar.liveOn = ui.liveRail
         sidebar.onToggleLive = { [weak self] in self?.toggleLiveRail() }
-        sidebar.floatReady = ui.readyOnTop
-        sidebar.onToggleFloat = { [weak self] in self?.toggleReadyOnTop() }
         sidebar.onSelectGroup = { [weak self] g in self?.goToGroup(g) }
         sidebar.onPinDesk = { [weak self] i, on in self?.pinDesk(i, on) }
         sidebar.onAddOffer = { [weak self] rt in self?.addOfferedDesk(rt) }
@@ -1468,14 +1466,6 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
     }
 
-    /// "Show Running Desks on Top". The rail does the moving itself, at calm
-    /// moments; this only holds the setting.
-    @objc func toggleReadyOnTop() {
-        ui.readyOnTop.toggle()
-        ui.save()
-        sidebar.floatReady = ui.readyOnTop
-        installMenu()
-    }
 
     // MARK: - opening desks from outside (coldfall-cli open)
 

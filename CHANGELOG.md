@@ -8,6 +8,18 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Group marks keep up.** A group's running count and mark in the desk list now change the
+  moment one of its desks starts, stops or goes to work. In 0.3.34 they only caught up when
+  a desk began or stopped waiting on you.
+- **Many running desks no longer crowd the tab row.** Tabs that don't fit go behind a "+N"
+  button (amber when one of them needs you); the desk on screen always keeps its tab.
+- The Groups section follows **Keep Active Groups on Top**, as the list under it does.
+
+### Added
+- Groundwork for a faster terminal (Ghostty's), not yet switched on: `coldfall-holder` can
+  be watched without being driven, and `scripts/ghostty-kit.sh` builds the library.
+
 ## [0.3.34] - 2026-11-13
 
 A new window layout, after Herdr's: groups, tabs, and panes as cards.

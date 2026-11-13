@@ -242,6 +242,17 @@ public enum Holder {
         case exit = 0x45        // E
         /// Client to holder: end the desk.
         case end = 0x58         // X
+        /// Client to holder, first: watch, don't drive (version, u32). The
+        /// holder then sends this connection a copy of the program's output
+        /// (`output`) and of the keys the attached terminal sent it (`input`),
+        /// from now on, no replay. A tap never takes the terminal, never
+        /// types, and is let go if it stops reading.
+        ///
+        /// This is how Coldfall knows what a desk is doing when the terminal
+        /// on screen (libghostty) owns its own pty and gives no byte hook.
+        /// Holders older than the tap don't know this kind and close the
+        /// connection: the desk works, its state marks stay dark.
+        case tap = 0x54         // T
     }
 
     public enum Wire {
@@ -266,6 +277,16 @@ public enum Holder {
             guard p.count >= 4 else { return nil }
             let s = p.suffix(4).map { UInt16($0) }
             return (s[s.startIndex] << 8 | s[s.startIndex + 1], s[s.startIndex + 2] << 8 | s[s.startIndex + 3])
+        }
+
+        public static func tap(version: UInt32 = Holder.protocolVersion) -> [UInt8] {
+            [UInt8(version >> 24), UInt8((version >> 16) & 0xff), UInt8((version >> 8) & 0xff), UInt8(version & 0xff)]
+        }
+
+        /// The version a hello or a tap was sent with.
+        public static func readVersion(_ p: [UInt8]) -> UInt32? {
+            guard p.count >= 4 else { return nil }
+            return UInt32(p[0]) << 24 | UInt32(p[1]) << 16 | UInt32(p[2]) << 8 | UInt32(p[3])
         }
 
         public static func status(_ code: Int32) -> [UInt8] {

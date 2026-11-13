@@ -1,5 +1,14 @@
 // swift-tools-version:5.9
 import PackageDescription
+import Foundation
+
+// Ghostty's terminal (libghostty), when scripts/ghostty-kit.sh has built it
+// into Vendor/. Optional on purpose: it's 140 MB, built with Zig and Apple's
+// Metal toolchain, so it isn't in the repo, and without it Coldfall builds
+// exactly as before with SwiftTerm. Code that uses it checks
+// `#if canImport(GhosttyKit)`.
+let ghosttyKit = Context.packageDirectory + "/Vendor/GhosttyKit.xcframework"
+let hasGhostty = FileManager.default.fileExists(atPath: ghosttyKit)
 
 // Two targets on purpose. ColdfallCore must not import AppKit — that boundary
 // is what keeps a future Linux or Windows front end a UI project rather than a
@@ -35,7 +44,12 @@ let package = Package(
         // No platform UI dependency of any kind.
         .target(name: "ColdfallCore"),
         // The macOS front end.
-        .executableTarget(name: "Coldfall", dependencies: ["ColdfallCore", "SwiftTerm"]),
+        .executableTarget(name: "Coldfall",
+                          dependencies: ["ColdfallCore", "SwiftTerm"] + (hasGhostty ? ["GhosttyKit"] : []),
+                          linkerSettings: hasGhostty ? [
+                              .linkedFramework("Carbon"), .linkedFramework("Metal"), .linkedFramework("QuartzCore"),
+                              .linkedFramework("CoreText"), .linkedFramework("IOSurface"), .linkedLibrary("c++"),
+                          ] : []),
         // Proves the core is genuinely headless, and gives a front end in any
         // language something to shell out to.
         .executableTarget(name: "ColdfallCLI", dependencies: ["ColdfallCore"]),
@@ -47,5 +61,5 @@ let package = Package(
         // contributor needs no 15GB download — tests that break that promise
         // are worse than tests that are slightly less ergonomic.
         .executableTarget(name: "ColdfallTests", dependencies: ["ColdfallCore"]),
-    ]
+    ] + (hasGhostty ? [.binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework")] : [])
 )

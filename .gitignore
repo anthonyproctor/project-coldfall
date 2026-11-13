@@ -8,3 +8,6 @@ node_modules/
 
 # Release zips from scripts/release-zip.sh.
 dist/
+
+# libghostty, built by scripts/ghostty-kit.sh (140 MB; never committed).
+app/Vendor/

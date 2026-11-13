@@ -46,55 +46,15 @@ final class SidebarView: NSView {
                                        owner: self, userInfo: nil))
     }
     override func mouseEntered(with e: NSEvent) { pointerInside = true }
-    override func mouseExited(with e: NSEvent) { pointerInside = false; syncFloat() }
+    override func mouseExited(with e: NSEvent) { pointerInside = false }
 
-    /// "Show Running Desks on Top": every running desk in an Active section
-    /// under any pinned desks, sorted by what it needs from you; the rest
-    /// below, by group.
-    var floatReady = true { didSet { if floatReady != oldValue { syncFloat(force: true) } } }
-    var onToggleFloat: (() -> Void)?
     /// A group in the Groups section was clicked: go to its desk.
     var onSelectGroup: ((String?) -> Void)?
-    /// The desks floated to the top, as last drawn. This follows `waiting`,
-    /// but only at a calm moment: never while the pointer is over the rail or
-    /// a drag is under way, so a row doesn't move out from under a click.
-    /// That includes the click that opens a ready desk: it stays where it
-    /// was clicked until the pointer leaves the rail.
-    private(set) var floated: [String] = []
     /// Rows in the pinned and floated zones. They don't drag, and a drop is
     /// never measured against them: their place on screen is not their
     /// place in the list.
     private var zoneRows: Set<Int> = []
 
-    /// The Active section as the desks' states say it should be now.
-    private func wantedActive(_ d: [Desk]) -> [String] {
-        var live: [String: DeskOrder.Live] = [:]
-        for (name, st) in status where st.running {
-            let rank: Int
-            switch st.activity { case .blocked: rank = 0; case .ready: rank = 1; case .working: rank = 2; case .quiet: rank = 3 }
-            live[name] = DeskOrder.Live(rank: rank, lastOutput: st.lastOutput)
-        }
-        // Herdr's structure replaced the Active section: groups carry the
-        // urgency, and desks stay in their groups.
-        _ = live
-        return []
-    }
-    private var lastReorder = Date.distantPast
-
-    /// Bring the Active section in line with the desks' states, if now is a
-    /// calm moment: the pointer outside the rail, no drag, and not reordered
-    /// in the last few seconds. A desk starting or stopping goes in or out
-    /// at the next calm moment; a change of order waits the few seconds too.
-    func syncFloat(force: Bool = false) {
-        guard let d = lastDesks else { return }
-        let want = wantedActive(d)
-        guard want != floated, force || (!pointerInside && !isDragging) else { return }
-        let sameMembers = Set(want) == Set(floated)
-        if !force, sameMembers, Date().timeIntervalSince(lastReorder) < 4 { return }
-        lastReorder = Date()
-        floated = want
-        build(desks: d)
-    }
     var onMoveDesk: ((Int, DeskDrop) -> Void)?
     /// A group dragged by its header: the group, and the group it now sits
     /// before (nil for last).
@@ -123,6 +83,8 @@ final class SidebarView: NSView {
     private let dropLine = NSView()
 
     private var rows: [Int: DeskRow] = [:]
+    /// The Groups section's rows, with the desks each one counts.
+    private var groupRows: [(name: String, members: [String], row: GroupRow)] = []
     private var selected = -1
     private(set) var contentHeight: CGFloat = 0
     var collapsed: Set<String> = []
@@ -141,10 +103,11 @@ final class SidebarView: NSView {
             // row out from under the pointer. The next tick catches up.
             if q != waiting, dropLine.superview == nil, let d = lastDesks {
                 waiting = q
-                if !pointerInside { floated = wantedActive(d); lastReorder = Date() }
                 build(desks: d)
             } else {
-                syncFloat()
+                // A desk starting, stopping, or going to work changes its
+                // group's count and mark without changing who is waiting.
+                for g in groupRows { g.row.configure(name: g.name, desks: g.members.map { status[$0] ?? DeskStatus() }, selected: g.row.selected) }
             }
         }
     }
@@ -172,7 +135,8 @@ final class SidebarView: NSView {
         headers = []
         spans = []
         zoneRows = []
-        let zones = DeskOrder.zones(desks, floated: floated)
+        groupRows = []
+        let zones = DeskOrder.zones(desks, floated: [])
 
         // Size from the scroll view's VISIBLE width, not our own. The first
         // build runs before the window has finished sizing, so our own width
@@ -213,7 +177,11 @@ final class SidebarView: NSView {
         addSubview(groupTitle)
         y += 22
         let selectedGroup: String?? = selected >= 0 && selected < desks.count ? .some(desks[selected].group) : nil
-        for g in DeskOrder.groups(desks) {
+        // The live order, if on, with any group it doesn't know yet (just
+        // created) after it in your order. Both sections follow it.
+        let saved = DeskOrder.groups(desks)
+        let order = groupOrder.map { live in live.filter { saved.contains($0) } + saved.filter { !live.contains($0) } } ?? saved
+        for g in order {
             let members = desks.filter { $0.group == g && !$0.hidden }
             guard !members.isEmpty else { continue }
             let gr = GroupRow(frame: NSRect(x: 4, y: y, width: w - 8, height: 30))
@@ -222,6 +190,7 @@ final class SidebarView: NSView {
                          selected: selectedGroup == .some(g))
             gr.onClick = { [weak self] in self?.onSelectGroup?(g) }
             addSubview(gr)
+            groupRows.append((g ?? "General", members.map(\.name), gr))
             y += 32
         }
         y += 10
@@ -243,10 +212,6 @@ final class SidebarView: NSView {
         }
         if !zones.pinned.isEmpty { y += 8 }
 
-        // The live order, if on, with any group it doesn't know yet (just
-        // created) after it in your order.
-        let saved = DeskOrder.groups(desks)
-        let order = groupOrder.map { live in live.filter { saved.contains($0) } + saved.filter { !live.contains($0) } } ?? saved
         for g in order {
             let all = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden }
             // A desk shown in a zone above is not shown again here. A group
@@ -261,10 +226,8 @@ final class SidebarView: NSView {
                 h.autoresizingMask = [.width]
                 // Folded, a group would hide a waiting desk entirely.
                 let inside = isDown ? [] : members.filter { waiting.contains($0.element.name) }.map(\.element.name)
-                let upTop = all.filter { zones.floated.contains($0.offset) }.count
                 h.configure(title: g, expanded: isDown, waiting: inside.count,
-                            asking: inside.contains { status[$0]?.activity == .blocked }, running: upTop)
-                _ = upTop
+                            asking: inside.contains { status[$0]?.activity == .blocked }, running: 0)
                 h.onClick = { [weak self] in self?.onToggleGroup?(g) }
                 h.onRename = { [weak self] in self?.onRenameGroup?(g) }
                 h.onSort = { [weak self] in self?.onSortDesks?() }
@@ -484,7 +447,6 @@ final class SidebarView: NSView {
         live.toolTip = "Groups with a desk that needs you, then the most recently used, rise to the top. "
             + "Your own order is kept underneath: turn this off to get it back."
         m.addItem(live)
-        // (Show Running Desks on Top went with the Groups + Desks layout.)
         let it = NSMenuItem(title: "Sort Desks A to Z", action: #selector(sortAll), keyEquivalent: "")
         it.target = self
         m.addItem(it)
@@ -492,7 +454,6 @@ final class SidebarView: NSView {
     }
     @objc private func sortAll() { onSortDesks?() }
     @objc private func toggleLive() { onToggleLive?() }
-    @objc private func toggleFloat() { onToggleFloat?() }
 
     func select(_ i: Int) {
         lastSelected = i
@@ -717,7 +678,7 @@ final class GroupRow: NSView {
     private let name = NSTextField(labelWithString: "")
     private let count = NSTextField(labelWithString: "")
     private let mark = MarkView()
-    private var selected = false
+    private(set) var selected = false
     private var hovering = false { didSet { needsDisplay = true } }
 
     /// A steady colour per group name, from a small palette that reads on

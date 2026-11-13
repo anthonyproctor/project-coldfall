@@ -33,6 +33,12 @@ final class TabBar: NSView {
     private var views: [TabView] = []
     private var shown: [Tab] = []
     private var current: String?
+    /// Every tab asked for, and the ones that didn't fit (the "more" menu).
+    private var all: [Tab] = []
+    private var overflow: [Tab] = []
+    private let more = NSButton()
+    /// Narrower than this and a tab's name is unreadable.
+    private static let tabRoom: CGFloat = 104
 
     init() {
         super.init(frame: .zero)
@@ -56,6 +62,16 @@ final class TabBar: NSView {
         plus.translatesAutoresizingMaskIntoConstraints = false
         addSubview(plus)
 
+        more.bezelStyle = .inline
+        more.isBordered = false
+        more.font = .systemFont(ofSize: 11.5, weight: .medium)
+        more.toolTip = "More running desks in this group"
+        more.target = self; more.action = #selector(showMore)
+        more.translatesAutoresizingMaskIntoConstraints = false
+        more.setContentCompressionResistancePriority(.required, for: .horizontal)
+        more.isHidden = true
+        addSubview(more)
+
         prompt.target = self; prompt.action = #selector(writePrompt)
         prompt.bezelStyle = .inline
         prompt.isBordered = false
@@ -69,7 +85,9 @@ final class TabBar: NSView {
             heightAnchor.constraint(equalToConstant: Self.height),
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             row.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 1),
-            plus.leadingAnchor.constraint(equalTo: row.trailingAnchor, constant: 4),
+            more.leadingAnchor.constraint(equalTo: row.trailingAnchor, constant: 4),
+            more.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            plus.leadingAnchor.constraint(equalTo: more.trailingAnchor, constant: 2),
             plus.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             plus.widthAnchor.constraint(equalToConstant: 24),
             plus.heightAnchor.constraint(equalToConstant: 24),
@@ -83,7 +101,22 @@ final class TabBar: NSView {
 
     /// Show these tabs, `current` selected. Views are reused when the set of
     /// names is unchanged, so a state tick only repaints marks.
-    func set(_ tabs: [Tab], current: String?) {
+    func set(_ wanted: [Tab], current: String?) {
+        all = wanted
+        // What fits between the edge and the buttons on the right.
+        let space = bounds.width - 8 - (prompt.intrinsicContentSize.width + 10) - 28 - 40 - 12
+        let room = bounds.width > 0 ? max(1, Int(space / Self.tabRoom)) : wanted.count
+        if ProcessInfo.processInfo.environment["COLDFALL_SNAPSHOT_DEBUG"] != nil { print("tabs: width \(bounds.width) room \(room) of \(wanted.count)") }
+        let fit = DeskTabs.fit(wanted.map(\.name), current: current, room: room)
+        let tabs = fit.shown.compactMap { n in wanted.first { $0.name == n } }
+        overflow = fit.more.compactMap { n in wanted.first { $0.name == n } }
+        more.isHidden = overflow.isEmpty
+        if !overflow.isEmpty {
+            // The count turns amber when a desk behind it needs you.
+            let asking = overflow.contains { Mark($0.status) == .needsYou }
+            more.title = "+\(overflow.count)"
+            more.contentTintColor = asking ? MarkView.amber : Theme.ui.dimText
+        }
         if tabs.map(\.name) != shown.map(\.name) {
             for v in views { row.removeArrangedSubview(v); v.removeFromSuperview() }
             views = tabs.map { t in
@@ -107,6 +140,28 @@ final class TabBar: NSView {
         plus.contentTintColor = ui.dimText
         prompt.contentTintColor = ui.dimText
         for (v, t) in zip(views, shown) { v.configure(t, selected: t.name == current, force: true) }
+    }
+
+    override func setFrameSize(_ n: NSSize) {
+        let was = frame.width
+        super.setFrameSize(n)
+        if n.width != was, !all.isEmpty { set(all, current: current) }
+    }
+
+    @objc private func showMore() {
+        let m = NSMenu()
+        for t in overflow {
+            let item = NSMenuItem(title: t.name, action: #selector(pickMore(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = t.name
+            item.image = VendorIcon.image(runtime: t.runtime, icon: t.icon, size: 14)
+            if Mark(t.status) == .needsYou { item.title = t.name + "  ·  needs you" }
+            m.addItem(item)
+        }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: more.bounds.height + 4), in: more)
+    }
+    @objc private func pickMore(_ item: NSMenuItem) {
+        if let n = item.representedObject as? String { onSelect?(n) }
     }
 
     @objc private func showPlus() {
@@ -155,7 +210,6 @@ private final class TabView: NSView {
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 28),
             widthAnchor.constraint(lessThanOrEqualToConstant: 220),
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 15),
