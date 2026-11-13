@@ -8,11 +8,17 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.42] - 2026-11-13
+
+Held desks stand apart from Coldfall, so ending one can never end the other.
+
 ### Fixed
 - **A held desk is no longer part of Coldfall's process tree.** Its holder used to start as
   a child of the app, so anything that ended that tree (a cleanup script that walks up from
   a tool server, a force quit) ended every held desk along with Coldfall. The holder now
   belongs to the system from the moment it starts.
+- The holders' log names who asked a desk to end (the process and its program), noted when
+  it connects rather than after it has gone.
 
 ## [0.3.41] - 2026-11-13
 
@@ -1076,7 +1082,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...HEAD
+[0.3.42]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...v0.3.42
 [0.3.41]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...v0.3.41
 [0.3.40]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...v0.3.40
 [0.3.39]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.38...v0.3.39

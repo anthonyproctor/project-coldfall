@@ -253,7 +253,11 @@ func serve() -> Never {
     /// passer-by (a liveness check, an end request) until then. Only a hello
     /// takes over the terminal, so checking on a holder never cuts off the
     /// Coldfall attached to it.
-    struct Conn { var fd: Int32; var dec = Holder.Decoder(); var attached = false; var tap = false; var out: [UInt8] = [] }
+    struct Conn {
+        var fd: Int32; var dec = Holder.Decoder(); var attached = false; var tap = false; var out: [UInt8] = []
+        /// Who connected, noted while they were still there to ask about.
+        var from = "a process that had already gone"
+    }
     var conns: [Conn] = []
     /// A terminal this far behind isn't reading; it's let go rather than
     /// holding the program's output in memory.
@@ -275,6 +279,18 @@ func serve() -> Never {
         } else {
             try? line.write(toFile: path, atomically: true, encoding: .utf8)
         }
+    }
+    /// The process at the other end of a connection: its pid and what it is.
+    func who(_ fd: Int32) -> String {
+        var peer: pid_t = 0
+        for opt in [LOCAL_PEERPID, LOCAL_PEEREPID] where peer <= 0 {
+            var len = socklen_t(MemoryLayout<pid_t>.size)
+            if getsockopt(fd, 0 /* SOL_LOCAL */, opt, &peer, &len) != 0 { peer = 0 }
+        }
+        guard peer > 0 else { return "a process that had already gone" }
+        var buf = [CChar](repeating: 0, count: 4096)
+        let n = proc_pidpath(peer, &buf, UInt32(buf.count))
+        return "pid \(peer)" + (n > 0 ? " (" + String(cString: buf) + ")" : "")
     }
     var recordedEnd = false
     func done(_ code: Int32) -> Never {
@@ -354,7 +370,9 @@ func serve() -> Never {
                     setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
                     _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) | O_NONBLOCK)
                     _ = fcntl(c, F_SETFD, FD_CLOEXEC)
-                    conns.append(Conn(fd: c))
+                    var conn = Conn(fd: c)
+                    conn.from = who(c)
+                    conns.append(conn)
                 } else { close(c) }
             }
         }
@@ -437,10 +455,7 @@ func serve() -> Never {
                 case .end:
                     // Who asked, for the record: a desk that vanishes
                     // should be explainable afterwards.
-                    var peer: pid_t = 0
-                    var len = socklen_t(MemoryLayout<pid_t>.size)
-                    getsockopt(conns[i].fd, SOL_LOCAL, LOCAL_PEERPID, &peer, &len)
-                    record("ended by request from pid \(peer)")
+                    record("ended by request from \(conns[i].from)")
                     endDesk()
                 default: break
                 }
