@@ -44,7 +44,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        #if canImport(GhosttyKit)
+        #if COLDFALL_GHOSTTY
         // `--ghostty-demo [command]`: one Ghostty terminal in a window and
         // nothing else: no desks, no rail. For trying the new terminal by
         // hand before it becomes a pane. With COLDFALL_GHOSTTY_SELFTEST set

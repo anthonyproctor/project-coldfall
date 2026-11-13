@@ -8,7 +8,9 @@ import Foundation
 // toolchain, so it isn't in the repo; and while it is being brought in, a
 // plain `swift build` (and so every release) stays the SwiftTerm app it
 // was, whether or not the library happens to be on this Mac. Code that
-// uses it checks `#if canImport(GhosttyKit)`.
+// uses it checks `#if COLDFALL_GHOSTTY`, a flag set here, not
+// `canImport`: a build folder that once held the module still answers yes
+// to that after the library is no longer linked, and the link then fails.
 let ghosttyKit = Context.packageDirectory + "/Vendor/GhosttyKit.xcframework"
 let hasGhostty = ProcessInfo.processInfo.environment["COLDFALL_GHOSTTY"] == "1"
     && FileManager.default.fileExists(atPath: ghosttyKit)
@@ -49,6 +51,7 @@ let package = Package(
         // The macOS front end.
         .executableTarget(name: "Coldfall",
                           dependencies: ["ColdfallCore", "SwiftTerm"] + (hasGhostty ? ["GhosttyKit"] : []),
+                          swiftSettings: hasGhostty ? [.define("COLDFALL_GHOSTTY")] : [],
                           linkerSettings: hasGhostty ? [
                               .linkedFramework("Carbon"), .linkedFramework("Metal"), .linkedFramework("QuartzCore"),
                               .linkedFramework("CoreText"), .linkedFramework("IOSurface"), .linkedLibrary("c++"),

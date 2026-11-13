@@ -1,7 +1,7 @@
 // Ghostty's terminal as a Coldfall pane.
 //
-// Only compiled when scripts/ghostty-kit.sh has put GhosttyKit in Vendor/;
-// without it this file is empty and Coldfall is exactly the SwiftTerm app.
+// Only compiled in a build made with COLDFALL_GHOSTTY=1 (see Package.swift);
+// otherwise this file is empty and Coldfall is exactly the SwiftTerm app.
 // Nothing in the app uses this view yet except `--ghostty-demo`, which opens
 // one in a window so it can be tried by hand. It becomes a pane once the
 // holder's tap (see Holder.Kind.tap) is feeding activity, because libghostty
@@ -11,7 +11,7 @@
 // (macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift, MIT, Mitchell
 // Hashimoto and contributors), cut down to what a pane needs.
 
-#if canImport(GhosttyKit)
+#if COLDFALL_GHOSTTY
 import AppKit
 import GhosttyKit
 import ColdfallCore
