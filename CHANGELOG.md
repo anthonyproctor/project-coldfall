@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.31] - 2026-11-13
+
+Everything from the keyboard, and a look without switching.
+
 ### Added
 - **Your own shortcuts.** Settings, General, Edit Shortcuts opens `keys.json`: a command's name
   (as ⌘⇧P shows it) to a shortcut like "cmd+shift+k", or "none" to take one away. Coldfall
@@ -775,7 +779,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.31...HEAD
+[0.3.31]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.30...v0.3.31
 [0.3.30]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.27...v0.3.28
