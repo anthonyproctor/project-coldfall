@@ -18,11 +18,14 @@ import ColdfallCore
 enum PaletteItem {
     case desk(index: Int, name: String, detail: String)
     case file(url: URL, rel: String)
+    /// A menu command (see Commands): typed after ">".
+    case command(Commands.Entry, NSMenuItem)
 
     var key: String {
         switch self {
         case .desk(_, let n, _): return n
         case .file(_, let r): return r
+        case .command(let e, _): return e.searchKey
         }
     }
 }
@@ -58,6 +61,7 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
     private let hint = NSTextField(labelWithString: "")
     private var desks: [PaletteItem] = []
     private var files: [PaletteItem] = []
+    private var commands: [PaletteItem] = []
     private var shown: [PaletteItem] = []
     private var root = ""
     private var indexing = false
@@ -144,6 +148,9 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
 
     /// Open over `window`, listing `deskList` now and the files under `root`
     /// once they are indexed.
+    /// The desk on screen and its right-click menu, offered as commands.
+    var deskMenu: (() -> (name: String, menu: NSMenu)?)?
+
     func open(over window: NSWindow, desks deskList: [Desk], root: String, query: String = "") {
         restyle()
         desks = deskList.enumerated().map { i, d in
@@ -151,6 +158,7 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
                   detail: d.runtime == "shell" ? "shell" : d.vendorLabel + (d.isDefault ? " home" : ""))
         }
         if root != self.root { files = []; self.root = root }
+        commands = Palette.menuCommands(desk: deskMenu?())
         field.stringValue = query
         refilter()
 
@@ -186,8 +194,52 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
         }
     }
 
+    /// Every enabled command in the app's menus, read now so it reflects the
+    /// desk on screen (what's enabled depends on it).
+    static func menuCommands(desk: (name: String, menu: NSMenu)? = nil) -> [PaletteItem] {
+        var found: [(Commands.Entry, NSMenuItem)] = []
+        func walk(_ menu: NSMenu, _ path: [String]) {
+            menu.update()        // let each item say whether it applies right now
+            for it in menu.items where !it.isSeparatorItem && !it.isHidden {
+                if let sub = it.submenu {
+                    // A menu bar item made without a title carries its name
+                    // on the submenu.
+                    let name = (it.title.isEmpty || it.title == "NSMenuItem") ? sub.title : it.title
+                    walk(sub, path + [name].filter { !$0.isEmpty })
+                } else if it.action != nil {
+                    found.append((Commands.Entry(path: path + [it.title], key: it.keyEquivalent,
+                                                 modifiers: it.keyEquivalentModifierMask.rawValue,
+                                                 enabled: it.isEnabled), it))
+                }
+            }
+        }
+        // The desk on screen first: stopping or renaming it is the common case.
+        if let d = desk { walk(d.menu, [d.name]) }
+        if let main = NSApp.mainMenu {
+            // The app menu's own title is the app's name; leave it out of paths.
+            for top in main.items {
+                guard let s = top.submenu else { continue }
+                let name = (top.title.isEmpty || top.title == "NSMenuItem") ? s.title : top.title
+                walk(s, top == main.items.first ? [] : [name])
+            }
+        }
+        let keep = Commands.offer(found.map(\.0))
+        var used = Set<String>()
+        return found.compactMap { e, it in
+            guard keep.contains(e), used.insert(e.title).inserted else { return nil }
+            return .command(e, it)
+        }
+    }
+
     private func refilter() {
         let q = field.stringValue
+        if let cq = Commands.commandQuery(q) {
+            shown = Fuzzy.rank(cq, commands, limit: cq.isEmpty ? commands.count : 40, key: \.key)
+            table.reloadData()
+            if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+            hint.stringValue = shown.isEmpty ? "No command matches" : "\(shown.count) commands  ·  ⏎ to run  ·  esc to close"
+            return
+        }
         // Desks first — there are few, and jumping between them is the common
         // case — then files. Each ranked on its own so a strong file match
         // cannot push every desk off the list.
@@ -199,7 +251,7 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
         if indexing {
             hint.stringValue = "Indexing files…"
         } else if q.isEmpty {
-            hint.stringValue = "Type to search \(files.count) files and \(desks.count) desks  ·  ↑↓ to move  ·  ⏎ to open  ·  esc to close"
+            hint.stringValue = "Type to search \(files.count) files and \(desks.count) desks  ·  > for commands  ·  ⏎ to open  ·  esc to close"
         } else {
             hint.stringValue = shown.isEmpty ? "Nothing matches" : "\(shown.count) matches  ·  ⏎ to open"
         }
@@ -213,6 +265,13 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
         switch item {
         case .desk(let i, _, _): onPickDesk?(i)
         case .file(let u, _): onPickFile?(u)
+        case .command(_, let it):
+            // After the panel has gone, so the command reaches the window
+            // underneath, the way choosing it from the menu would.
+            DispatchQueue.main.async {
+                guard let a = it.action else { return }
+                NSApp.sendAction(a, to: it.target, from: it)
+            }
         }
     }
 
@@ -268,6 +327,12 @@ final class Palette: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTab
             name.stringValue = (rel as NSString).lastPathComponent
             let dir = (rel as NSString).deletingLastPathComponent
             detail.stringValue = dir.isEmpty ? "" : dir
+        case .command(let e, _):
+            icon.image = NSImage(systemSymbolName: "command", accessibilityDescription: "Command")
+            icon.contentTintColor = ui.accent
+            name.stringValue = e.title
+            let menu = e.path.dropLast().joined(separator: " ▸ ")
+            detail.stringValue = [menu, e.shortcut].filter { !$0.isEmpty }.joined(separator: "   ")
         }
         NSLayoutConstraint.activate([
             icon.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),

@@ -9,6 +9,10 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Run any command from the keyboard.** ⌘⇧P, or `>` in quick open, lists every menu command
+  with its shortcut, and the desk on screen's own actions (stop, rename, pin, hide…) first.
+  Type a few letters and press Return. Commands come from the menus themselves, so the list is
+  always complete and never offers what the menus wouldn't.
 - **Agents that speak OSC 7501 report to Coldfall without a hook.** The Program Status
   Protocol (also read by Herdr) lets a program say it's blocked, errored or done in one escape
   sequence. Coldfall treats blocked and error as "needs you" and done as finished, exactly as

@@ -279,6 +279,12 @@ final class DeskRow: NSView {
     }
 
     override func rightMouseDown(with e: NSEvent) {
+        NSMenu.popUpContextMenu(actionMenu(), with: e, for: self)
+    }
+
+    /// This desk's right-click menu. The command palette offers it too, for
+    /// the desk on screen.
+    func actionMenu() -> NSMenu {
         let m = NSMenu()
         let entries = DeskMenu.items(runtime: runtime, running: status.running, hidden: onUnhide != nil,
                                      canReveal: onReveal != nil, canMakeDefault: onMakeDefault != nil,
@@ -328,7 +334,7 @@ final class DeskRow: NSView {
             }
             m.addItem(it)
         }
-        NSMenu.popUpContextMenu(m, with: e, for: self)
+        return m
     }
     @objc private func remove() { onRemove?() }
     @objc private func rename() { onRename?() }

@@ -123,6 +123,9 @@ final class SidebarView: NSView {
             }
         }
     }
+    /// A desk's right-click menu, for the command palette.
+    func actionMenu(for i: Int) -> NSMenu? { rows[i]?.actionMenu() }
+
     /// Desks waiting on you, oldest first, as last drawn.
     private(set) var waiting: [String] = []
     /// Advanced by the controller so a working desk's spinner turns.

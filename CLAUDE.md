@@ -22,6 +22,7 @@ swift build -c release
 ./.build/release/coldfall-test
 ./.build/release/Coldfall --snapshot /tmp/shot.png            # render the window, start nothing
 ./.build/release/Coldfall --snapshot /tmp/shot.png --palette hub   # plus quick open
+./.build/release/Coldfall --snapshot /tmp/shot.png --palette ">stop" --waiting   # quick open as a command palette
 ./.build/release/Coldfall --snapshot /tmp/shot.png --desks demo.toml  # made-up desks, not the real ones
 ./.build/release/Coldfall --snapshot /tmp/shot.png --reader-hidden    # as if the reader were toggled off
 ./.build/release/Coldfall --snapshot /tmp/shot.png --settings Desks   # plus Settings on a tab, to shot-settings.png

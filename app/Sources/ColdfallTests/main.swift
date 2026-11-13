@@ -2841,6 +2841,29 @@ do {
     check("7501: a new one after is", a.needsYou)
 }
 
+// MARK: - command palette
+
+do {
+    let M = Commands.Mods.self
+    eq("commands: ⌘P", Commands.shortcut(key: "p", modifiers: M.command), "⌘P")
+    eq("commands: modifiers in the menu's order", Commands.shortcut(key: "p", modifiers: M.command | M.shift | M.option), "⌥⇧⌘P")
+    eq("commands: an upper-case key means Shift", Commands.shortcut(key: "P", modifiers: M.command), "⇧⌘P")
+    eq("commands: Return has a symbol", Commands.shortcut(key: "\r", modifiers: M.command), "⌘↩")
+    eq("commands: an arrow too", Commands.shortcut(key: "\u{F701}", modifiers: M.command | M.option), "⌥⌘↓")
+    eq("commands: no key, no shortcut", Commands.shortcut(key: "", modifiers: M.command), "")
+    eq("commands: > asks for commands", Commands.commandQuery(">  stop "), "stop")
+    eq("commands: anything else doesn't", Commands.commandQuery("stop"), nil)
+    let list = Commands.offer([
+        .init(path: ["Desk", "Stop Desk…"], key: "", modifiers: 0),
+        .init(path: ["Desk", "Split Right"], key: "d", modifiers: M.command, enabled: false),
+        .init(path: ["Services", "Make Sticky"], key: "", modifiers: 0),
+        .init(path: ["View", "Stop Desk…"], key: "", modifiers: 0),
+        .init(path: ["View", "Run a Command…"], key: "p", modifiers: M.command | M.shift),
+    ])
+    eq("commands: enabled, not the system's lists, each once", list.map(\.title), ["Stop Desk…", "Run a Command…"])
+    eq("commands: found by menu and name", list.first?.searchKey, "Desk Stop Desk")
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

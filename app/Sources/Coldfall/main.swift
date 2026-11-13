@@ -178,6 +178,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         reader.onPopToggle = { [weak self] in self?.popOutOrDock() }
         palette.onPickDesk = { [weak self] i in self?.open(i) }
         palette.onPickFile = { [weak self] u in self?.openReader(u) }
+        palette.deskMenu = { [weak self] in
+            guard let self else { return nil }
+            let name = self.visible?.desk.name ?? self.waitingName
+            guard let n = name, let i = self.deskIndex(n), let m = self.sidebar.actionMenu(for: i) else { return nil }
+            return (n, m)
+        }
         meter.onClick = { [weak self] in self?.openMeter() }
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
 
@@ -647,6 +653,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 guard let q = paletteQuery, let me = self else { exit(0) }
                 let root = me.desks.indices.contains(i) ? me.desks[i].resolvedCwd : NSHomeDirectory()
+                // Commands are read from the menus, which a snapshot doesn't
+                // otherwise install.
+                if Commands.commandQuery(q) != nil { me.installMenu() }
                 me.palette.open(over: me.window, desks: me.desks, root: root, query: q)
                 // Give the background file index a moment to land.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -869,6 +878,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             m.addItem(it)
         }
         add(viewMenu, "Go to Desk or File…", #selector(openPalette), "p")
+        add(viewMenu, "Run a Command…", #selector(openCommands), "p", [.command, .shift])
         viewMenu.addItem(.separator())
         add(viewMenu, "Show or Hide Rail", #selector(toggleRail), "b")
         add(viewMenu, "Show or Hide Reader", #selector(toggleReader), "b", [.command, .option])
@@ -2418,6 +2428,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         if palette.isOpen { palette.close(); return }
         let root = visible?.desk.resolvedCwd ?? NSHomeDirectory()
         palette.open(over: window, desks: desks, root: root)
+    }
+
+    /// ⌘⇧P: quick open already asking for commands.
+    @objc func openCommands() {
+        if palette.isOpen { palette.close(); return }
+        let root = visible?.desk.resolvedCwd ?? NSHomeDirectory()
+        palette.open(over: window, desks: desks, root: root, query: "> ")
     }
 
     /// The header over the terminal follows the desk and its pane count.
