@@ -14,6 +14,12 @@ opens this file.
   another group moves you to it, so a desk in a different group could only be put beside
   the one on screen by switching the list to By priority first.
 
+### Changed
+- **The desk beside has a tab.** The tab row showed only the running desks in the group of
+  the desk on screen, so a desk opened beside it from another group had none. Both desks
+  you are looking at are now in the row; clicking the second one's tab swaps the two, as
+  clicking it in the list does.
+
 ## [0.3.42] - 2026-11-13
 
 Held desks stand apart from Coldfall, so ending one can never end the other.

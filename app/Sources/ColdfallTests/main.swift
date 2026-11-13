@@ -1874,6 +1874,12 @@ do {
         eq("tabs: another group is another set", DeskTabs.list(t, current: "golf", running: ["b", "golf"]), ["golf"])
         eq("tabs: ungrouped desks share a set", DeskTabs.list(t, current: "hub", running: ["work"]), ["hub"])
         eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
+        eq("tabs: the desk beside has a tab, from another group, after the one on screen",
+           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"], beside: "golf"), ["work", "golf", "b"])
+        eq("tabs: a desk beside from this group keeps its place",
+           DeskTabs.list(t, current: "work", running: ["b", "work"], beside: "b"), ["work", "b"])
+        eq("tabs: a desk beside that no longer exists adds nothing",
+           DeskTabs.list(t, current: "work", running: ["work"], beside: "gone"), ["work"])
         eq("tabs: no desk on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]), [])
         eq("tabs: + offers this group's stopped desks", DeskTabs.startable(t, current: "work", running: ["work"]), ["a", "b"])
         check("pair: choosing another desk keeps the one beside", DeskPair.show("c", main: "a", beside: "b") == ("c", Optional("b")))

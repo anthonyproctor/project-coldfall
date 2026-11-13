@@ -7,12 +7,22 @@ import Foundation
 /// screen always has a tab, running or not, so you can see where you are.
 /// Hidden desks get no tab unless they are the one on screen. Order is the
 /// rail's own, so tabs never shuffle as desks change state.
+///
+/// A desk opened beside the one on screen has a tab too, whatever group it
+/// is in: both desks you are looking at are in the row. One from another
+/// group sits right after the desk on screen, where it is not pushed off
+/// the end by a full group.
 public enum DeskTabs {
-    public static func list(_ desks: [Desk], current: String?, running: Set<String>) -> [String] {
+    public static func list(_ desks: [Desk], current: String?, running: Set<String>, beside: String? = nil) -> [String] {
         guard let cur = current, let here = desks.first(where: { $0.name == cur }) else { return [] }
-        return desks.filter { d in
-            d.group == here.group && (d.name == cur || (running.contains(d.name) && !d.hidden))
+        var out = desks.filter { d in
+            d.group == here.group && (d.name == cur || d.name == beside || (running.contains(d.name) && !d.hidden))
         }.map(\.name)
+        if let b = beside, b != cur, !out.contains(b), desks.contains(where: { $0.name == b }),
+           let at = out.firstIndex(of: cur) {
+            out.insert(b, at: at + 1)
+        }
+        return out
     }
 
     /// The tabs that fit, and the ones that don't (shown in a "more" menu).

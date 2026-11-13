@@ -2916,6 +2916,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             keyIsBeside = false
         }
         syncPairFocus()
+        refreshTabs(sidebar.status)
     }
 
     /// Take the second desk off the screen. It keeps running.
@@ -3385,11 +3386,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// The desk in a --snapshot, which starts no session to be visible.
     var snapDesk: String?
 
-    /// The tab row: the running desks in the on-screen desk's group.
+    /// The tab row: the running desks in the on-screen desk's group, and the
+    /// desk beside it wherever that one lives.
     func refreshTabs(_ status: [String: DeskStatus]) {
         let current = waitingName ?? visible?.desk.name ?? snapDesk
         let running = Set(status.filter { $0.value.running }.map(\.key))
-        let names = DeskTabs.list(desks, current: current, running: running)
+        let names = DeskTabs.list(desks, current: current, running: running, beside: beside?.desk.name)
         let list: [TabBar.Tab] = names.compactMap { n in
             guard let d = desks.first(where: { $0.name == n }) else { return nil }
             return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus(), color: d.color)
