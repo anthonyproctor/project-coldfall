@@ -979,7 +979,51 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         mail.target = self
         deskMenu.addItem(mail)
         deskItem.submenu = deskMenu
+        applyKeyMap(to: main)
         NSApp.mainMenu = main
+    }
+
+    /// Your shortcuts from keys.json over the built-in ones (see KeyMap).
+    /// Problems in the file are kept for Settings to show.
+    var keyMapProblems: [String] = []
+    var keyMapStamp: Date?
+    func applyKeyMap(to main: NSMenu) {
+        keyMapStamp = (try? FileManager.default.attributesOfItem(atPath: KeyMap.path))?[.modificationDate] as? Date
+        guard let map = KeyMap.load() else { keyMapProblems = []; return }
+        keyMapProblems = map.problems
+        guard !map.shortcuts.isEmpty else { return }
+        var leaves: [NSMenuItem] = []
+        func walk(_ m: NSMenu) {
+            for it in m.items { if let s = it.submenu { walk(s) } else if !it.isSeparatorItem { leaves.append(it) } }
+        }
+        walk(main)
+        func current(_ it: NSMenuItem) -> KeyMap.Shortcut? {
+            guard !it.keyEquivalent.isEmpty else { return nil }
+            var mods = it.keyEquivalentModifierMask.rawValue
+            let k = it.keyEquivalent
+            if k.count == 1, k.uppercased() == k, k.lowercased() != k { mods |= Commands.Mods.shift }
+            return KeyMap.Shortcut(key: k.lowercased(), modifiers: mods & (Commands.Mods.command | Commands.Mods.shift | Commands.Mods.option | Commands.Mods.control))
+        }
+        let given = Set(map.shortcuts.values.filter { $0 != .none })
+        for it in leaves {
+            if let sc = map.shortcuts[KeyMap.normal(it.title)] {
+                it.keyEquivalent = sc.key
+                it.keyEquivalentModifierMask = NSEvent.ModifierFlags(rawValue: sc.modifiers)
+            } else if let c = current(it), given.contains(c) {
+                // Its key now belongs to the command you gave it to.
+                it.keyEquivalent = ""
+            }
+        }
+        let known = Set(leaves.map { KeyMap.normal($0.title) })
+        for name in map.shortcuts.keys where !known.contains(name) {
+            keyMapProblems.append("No command called \u{201C}\(name)\u{201D}. ⌘⇧P lists them all.")
+        }
+    }
+
+    /// Back in front: if keys.json changed meanwhile, apply it.
+    func applicationDidBecomeActive(_ n: Notification) {
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: KeyMap.path))?[.modificationDate] as? Date
+        if stamp != keyMapStamp { installMenu() }
     }
 
     @objc func jump(_ sender: NSMenuItem) { open(sender.tag) }

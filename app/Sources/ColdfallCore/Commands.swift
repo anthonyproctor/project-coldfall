@@ -82,3 +82,93 @@ public enum Commands {
         }
     }
 }
+
+/// Your own shortcuts: `~/.config/coldfall/keys.json`, a menu command's name
+/// to a shortcut, or "none" to take one away.
+///
+///     { "Run a Command…": "cmd+k", "Show or Hide Rail": "none" }
+///
+/// Names are matched without case and without the trailing "…", so "run a
+/// command" works too. A shortcut you give a command is taken from whatever
+/// command had it, so one key never means two things.
+public enum KeyMap {
+    public static var path: String {
+        (Limits.configDir as NSString).appendingPathComponent("keys.json")
+    }
+
+    public struct Shortcut: Equatable, Hashable {
+        /// As AppKit's keyEquivalent wants it: lower case, or a special key.
+        public var key: String
+        public var modifiers: UInt
+        public init(key: String, modifiers: UInt) { self.key = key; self.modifiers = modifiers }
+        public static let none = Shortcut(key: "", modifiers: 0)
+        public var label: String { Commands.shortcut(key: key, modifiers: modifiers) }
+    }
+
+    public struct Map: Equatable {
+        /// By normalised command name.
+        public var shortcuts: [String: Shortcut]
+        public var problems: [String]
+    }
+
+    public static func normal(_ title: String) -> String {
+        title.replacingOccurrences(of: "…", with: "").replacingOccurrences(of: "...", with: "")
+            .trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    static let named: [String: String] = [
+        "return": "\r", "enter": "\r", "esc": "\u{1b}", "escape": "\u{1b}", "tab": "\t", "space": " ",
+        "delete": "\u{8}", "backspace": "\u{8}",
+        "up": "\u{F700}", "down": "\u{F701}", "left": "\u{F702}", "right": "\u{F703}",
+    ]
+
+    /// "cmd+shift+k" → ⇧⌘K. Nil when it isn't one.
+    public static func parse(shortcut s: String) -> Shortcut? {
+        let t = s.trimmingCharacters(in: .whitespaces).lowercased()
+        if t == "none" || t.isEmpty { return Shortcut.none }
+        var mods: UInt = 0
+        var key: String?
+        for part in t.split(separator: "+").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            switch part {
+            case "cmd", "command", "⌘": mods |= Commands.Mods.command
+            case "shift", "⇧": mods |= Commands.Mods.shift
+            case "opt", "option", "alt", "⌥": mods |= Commands.Mods.option
+            case "ctrl", "control", "⌃": mods |= Commands.Mods.control
+            default:
+                guard key == nil else { return nil }        // two keys
+                if let n = named[part] { key = n }
+                else if part.count == 1 { key = part }
+                else { return nil }
+            }
+        }
+        // A bare letter would steal typing from the terminal.
+        guard let k = key, mods & (Commands.Mods.command | Commands.Mods.control) != 0 else { return nil }
+        return Shortcut(key: k, modifiers: mods)
+    }
+
+    public static func parse(json text: String) -> Map {
+        guard let data = text.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return Map(shortcuts: [:], problems: ["keys.json isn't a JSON object of command names to shortcuts."])
+        }
+        var out: [String: Shortcut] = [:], problems: [String] = [], used: [Shortcut: String] = [:]
+        for (name, v) in obj.sorted(by: { $0.key < $1.key }) {
+            guard let s = v as? String, let sc = parse(shortcut: s) else {
+                problems.append("\u{201C}\(name)\u{201D}: \u{201C}\(v)\u{201D} isn't a shortcut Coldfall can use. Try \u{201C}cmd+shift+k\u{201D}; it needs ⌘ or ⌃.")
+                continue
+            }
+            if sc != .none, let other = used[sc] {
+                problems.append("\(sc.label) is given to both \u{201C}\(other)\u{201D} and \u{201C}\(name)\u{201D}; kept for \u{201C}\(other)\u{201D}.")
+                continue
+            }
+            if sc != .none { used[sc] = name }
+            out[normal(name)] = sc
+        }
+        return Map(shortcuts: out, problems: problems)
+    }
+
+    public static func load(path: String = KeyMap.path) -> Map? {
+        guard let t = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return parse(json: t)
+    }
+}

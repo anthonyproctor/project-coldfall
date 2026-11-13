@@ -9,6 +9,10 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Your own shortcuts.** Settings, General, Edit Shortcuts opens `keys.json`: a command's name
+  (as ⌘⇧P shows it) to a shortcut like "cmd+shift+k", or "none" to take one away. Coldfall
+  applies it the next time it comes to the front; a key you give a command is taken from the
+  one that had it, and anything it can't use is listed in Settings in orange.
 - **The meter says when you'd run out.** If, at the rate so far, a vendor's weekly quota runs
   out before it resets, the usage strip says when: "claude: at this pace you run out Fri 6 pm,
   47h before the week resets." Quiet when you're on pace, and early in the week, when one busy

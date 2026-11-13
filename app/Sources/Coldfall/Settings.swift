@@ -244,6 +244,27 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             of: " You can turn this off any time in Settings.", with: "")
             + " The server's code is in the repo under server/."))
 
+        updLines.append(caps("SHORTCUTS"))
+        let keysBtn = NSButton(title: "Edit Shortcuts…", target: self, action: #selector(editShortcuts))
+        keysBtn.bezelStyle = .rounded
+        updLines.append(keysBtn)
+        updLines.append(note("Opens keys.json: a command's name, as ⌘⇧P shows it, to a shortcut such as "
+            + "\u{201C}cmd+shift+k\u{201D}, or \u{201C}none\u{201D} to take one away. Coldfall applies it "
+            + "the next time it comes to the front. A shortcut you give a command is taken from the one that had it."))
+        if let map = KeyMap.load() {
+            var problems = map.problems
+            // Names checked against the menus as they are now.
+            if let main = NSApp.mainMenu {
+                var known = Set<String>()
+                func walk(_ m: NSMenu) { for it in m.items { if let s = it.submenu { walk(s) } else { known.insert(KeyMap.normal(it.title)) } } }
+                walk(main)
+                for n in map.shortcuts.keys.sorted() where !known.contains(n) {
+                    problems.append("No command called \u{201C}\(n)\u{201D}. ⌘⇧P lists them all.")
+                }
+            }
+            for p in problems { let l = note(p); l.textColor = .systemOrange; updLines.append(l) }
+        }
+
         // Leaving, kept here on purpose: findable by someone looking for it,
         // and nowhere near Quit.
         updLines.append(caps("REMOVE Project Coldfall"))
@@ -480,6 +501,17 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func openUninstall() {
         NotificationCenter.default.post(name: .coldfallOpenUninstall, object: nil)
+    }
+
+    /// Open keys.json, starting one that changes nothing if there isn't one.
+    @objc private func editShortcuts() {
+        let p = KeyMap.path
+        if !FileManager.default.fileExists(atPath: p) {
+            try? FileManager.default.createDirectory(atPath: (p as NSString).deletingLastPathComponent,
+                                                     withIntermediateDirectories: true)
+            try? "{\n  \"Run a Command…\": \"cmd+shift+p\"\n}\n".write(toFile: p, atomically: true, encoding: .utf8)
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: p))
     }
 
     @objc private func toggleNotify(_ sender: NSButton) {

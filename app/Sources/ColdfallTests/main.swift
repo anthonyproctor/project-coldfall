@@ -2907,6 +2907,25 @@ do {
                      && WeekPace.line(vendor: "claude", r, calendar: cal).hasSuffix("before the week resets.")) }
 }
 
+// MARK: - your own shortcuts (keys.json)
+
+do {
+    let M = Commands.Mods.self
+    eq("keys: cmd+shift+k", KeyMap.parse(shortcut: "cmd+shift+k"), KeyMap.Shortcut(key: "k", modifiers: M.command | M.shift))
+    eq("keys: names and symbols both", KeyMap.parse(shortcut: "⌥+⌘+Return"), KeyMap.Shortcut(key: "\r", modifiers: M.command | M.option))
+    eq("keys: none takes one away", KeyMap.parse(shortcut: "none"), KeyMap.Shortcut.none)
+    eq("keys: a bare letter would steal typing", KeyMap.parse(shortcut: "shift+k"), nil)
+    eq("keys: two keys isn't one shortcut", KeyMap.parse(shortcut: "cmd+k+j"), nil)
+    eq("keys: nonsense isn't either", KeyMap.parse(shortcut: "cmd+banana"), nil)
+    let m = KeyMap.parse(json: #"{"Run a Command…": "cmd+k", "Show or Hide Rail": "none", "Stop Desk": "cmd+k", "Oops": "k"}"#)
+    eq("keys: names match without case or the …", m.shortcuts[KeyMap.normal("run a command")], KeyMap.Shortcut(key: "k", modifiers: M.command))
+    eq("keys: none is kept, to clear it", m.shortcuts["show or hide rail"], KeyMap.Shortcut.none)
+    check("keys: one key given twice is kept for the first and reported", m.shortcuts["stop desk"] == nil
+          && m.problems.contains { $0.contains("given to both") })
+    check("keys: an unusable one is reported, not applied", m.shortcuts["oops"] == nil && m.problems.contains { $0.contains("Oops") })
+    eq("keys: a broken file says so", KeyMap.parse(json: "[1,2]").problems.count, 1)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the
