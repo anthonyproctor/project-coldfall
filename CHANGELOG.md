@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.43] - 2026-11-13
+
+Side by side across groups.
+
 ### Added
 - **Desks ▸ Open Beside** lists every desk, whatever group the list is showing, running
   ones first and each with its group. The desk list shows one group at a time and clicking
@@ -1094,7 +1098,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...HEAD
+[0.3.43]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...v0.3.43
 [0.3.42]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...v0.3.42
 [0.3.41]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...v0.3.41
 [0.3.40]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.39...v0.3.40
