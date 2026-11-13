@@ -9,6 +9,13 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Schedules** (**Desks ▸ Schedules…**): a prompt sent to a desk at a set time, on the days
+  you name. Each can have a **precheck** (a command that must succeed, such as "are there
+  new commits") and a **quota line** (skip when the vendor is past that much of its week).
+  Schedules live in `schedules.json`, which the window opens with an example; the window
+  shows each one's last run and has Run Now. A run is skipped, and says why, when the desk
+  is asking something, being typed in, or not running. Nothing runs while Coldfall is
+  closed: a time that passes then is recorded as missed, never run late.
 - **The pull request and its checks, in Changes.** When the desk's branch has a pull request,
   the top of Changes says "PR #12 · 2 checks failing" (click to open it), and **Send Failing
   Checks to** the desk asks the agent to find the cause and fix it, without pushing. It asks

@@ -732,6 +732,30 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     }
                     return
                 }
+                // `--schedules`: the Schedules window with made-up ones, to
+                // shot-schedules.png.
+                if CommandLine.arguments.contains("--schedules"), let me = self {
+                    let now = Date().timeIntervalSince1970
+                    me.schedules.show([
+                        Schedule(name: "Morning plan", desk: "home", prompt: "Plan today from the notes in this folder.", at: "09:00",
+                                 days: ["mon", "tue", "wed", "thu", "fri"], skipOverWeekPct: 80),
+                        Schedule(name: "Review new commits", desk: "review", prompt: "Review what changed on main since yesterday and list anything risky.",
+                                 at: "17:30", precheck: "git log --since=yesterday --oneline | grep -q ."),
+                        Schedule(name: "Weekly tidy", desk: "docs", prompt: "Check the help pages against the changelog.", at: "10:00", days: ["mon"], enabled: false),
+                    ], runs: [Schedule.Run(name: "Morning plan", at: now - 20_000, outcome: .sent),
+                              Schedule.Run(name: "Review new commits", at: now - 70_000, outcome: .skippedPrecheck)],
+                    desks: me.desks.map(\.name), size: NSSize(width: 700, height: 470))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard let pv = me.schedules.contentView,
+                              let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
+                        pv.cacheDisplay(in: pv.bounds, to: prep)
+                        if let png = prep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-schedules.png"))
+                        }
+                        exit(0)
+                    }
+                    return
+                }
                 // `--conversations`: the Conversations window with made-up ones,
                 // to shot-conversations.png.
                 if CommandLine.arguments.contains("--conversations"), let me = self, me.desks.indices.contains(i) {
@@ -1165,6 +1189,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         ro.keyEquivalentModifierMask = [.command, .shift]
         ro.target = self
         deskMenu.addItem(ro)
+        let sch = NSMenuItem(title: "Schedules…", action: #selector(openSchedules), keyEquivalent: "")
+        sch.target = self
+        deskMenu.addItem(sch)
         let cv = NSMenuItem(title: "Conversations…", action: #selector(openConversations), keyEquivalent: "h")
         cv.keyEquivalentModifierMask = [.command, .shift]
         cv.target = self
@@ -1340,6 +1367,70 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let rest = sidebar.waiting.filter { $0 != name }
         guard let next = rest.first(where: { sidebar.deferred[$0] == nil }) ?? rest.first else { NSSound.beep(); return }
         showDesk(named: next)
+    }
+
+    // MARK: - schedules
+
+    let schedules = SchedulesPanel()
+    /// The due time each schedule was last dealt with, from the run log.
+    lazy var scheduleHandled: [String: Date] = {
+        var m: [String: Date] = [:]
+        for r in Schedule.runs() { m[r.name] = max(m[r.name] ?? .distantPast, Date(timeIntervalSince1970: r.at)) }
+        return m
+    }()
+    let schedulesSince = Date()
+
+    @objc func openSchedules() {
+        if schedules.isOpen { schedules.close(); return }
+        schedules.deskNames = { [weak self] in self?.desks.map(\.name) ?? [] }
+        schedules.onRunNow = { [weak self] sc in self?.perform(sc, due: Date()) }
+        schedules.open(over: window)
+    }
+
+    /// Every half minute: run what is due, note what was missed.
+    func runSchedules() {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        let now = Date(), names = desks.map(\.name)
+        for sc in Schedule.load() where sc.problem(desks: names) == nil {
+            switch sc.due(now: now, handled: scheduleHandled[sc.name], since: schedulesSince) {
+            case .no: break
+            case .missed(let at):
+                scheduleHandled[sc.name] = at
+                Schedule.record(Schedule.Run(name: sc.name, at: at.timeIntervalSince1970, outcome: .missed))
+            case .run(let at):
+                // Marked first, so a slow precheck can't run it twice.
+                scheduleHandled[sc.name] = at
+                perform(sc, due: at)
+            }
+        }
+    }
+
+    /// One run: the precheck, your quota line, then the send every send goes through.
+    func perform(_ sc: Schedule, due: Date) {
+        guard let d = desks.first(where: { $0.name == sc.desk }) else { return }
+        let folder = d.resolvedCwd
+        DispatchQueue.global(qos: .utility).async {
+            let ok = Schedule.precheckPasses(sc.precheck, folder: folder)
+            let limits = Limits.all()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                func done(_ o: Schedule.Outcome, _ note: String? = nil) {
+                    Schedule.record(Schedule.Run(name: sc.name, at: due.timeIntervalSince1970, outcome: o, note: note))
+                    if self.schedules.isOpen { self.schedules.reload() }
+                }
+                guard ok else { return done(.skippedPrecheck) }
+                if let line = sc.skipOverWeekPct,
+                   let used = limits.first(where: { $0.vendor == d.vendorLabel || $0.vendor == d.runtime })?.liveWeekPct, used >= line {
+                    return done(.skippedQuota, "\(d.vendorLabel) is at \(Int(used))% of its week")
+                }
+                let a = self.inboxSend(sc.desk, text: sc.prompt)
+                switch a.outcome {
+                case .sent: done(.sent)
+                case .notRunning, .blocked, .draft, .hiddenDesk: done(.skippedBusy, a.message)
+                default: done(.failed, a.message)
+                }
+            }
+        }
     }
 
     // MARK: - conversations
@@ -2653,7 +2744,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 self.ui.save()
             }
             for n in self.ui.sleeping where map[n] == nil { map[n] = DeskStatus(asleep: true) }
-            if self.sidebar.tick % 85 == 0 { self.sleepIdleDesks() }
+            if self.sidebar.tick % 85 == 0 { self.sleepIdleDesks(); self.runSchedules() }
             self.sidebar.tick &+= 1
             // Context and branch move slowly: every five seconds or so.
             if self.sidebar.tick % 14 == 0 { self.visible?.refreshHeaders() }

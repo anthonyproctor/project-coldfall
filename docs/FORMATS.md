@@ -82,3 +82,25 @@ Not written by Project Coldfall; read from what the CLIs already keep.
 
 The dedupe is not optional. A streamed reply is written to the Claude
 transcript more than once; counting every record roughly doubles the total.
+
+## `~/.config/coldfall/schedules.json`
+
+Prompts sent to desks at set times. A JSON array; **Desks ▸ Schedules…** opens it
+with one example.
+
+```json
+[
+  { "name": "Morning plan", "desk": "hub", "at": "09:00",
+    "days": ["mon", "tue", "wed", "thu", "fri"],
+    "prompt": "Plan today from the notes in this folder.",
+    "precheck": "git log --since=yesterday --oneline | grep -q .",
+    "skipOverWeekPct": 80, "enabled": true }
+]
+```
+
+`at` is 24-hour local time. `days` is optional (every day without it). `precheck`
+is a shell command run in the desk's folder; anything but exit 0 skips the run.
+`skipOverWeekPct` skips it when the desk's vendor is at or past that much of its
+weekly quota. Each run is appended to `~/.local/share/coldfall/schedule-runs.jsonl`
+as `{"name","at","outcome","note"}`, where `outcome` is `sent`, `skipped_precheck`,
+`skipped_quota`, `skipped_busy`, `missed` or `failed`.

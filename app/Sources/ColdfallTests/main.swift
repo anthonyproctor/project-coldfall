@@ -1656,6 +1656,44 @@ do {
         eq("pr: not JSON, no pull request", PullRequest.parse("no pull requests found"), nil)
         eq("pr: no gh, no answer", PullRequest.fetch(folder: "/srv/demo", gh: nil), nil)
     }
+    do {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func at(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int) -> Date { cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi))! }
+        // 13 Nov 2026 is a Friday.
+        let wk = Schedule(name: "plan", desk: "hub", prompt: "Plan today", at: "09:00", days: ["mon", "tue", "wed", "thu", "fri"])
+        eq("schedule: due at its time today", wk.lastDue(before: at(2026, 11, 13, 9, 5), calendar: cal), at(2026, 11, 13, 9, 0))
+        eq("schedule: before its time, the last one was yesterday", wk.lastDue(before: at(2026, 11, 13, 8, 0), calendar: cal), at(2026, 11, 12, 9, 0))
+        eq("schedule: weekends are skipped", wk.lastDue(before: at(2026, 11, 15, 12, 0), calendar: cal), at(2026, 11, 13, 9, 0))
+        let start = at(2026, 11, 13, 7, 0)
+        eq("schedule: runs within the grace", wk.due(now: at(2026, 11, 13, 9, 5), handled: nil, since: start, calendar: cal), .run(at(2026, 11, 13, 9, 0)))
+        eq("schedule: not twice", wk.due(now: at(2026, 11, 13, 9, 6), handled: at(2026, 11, 13, 9, 0), since: start, calendar: cal), .no)
+        eq("schedule: too late is missed, not run", wk.due(now: at(2026, 11, 13, 10, 0), handled: nil, since: start, calendar: cal), .missed(at(2026, 11, 13, 9, 0)))
+        eq("schedule: a time from before Coldfall opened isn't held against it",
+           wk.due(now: at(2026, 11, 13, 10, 0), handled: nil, since: at(2026, 11, 13, 9, 30), calendar: cal), .no)
+        var off = wk; off.enabled = false
+        eq("schedule: off does nothing", off.due(now: at(2026, 11, 13, 9, 5), handled: nil, since: start, calendar: cal), .no)
+        eq("schedule: in words", wk.when, "weekdays at 09:00")
+        eq("schedule: every day", Schedule(name: "n", desk: "hub", prompt: "p", at: "18:30").when, "every day at 18:30")
+        eq("schedule: a bad time is said", Schedule(name: "n", desk: "hub", prompt: "p", at: "9am").problem(desks: ["hub"]), "\"9am\" isn't a time. Use 24-hour HH:MM, like 09:00.")
+        eq("schedule: an unknown desk is said", wk.problem(desks: ["api"]), "There's no desk called \"hub\".")
+        eq("schedule: a good one has no problem", wk.problem(desks: ["hub"]), nil)
+        check("schedule: the template is valid and switched off", { () -> Bool in
+            let t = (try? JSONDecoder().decode([Schedule].self, from: Data(Schedule.template.utf8))) ?? []
+            return t.count == 1 && t[0].isOn == false && t[0].time != nil
+        }())
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("coldfall-sched-\(UUID().uuidString)").path
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let log = dir + "/runs.jsonl"
+        Schedule.record(Schedule.Run(name: "plan", at: 1, outcome: .sent), path: log)
+        Schedule.record(Schedule.Run(name: "plan", at: 2, outcome: .skippedPrecheck, note: "no"), path: log)
+        eq("schedule: runs are kept, in order", Schedule.runs(path: log).map(\.outcome), [.sent, .skippedPrecheck])
+        try? "not json".write(toFile: dir + "/s.json", atomically: true, encoding: .utf8)
+        check("schedule: a file that isn't schedules is known to be broken", Schedule.broken(path: dir + "/s.json") && Schedule.load(path: dir + "/s.json").isEmpty)
+        check("schedule: no precheck passes", Schedule.precheckPasses(nil, folder: dir) && Schedule.precheckPasses("  ", folder: dir))
+        check("schedule: a precheck that exits 0 passes", Schedule.precheckPasses("true", folder: dir))
+        check("schedule: one that doesn't, doesn't", !Schedule.precheckPasses("exit 3", folder: dir))
+        try? FileManager.default.removeItem(atPath: dir)
+    }
     eq("done: a line reads back", DoneSignal.parse("1700000000 stop hub"),
        DoneSignal.Signal(at: Date(timeIntervalSince1970: 1_700_000_000), event: .stop, desk: "hub"))
     check("done: junk is ignored", DoneSignal.parse("hello") == nil && DoneSignal.parse("1 maybe hub") == nil)

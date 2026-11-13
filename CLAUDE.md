@@ -43,6 +43,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --split  # that desk as two pane cards
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --beside api   # that desk with another next to it
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --feed   # Needs You with that desk's question, to shot-feed.png
+./.build/release/Coldfall --snapshot /tmp/shot.png --schedules        # the Schedules window with made-up ones, to shot-schedules.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --conversations    # the Conversations window with made-up ones, to shot-conversations.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --changes          # the Changes window with a made-up diff, to shot-changes.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --asleep docs       # that desk put to sleep (the moon on its row)
