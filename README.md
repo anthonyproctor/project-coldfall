@@ -58,11 +58,29 @@ An agent can say it has finished or needs you, through Coldfall's done hook (Cla
 
 **Answer waiting desks from one window.** Click *needs you* at the bottom of the window (`opt-cmd-0`) and every desk stopped on a question is listed with the question, what it is about, and its choices as buttons. The choices are read off the desk's own screen, and a button presses its key only if that choice is still there when you click: a prompt that has changed is never answered blind. A desk whose question cannot be read offers *Go to Desk* instead of a guess.
 
-**Read what a desk changed, and send comments back.** *Changes* (`cmd-shift-g`) lists the files changed in the desk's folder since the last commit, each with its diff. Select lines, write a comment, add as many as you like across files, and send: the agent gets them as one message, each with its file, line and the code it is about. Project Coldfall only reads the repository — nothing is staged, committed or reverted from here.
+**Read what a desk changed, and send comments back.** *Changes* (`cmd-shift-g`) lists the files changed in the desk's folder since the last commit, each with its diff. Select lines, write a comment, add as many as you like across files, and send: the agent gets them as one message, each with its file, line and the code it is about. Project Coldfall only reads the repository — nothing is staged, committed or reverted from here. Beside *Uncommitted*, **Last turn** lists only what the agent changed since your last prompt, which is the question for a desk that has run for weeks. When the branch has a pull request, the top of the window says "PR #12 · 2 checks failing", and *Send Failing Checks* asks the agent to find the cause and fix it without pushing; it asks your own `gh`, and only when you open or refresh the window.
 
 **Agents side by side.** Right-click a desk and choose *Open Beside* (or **Desks ▸ Open Beside**, which lists every desk in every group): it appears next to the desk on screen, a whole desk with its own agent, not a pane of the first. Add more and they form a grid, up to twelve. The outline shows which desk your keys go to; click another to move them, and the desk list and the tabs follow the one you are in, so choosing a desk or a tab replaces that one. Drag a desk by its header onto another to make them change places; with two, drag the gap to resize. A desk's close button, or ⌥⌘W, takes it off the screen; it keeps running.
 
 **Splits, when one terminal is not enough.** `cmd-d` and `cmd-shift-d` give a desk a second pane: the agent in one, a shell in the other to look at what it just did. Pane 0 is the agent and confirms before you close it; the rest are login shells in the same directory and close for free. A desk keeps one axis and stops at four panes, because past that it is a mosaic rather than a workspace. Each pane is a card with its own header — the desk, the agent and folder, the branch when it is not main, how full the conversation is once it passes 60% — and `cmd-shift-return` zooms one pane to fill the desk.
+
+**Peek, and everything from the keyboard.** Option-click a running desk and its screen opens over the one you are on, read-only, so nothing you type lands in the wrong desk; Return goes to it, Escape closes the look. `cmd-p` finds any desk or file by a few letters, and `cmd-shift-p` (or `>` in quick open) lists every menu command with its shortcut. *Not This One Yet* (`ctrl-cmd-u`) sends the desk on screen to the back of the waiting queue, `ctrl-cmd-left` / `ctrl-cmd-right` go back and forward through the desks you have been on, and `cmd-shift-t` restarts the desk you stopped last. Your own shortcuts go in `keys.json` (Settings, General, Edit Shortcuts).
+
+**Notifications that mean something.** When a desk you are not looking at finishes or needs you, Coldfall sends a notification if it is in the background and plays a sound if it is in front. Only on the agent's own word, never a guess from output, nothing from the conversation in the banner, and one alert per finished turn however much the desk prints afterwards.
+
+**Desks that outlive a quit.** Turn on *Keep desks running when Coldfall quits* (Settings, Desks), or set `keep_running = true` on one desk, and its agent carries on while Coldfall is closed, updating or crashed. Coldfall picks it back up when it opens, with its screen as it was. Quitting asks whether to keep them or end them. A small `coldfall-holder` process holds each one; it starts outside the app's process tree, so nothing that ends Coldfall ends the desks. Off by default.
+
+**Sleep, for desks you have finished with.** Settings, Agents, *Idle desks* (off until you pick a time): a desk that has finished, been read, and sat untouched that long is put to sleep. Its processes end, its memory comes back, its row shows a moon, and opening it picks the conversation up. Never one that is working, asking, on screen, half typed into, or has a shell split open.
+
+**Schedules.** *Desks ▸ Schedules…*: a prompt sent to a desk at a set time, on the days you name. Each can have a precheck (a command that must succeed first) and a quota line (skip when the vendor is past that much of its week). A run is skipped, and says why, when the desk is asking something, being typed into, or not running. Nothing runs while Coldfall is closed: a time that passes then is recorded as missed, never run late.
+
+**Every past conversation, searchable.** *Desks ▸ Conversations…* (`cmd-shift-h`) lists every conversation Claude Code and Codex have had in the desk's folder, with when, how big, and the first thing you asked. Type to search everything said in them, and resume one in a split beside the desk. *Fork Conversation in a Split* runs the vendor's own fork so you can try something without disturbing the original, and *Hand Off to Another Desk…* passes the end of one desk's screen to another as history, for a desk that is out of context or out of quota; it says how much goes, and asks first.
+
+**From your phone, and from scripts.** With *Reach every desk from your phone or another computer* on (Settings, General; off by default), Coldfall serves a small page over Tailscale: your desks grouped as needs you, done, working and idle, each with its live screen, a box to send a message, and keys to answer a question. It listens only on this Mac's Tailscale address and loopback, and answers nothing without the secret in the link. From a shell, `coldfall-cli read <desk>` prints a desk's screen, `send` types into its agent, `wait` returns when its turn ends or it needs you, and `ask` does all three and prints the reply. A send is refused on a desk stopped on a question, so it can never answer a permission prompt.
+
+**Ghostty's terminal, if you want it.** Settings, General, *Terminal* switches desks you start from now on between the classic terminal (SwiftTerm, the default) and Ghostty's, which is faster and draws more of what agents send. Everything else is the same.
+
+**It says why it stopped.** Each start and exit of the app is one line in `~/.local/share/coldfall/exit.log`: a quit and what you answered, the last window closing, or a signal and which process sent it. An app that is told to stop leaves no crash report, so "it just disappeared" used to have no answer.
 
 **A folder tree and a reader, with tabs.** Agents write, you read. Files an agent touches **open themselves** — you cannot pre-open a file when you do not know which one it will edit. Those tabs are transient and render italic, like a preview tab, and recycle past four so a busy desk cannot bury you; clicking one pins it. Each tab watches its file and refreshes in place. PDFs, images and text, with shallow syntax highlighting. Read-only is what keeps the reader small — and why a PDF opens here at all.
 
@@ -247,6 +265,12 @@ A font that is not installed falls back to the next one that is, and an unrecogn
 | `cmd-0` | the desk that has waited longest |
 | `opt-cmd-0` | Needs You: answer waiting desks from one window |
 | `opt-cmd-down` / `opt-cmd-up` | next / previous desk, in the order shown |
+| `ctrl-cmd-left` / `ctrl-cmd-right` | back / forward through the desks you have been on |
+| `ctrl-cmd-u` | Not This One Yet: this desk to the back of the waiting queue |
+| `cmd-p` / `cmd-shift-p` | quick open / every command |
+| `cmd-shift-h` | Conversations: search and resume past ones |
+| `cmd-shift-t` | restart the desk you stopped last |
+| `opt-cmd-w` | take the desk you are in off the screen (it keeps running) |
 | `cmd-shift-g` | Changes: what this desk changed |
 | `cmd-d` / `cmd-shift-d` | split the desk right / down |
 | `cmd-shift-return` | zoom a pane to fill the desk |
@@ -314,7 +338,7 @@ Threads land in `~/.local/share/coldfall/mail/`. If you already have a handoff s
 
 It runs and it is useful. It is also early.
 
-Working: desks that resume their conversation, groups and tabs, the priority list, answering waiting desks from one window, a changes view with comments back to the agent, the folder tree, the reader, the bridge, the cross-vendor meter, per-desk MCP servers, settings, first run.
+Working: desks that resume their conversation, groups and tabs, the priority list, up to twelve desks side by side, answering waiting desks from one window, a changes view with comments back to the agent, desks that keep running after a quit, schedules, conversation search, sleep for idle desks, the folder tree, the reader, the bridge, the cross-vendor meter, per-desk MCP servers, settings, first run.
 
 Not built yet:
 
