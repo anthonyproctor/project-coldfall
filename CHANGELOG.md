@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.44] - 2026-11-13
+
+Up to twelve desks side by side, and one alert per finished turn.
+
 ### Added
 - **Up to twelve desks on screen.** *Open Beside* no longer stops at two: each desk you add
   takes a place in a grid (three in a row, then two rows, then three), every one a whole
@@ -1124,7 +1128,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...HEAD
+[0.3.44]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...v0.3.44
 [0.3.43]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...v0.3.43
 [0.3.42]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...v0.3.42
 [0.3.41]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.40...v0.3.41
