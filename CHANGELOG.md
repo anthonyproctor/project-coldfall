@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.48] - 2026-11-14
+
+Every running desk has a tab.
+
 ### Changed
 - **Every running desk has a tab.** The tab row held only the running desks of the group
   you were in, so an agent running in another group had no tab and you had to go and find
@@ -1182,7 +1186,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...HEAD
+[0.3.48]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...v0.3.48
 [0.3.47]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...v0.3.47
 [0.3.46]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...v0.3.46
 [0.3.45]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...v0.3.45
