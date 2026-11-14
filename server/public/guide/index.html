@@ -225,6 +225,7 @@
   figure { margin: 20px 0 24px; }
   figure .pic { padding: 14px; }
   figure .pic img { max-height: 460px; width: auto; }
+  figure .pic.wide img { max-height: none; width: 100%; height: auto; }
   figcaption { color: var(--faint); font-size: 14px; margin-top: 8px; }
   table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 0 0 16px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -369,6 +370,10 @@ budget = 50                 <span class="c"># dollars a week; the row turns red 
 
     <h2 id="several">Several desks at once</h2>
     <p>You don't have to look at one desk at a time. Put the ones you're working between next to each other.</p>
+    <figure>
+      <div class="pic wide"><picture><source srcset="/img/side.webp" type="image/webp" width="2480" height="1441"><img src="/img/side.png" width="2480" height="1441" loading="lazy" decoding="async" alt="Three desks side by side, each in its own colour: a Claude Code desk asking to run npm test, a Codex desk that has finished a review, and a Copilot desk still writing."></picture></div>
+      <figcaption>Three made-up desks side by side, each with its own colour and state.</figcaption>
+    </figure>
     <ul>
       <li><strong>Open a desk beside the one on screen.</strong> Right-click it in the list and choose <strong>Open Beside</strong>. For a desk in another group, use <strong>Desks ▸ Open Beside</strong>, which lists every desk with its group, running ones first. Each one you add takes a place in a grid, up to twelve.</li>
       <li><strong>The outlined desk has the keys.</strong> Click another to move them. The desk list, the tabs, the file tree and the usage strip follow the desk you're in, so choosing a desk or a tab replaces that one and leaves the others where they are. Choosing a desk that's already on screen just goes to it.</li>

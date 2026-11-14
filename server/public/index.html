@@ -115,6 +115,8 @@
   .window .bar span { width: 12px; height: 12px; border-radius: 50%; }
   .window .bar span:nth-child(1) { background: #ff5f57; } .window .bar span:nth-child(2) { background: #febc2e; } .window .bar span:nth-child(3) { background: #28c840; }
   .glow { position: absolute; inset: auto 10% -40px 10%; height: 120px; background: radial-gradient(closest-side, var(--green-soft), transparent); filter: blur(30px); z-index: -1; }
+  .window.wide { max-width: 1180px; margin-top: 40px; }
+  .window.wide img { display: block; width: 100%; height: auto; }
   .caption { text-align: center; color: var(--faint); font-size: 14px; margin-top: 16px; }
 
   /* strip of three */
@@ -308,6 +310,18 @@
   </section>
 
   <section>
+    <div class="wrap center">
+      <p class="kicker">Side by side</p>
+      <h2>Watch three agents at once. Or twelve.</h2>
+      <p class="sub">Open a desk beside the one on screen and it gets its own card, its own colour and its own state. Add more and they form a grid. The outline shows which one your keys go to, and the desk list and the tabs follow it.</p>
+      <div class="window wide">
+        <picture><source srcset="/img/side.webp" type="image/webp" width="2480" height="1441"><img src="/img/side.png" width="2480" height="1441" loading="lazy" decoding="async" alt="Three desks side by side, each in its own colour: a Claude Code desk asking to run npm test, a Codex desk that has finished a review, and a Copilot desk still writing."></picture>
+      </div>
+      <p class="caption">Three made-up desks: one asking, one done, one working.</p>
+    </div>
+  </section>
+
+  <section>
     <div class="wrap row">
       <div class="text">
         <p class="kicker">Review what it did</p>
@@ -408,7 +422,7 @@
       <h2>Small things that add up.</h2>
       <div class="grid" style="text-align:left">
         <div class="card"><h3>Quick open</h3><p><kbd>⌘P</kbd> finds any desk or file by a few letters.</p></div>
-        <div class="card"><h3>Desks side by side</h3><p>Put agents next to each other, up to twelve in a grid, or a shell beside any of them. Drag one by its header to change places.</p></div>
+        <div class="card"><h3>Peek</h3><p><kbd>⌥</kbd>-click a running desk to see its screen over the one you're on, without switching. Nothing you type can land in it.</p></div>
         <div class="card"><h3>A colour for each desk</h3><p>The pane, its tab and its row take the colour you pick, so you can see which agent you're about to type to.</p></div>
         <div class="card"><h3>A reader beside the terminal</h3><p>Files your agents write open next to them, with Markdown and PDFs shown properly.</p></div>
         <div class="card"><h3>How full is the conversation</h3><p>A pane's header shows the context filling up, orange from 60 percent and red from 80.</p></div>

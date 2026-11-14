@@ -124,9 +124,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Size to the screen so the resize corner is always reachable. The window
         // was opening taller than the display, which made it look unresizable.
         let vis = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        // `COLDFALL_WINDOW=1500x900` asks for another size, for pictures.
+        let asked = (ProcessInfo.processInfo.environment["COLDFALL_WINDOW"] ?? "").split(separator: "x").compactMap { Double($0) }
         let frame = NSRect(x: 0, y: 0,
-                           width: min(1240, vis.width - 40),
-                           height: min(820, vis.height - 40))
+                           width: min(asked.count == 2 ? asked[0] : 1240, vis.width - 40),
+                           height: min(asked.count == 2 ? asked[1] : 820, vis.height - 40))
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
@@ -984,7 +986,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
                 tries += 1
                 guard let self, tries < 30 else { t.invalidate(); return }
-                guard self.visible?.started == true else { return }
+                // The launch screen waits on Start: press it.
+                guard self.visible?.started == true else { if tries == 2 { self.startWaiting() }; return }
                 t.invalidate()
                 for name in names { if let i = self.deskIndex(name) { self.openBeside(i) } }
             }

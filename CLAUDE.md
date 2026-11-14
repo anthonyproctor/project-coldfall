@@ -76,6 +76,11 @@ wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
 
+For a live picture of several desks, run the built binary in a throwaway home
+with stand-in agents and `--beside docs,review` (it presses Start on the launch
+screen, then opens those beside the first); `COLDFALL_WINDOW=1480x860` sets the
+window's size.
+
 Ghostty's terminal is a second engine beside SwiftTerm, chosen in Settings
 (General, Terminal; SwiftTerm is the default). `scripts/ghostty-kit.sh` builds
 the library into `app/Vendor/` (needs Zig and Apple's Metal toolchain).

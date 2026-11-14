@@ -62,6 +62,10 @@ An agent can say it has finished or needs you, through Coldfall's done hook (Cla
 
 **Agents side by side.** Right-click a desk and choose *Open Beside* (or **Desks ▸ Open Beside**, which lists every desk in every group): it appears next to the desk on screen, a whole desk with its own agent, not a pane of the first. Add more and they form a grid, up to twelve. The outline shows which desk your keys go to; click another to move them, and the desk list and the tabs follow the one you are in, so choosing a desk or a tab replaces that one. Drag a desk by its header onto another to make them change places; with two, drag the gap to resize. A desk's close button, or ⌥⌘W, takes it off the screen; it keeps running.
 
+![Three desks side by side, each in its own colour: one asking to run a command, one finished, one working](server/public/img/side.png)
+
+*Every name and file here is made up.*
+
 **Splits, when one terminal is not enough.** `cmd-d` and `cmd-shift-d` give a desk a second pane: the agent in one, a shell in the other to look at what it just did. Pane 0 is the agent and confirms before you close it; the rest are login shells in the same directory and close for free. A desk keeps one axis and stops at four panes, because past that it is a mosaic rather than a workspace. Each pane is a card with its own header — the desk, the agent and folder, the branch when it is not main, how full the conversation is once it passes 60% — and `cmd-shift-return` zooms one pane to fill the desk.
 
 **Peek, and everything from the keyboard.** Option-click a running desk and its screen opens over the one you are on, read-only, so nothing you type lands in the wrong desk; Return goes to it, Escape closes the look. `cmd-p` finds any desk or file by a few letters, and `cmd-shift-p` (or `>` in quick open) lists every menu command with its shortcut. *Not This One Yet* (`ctrl-cmd-u`) sends the desk on screen to the back of the waiting queue, `ctrl-cmd-left` / `ctrl-cmd-right` go back and forward through the desks you have been on, and `cmd-shift-t` restarts the desk you stopped last. Your own shortcuts go in `keys.json` (Settings, General, Edit Shortcuts).
