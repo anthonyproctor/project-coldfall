@@ -389,6 +389,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             : (CommandLine.arguments.contains("--by-priority") ? .priority : deskListMode)
         sidebar.onNextMode = { [weak self] in if let self { self.setDeskList(self.deskListMode.next) } }
         sidebar.onWantGroups = { [weak self] in self?.setDeskList(.group) }
+        // When a desk was last used: this run's visits, or its agent's
+        // last finished turn as the statusline recorder left it.
+        sidebar.lastUsedOf = { [weak self] name in
+            let seen = self?.lastVisited[name]
+            let said = DeskState.load(name).flatMap { $0.at > 0 ? Date(timeIntervalSince1970: $0.at) : nil }
+            return [seen, said].compactMap { $0 }.max()
+        }
         // An installed done hook is brought up to this version's script (it
         // now passes on why an agent is waiting). Never in a snapshot.
         if !CommandLine.arguments.contains("--snapshot") { DoneSignal.refreshScript() }
@@ -3550,8 +3557,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// The desk in a --snapshot, which starts no session to be visible.
     var snapDesk: String?
 
-    /// The tab row: the running desks in the on-screen desk's group, and the
-    /// desk beside it wherever that one lives.
+    /// The tab row: every running desk, and any desk on screen.
     func refreshTabs(_ status: [String: DeskStatus]) {
         let current = waitingName ?? visible?.desk.name ?? snapDesk
         let running = Set(status.filter { $0.value.running }.map(\.key))

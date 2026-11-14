@@ -1867,21 +1867,19 @@ do {
         var t = [Desk(name: "hub"), Desk(name: "work", group: "w"), Desk(name: "a", group: "w"),
                  Desk(name: "b", group: "w"), Desk(name: "golf", group: "home"), Desk(name: "old", group: "w")]
         t[5].hidden = true
-        eq("tabs: the running desks in this desk's group, in rail order",
-           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"]), ["work", "b"])
+        eq("tabs: every running desk, whatever its group, in rail order",
+           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"]), ["work", "b", "golf"])
         eq("tabs: the desk on screen has a tab even when stopped",
            DeskTabs.list(t, current: "a", running: ["b"]), ["a", "b"])
-        eq("tabs: another group is another set", DeskTabs.list(t, current: "golf", running: ["b", "golf"]), ["golf"])
-        eq("tabs: ungrouped desks share a set", DeskTabs.list(t, current: "hub", running: ["work"]), ["hub"])
+        eq("tabs: the row is the same from any group", DeskTabs.list(t, current: "golf", running: ["b", "golf"]), ["b", "golf"])
+        eq("tabs: an ungrouped desk is in the same row", DeskTabs.list(t, current: "hub", running: ["work"]), ["hub", "work"])
         eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
-        eq("tabs: a desk on screen has a tab, from another group, after the one with the keys",
-           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"], onScreen: ["work", "golf"]), ["work", "golf", "b"])
-        eq("tabs: a desk on screen from this group keeps its place",
-           DeskTabs.list(t, current: "work", running: ["b", "work"], onScreen: ["b", "work"]), ["work", "b"])
-        eq("tabs: several from other groups keep their screen order",
-           DeskTabs.list(t, current: "a", running: ["a"], onScreen: ["golf", "a", "hub"]), ["a", "golf", "hub"])
+        eq("tabs: a hidden desk on screen has one", DeskTabs.list(t, current: "old", running: ["work"]), ["work", "old"])
+        eq("tabs: a stopped desk on screen beside another has one, in its rail place",
+           DeskTabs.list(t, current: "work", running: ["work"], onScreen: ["work", "golf", "hub"]), ["hub", "work", "golf"])
         eq("tabs: a desk on screen that no longer exists adds nothing",
            DeskTabs.list(t, current: "work", running: ["work"], onScreen: ["work", "gone"]), ["work"])
+        check("tabs: nothing on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]).isEmpty)
     }
     do {
         eq("list: the button steps group, priority, all, and round again",
@@ -1893,6 +1891,12 @@ do {
         ad[4].hidden = true; ad[5].pinned = true
         eq("list: all desks by name, case and numbers read as a person would, no hidden or pinned",
            DeskListMode.byName(ad), ["Api", "desk2", "desk10", "work"])
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let sec = DeskListMode.all(ad, running: ["work", "desk10"], lastUsed: ["desk2": t0, "Api": t0.addingTimeInterval(60), "work": t0])
+        eq("list: all desks, the running ones first, by name", sec.running, ["desk10", "work"])
+        eq("list: then the rest, the one used last first", sec.rest, ["Api", "desk2"])
+        eq("list: a desk with no known use comes after the ones with, by name",
+           DeskListMode.all(ad, running: [], lastUsed: ["work": t0]).rest, ["work", "Api", "desk2", "desk10"])
         let work: String?? = .some("work"), general: String?? = .some(nil), none: String?? = nil
         check("groups: the list follows the desk you are in", GroupOnShow.group(browsing: none, selected: work, first: general) == work)
         check("groups: a clicked group is shown instead", GroupOnShow.group(browsing: general, selected: work, first: work) == general)

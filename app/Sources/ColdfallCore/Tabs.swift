@@ -1,28 +1,23 @@
 import Foundation
 
-/// The tab row over the terminal: the running desks in the current desk's
-/// group, the way Herdr shows the agents of the space you are in.
+/// The tab row over the terminal: every running desk, whatever group it is
+/// in. A tab is how you get back to an agent you started, and "which group
+/// was it in" should not stand between you and it.
 ///
-/// Switching to a desk in another group switches the whole set. The desk on
-/// screen always has a tab, running or not, so you can see where you are.
-/// Hidden desks get no tab unless they are the one on screen. Order is the
-/// rail's own, so tabs never shuffle as desks change state.
+/// (It used to hold only the running desks of the current desk's group,
+/// the way Herdr shows the agents of the space you are in. A desk running
+/// in another group then had no tab, which read as the desk being gone.)
 ///
-/// Every desk on screen has a tab, whatever group it is in: with several
-/// side by side, all the desks you are looking at are in the row. Ones from
-/// another group sit right after the desk that has the keys, where a full
-/// group does not push them off the end.
+/// A desk on screen always has a tab, running or not, so you can see where
+/// you are. Hidden desks get none unless they are on screen. Order is the
+/// rail's own, groups together, so tabs never shuffle as desks change
+/// state or as you move between them. Nothing on screen yet, no tabs.
 public enum DeskTabs {
     public static func list(_ desks: [Desk], current: String?, running: Set<String>, onScreen: [String] = []) -> [String] {
-        guard let cur = current, let here = desks.first(where: { $0.name == cur }) else { return [] }
-        var out = desks.filter { d in
-            d.group == here.group && (d.name == cur || onScreen.contains(d.name) || (running.contains(d.name) && !d.hidden))
+        guard let cur = current, desks.contains(where: { $0.name == cur }) else { return [] }
+        return desks.filter { d in
+            d.name == cur || onScreen.contains(d.name) || (running.contains(d.name) && !d.hidden)
         }.map(\.name)
-        var at = (out.firstIndex(of: cur) ?? out.count - 1) + 1
-        for n in onScreen where n != cur && !out.contains(n) && desks.contains(where: { $0.name == n }) {
-            out.insert(n, at: at); at += 1
-        }
-        return out
     }
 
     /// The tabs that fit, and the ones that don't (shown in a "more" menu).
@@ -54,6 +49,28 @@ public enum DeskListMode: String, CaseIterable {
     /// Every desk there is, by name: for finding one.
     case all
 
+    /// The "All desks" list as drawn: the running ones, then the rest.
+    public struct AllSections: Equatable {
+        public var running: [String], rest: [String]
+    }
+
+    /// Every desk in the "All desks" list, the ones in use first.
+    ///
+    /// Running desks lead, by name. Then the rest: the ones used most
+    /// recently first (`lastUsed`, where Coldfall knows it), then the ones
+    /// it has no time for, by name. So the desk you had open yesterday is
+    /// near the top and one you last touched in March is at the bottom,
+    /// without a running desk changing places every time it prints. Hidden
+    /// desks stay under Hidden, and pinned ones are already at the top.
+    public static func all(_ desks: [Desk], running: Set<String>, lastUsed: [String: Date]) -> AllSections {
+        let names = byName(desks)
+        let rest = names.filter { !running.contains($0) }
+        let dated = rest.filter { lastUsed[$0] != nil }
+            .sorted { (lastUsed[$0] ?? .distantPast) > (lastUsed[$1] ?? .distantPast) }   // stable: ties keep name order
+        return AllSections(running: names.filter { running.contains($0) },
+                           rest: dated + rest.filter { lastUsed[$0] == nil })
+    }
+
     public var next: DeskListMode {
         switch self { case .group: return .priority; case .priority: return .all; case .all: return .group }
     }
@@ -64,7 +81,7 @@ public enum DeskListMode: String, CaseIterable {
         switch self {
         case .group: return "One group's desks. Click to list every running desk, most urgent first."
         case .priority: return "Every running desk, most urgent first. Click to list every desk by name."
-        case .all: return "Every desk, by name, running or not. Click to list one group instead."
+        case .all: return "Every desk: running ones first, then the ones you used last. Click to list one group instead."
         }
     }
 

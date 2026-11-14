@@ -29,6 +29,14 @@ final class SidebarView: NSView {
     var onWantGroups: (() -> Void)?
     /// The sections as last drawn, to know when the list should change.
     private var drawnPriority: [DeskOrder.PrioritySection] = []
+    private var drawnAll: DeskListMode.AllSections?
+    /// When a desk was last used, for the order of All desks.
+    var lastUsedOf: ((String) -> Date?)?
+    private func wantedAll(_ d: [Desk]) -> DeskListMode.AllSections {
+        var used: [String: Date] = [:]
+        for desk in d { if let t = lastUsedOf?(desk.name) { used[desk.name] = t } }
+        return DeskListMode.all(d, running: Set(status.filter { $0.value.running }.map(\.key)), lastUsed: used)
+    }
     /// The desks in the order the list shows them, for Next and Previous Desk.
     private(set) var shownOrder: [String] = []
 
@@ -48,7 +56,15 @@ final class SidebarView: NSView {
     /// a calm moment: never while the pointer is over the list or a drag
     /// is under way, so a row doesn't move out from under a click.
     private func syncPriority() {
-        guard byPriority, let d = lastDesks, !pointerInside, !isDragging else { return }
+        guard let d = lastDesks, !pointerInside, !isDragging else { return }
+        // All desks moves a desk between its two sections when it starts
+        // or stops. Only who is running is compared: reading every desk's
+        // last use from disk on every tick would be waste.
+        if mode == .all, let drawn = drawnAll,
+           Set(drawn.running) != Set(status.filter { $0.value.running }.map(\.key)).intersection(Set(drawn.running + drawn.rest)) {
+            build(desks: d); return
+        }
+        guard byPriority else { return }
         if wantedPriority(d) != drawnPriority { build(desks: d) }
     }
     var onMcpDesk: ((Int) -> Void)?
@@ -347,20 +363,32 @@ final class SidebarView: NSView {
         }
 
         if listMode == .all {
-            // Every desk, by name, running or not: for finding one. Rows
-            // don't drag here; the order isn't yours.
+            // Every desk, running or not, for finding one: the ones in
+            // use first, then the ones used last. Rows don't drag here; the
+            // order isn't yours.
+            let all = wantedAll(desks)
+            drawnAll = all
             let index = Dictionary(desks.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { a, _ in a })
-            for n in DeskListMode.byName(desks) {
-                guard let i = index[n] else { continue }
-                let r = row(i, desks[i], indent: 4, y: y, width: w)
-                r.groupHint = desks[i].group ?? "General"
-                r.onHide = { [weak self] in self?.onHideDesk?(i) }
-                zoneRows.insert(i)
-                shownOrder.append(n)
-                y += DeskRow.height + 2
+            for (label, names) in [("Running", all.running), ("Not running", all.rest)] where !names.isEmpty {
+                let t = SectionTitle("\(label)  \(names.count)")
+                t.frame = NSRect(x: 16, y: y, width: w - 32, height: 15)
+                t.translatesAutoresizingMaskIntoConstraints = true
+                t.autoresizingMask = [.width]
+                t.font = .systemFont(ofSize: 11, weight: .medium)
+                addSubview(t)
+                y += 19
+                for n in names {
+                    guard let i = index[n] else { continue }
+                    let r = row(i, desks[i], indent: 4, y: y, width: w)
+                    r.groupHint = desks[i].group ?? "General"
+                    r.onHide = { [weak self] in self?.onHideDesk?(i) }
+                    zoneRows.insert(i)
+                    shownOrder.append(n)
+                    y += DeskRow.height + 2
+                }
+                y += 6
             }
-            y += 8
-        }
+        } else { drawnAll = nil }
 
         // Only the group on show. Its name is the lit row above, so there
         // is no header here; a desk moves to another group by dragging it

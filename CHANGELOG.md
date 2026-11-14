@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Changed
+- **Every running desk has a tab.** The tab row held only the running desks of the group
+  you were in, so an agent running in another group had no tab and you had to go and find
+  its group to get back to it. The row is now every running desk from every group, in the
+  list's own order; the ones that don't fit are behind "+N" as before.
+- **All desks puts the ones in use first.** Running desks lead, then the rest with the
+  ones you used last on top, where Coldfall knows when that was (this run's visits, or the
+  agent's last finished turn); the others follow by name. A desk moves between Running and
+  Not running when it starts or stops, never while the pointer is over the list.
+
 ## [0.3.47] - 2026-11-13
 
 Finding a desk: a list of all of them, and groups you can look into without leaving where you are.
