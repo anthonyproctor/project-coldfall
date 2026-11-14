@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.45] - 2026-11-13
+
+A fix for 0.3.43 and 0.3.44: the menu bar could not be rebuilt.
+
 ### Fixed
 - **The menu bar could not be rebuilt (0.3.43 and 0.3.44).** The *Open Beside* submenu was
   kept between builds of the menu bar, and AppKit refuses a menu that already belongs to
@@ -1137,7 +1141,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...HEAD
+[0.3.45]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...v0.3.45
 [0.3.44]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...v0.3.44
 [0.3.43]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...v0.3.43
 [0.3.42]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.41...v0.3.42
