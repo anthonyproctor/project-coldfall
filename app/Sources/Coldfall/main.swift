@@ -3064,6 +3064,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 print("grid: tab menu for \(s.desk.name): \(titles.count) items: \(titles.prefix(6))")
             }
         }))
+        // Clicking a group is a look at its desks: the list changes, the
+        // desks on screen do not.
+        steps.append(("look at another group", { [self] in
+            guard let other = desks.first(where: { $0.group != visible?.desk.group && !$0.hidden }) else { return }
+            print("grid: the list showed \(sidebar.shownOrder)")
+            sidebar.browse(other.group)
+            print("grid: looking at \(other.group ?? "General"), the list shows \(sidebar.shownOrder)")
+        }))
         steps.append(("take the one with the keys off", { [self] in closeBeside() }))
         steps.append(("take the first off", { [self] in closeSlot(0) }))
         var i = 0

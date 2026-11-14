@@ -1884,6 +1884,14 @@ do {
            DeskTabs.list(t, current: "work", running: ["work"], onScreen: ["work", "gone"]), ["work"])
     }
     do {
+        let work: String?? = .some("work"), general: String?? = .some(nil), none: String?? = nil
+        check("groups: the list follows the desk you are in", GroupOnShow.group(browsing: none, selected: work, first: general) == work)
+        check("groups: a clicked group is shown instead", GroupOnShow.group(browsing: general, selected: work, first: work) == general)
+        check("groups: General can be the one browsed", GroupOnShow.group(browsing: .some(nil), selected: work, first: work) == .some(nil))
+        check("groups: no desk on screen, the first group with desks", GroupOnShow.group(browsing: none, selected: none, first: work) == work)
+        check("groups: the look survives the same desk being selected again",
+              GroupOnShow.browsing(work, afterSelecting: "api", was: "api") == work)
+        check("groups: going to another desk ends the look", GroupOnShow.browsing(work, afterSelecting: "docs", was: "api") == none)
         check("grid: choosing a desk that is on screen goes to it", DeskGrid.place("b", onScreen: ["a", "b", "c"], key: 0) == .focus(1))
         check("grid: any other desk replaces the one with the keys", DeskGrid.place("d", onScreen: ["a", "b", "c"], key: 2) == .replace(2))
         check("grid: nothing on screen yet, it takes the first place", DeskGrid.place("a", onScreen: [], key: 0) == .replace(0))

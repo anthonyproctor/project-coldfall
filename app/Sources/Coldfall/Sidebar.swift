@@ -236,8 +236,11 @@ final class SidebarView: NSView {
         // desk in it. The Desks section lists that group only.
         let order = order0(desks)
         let withDesks = order.filter { g in desks.contains { $0.group == g && !$0.hidden } }
-        let selectedGroup: String?? = selected >= 0 && selected < desks.count && !desks[selected].hidden
-            ? .some(desks[selected].group) : withDesks.first
+        let ofSelected: String?? = selected >= 0 && selected < desks.count && !desks[selected].hidden
+            ? .some(desks[selected].group) : nil
+        // A browsed group that has since lost its desks is no longer a look.
+        if let b = browsing, !withDesks.contains(where: { $0 == b }) { browsing = nil }
+        let selectedGroup = GroupOnShow.group(browsing: browsing, selected: ofSelected, first: withDesks.first)
         for g in order {
             let members = desks.filter { $0.group == g && !$0.hidden }
             guard !members.isEmpty else { continue }
@@ -245,7 +248,11 @@ final class SidebarView: NSView {
             gr.autoresizingMask = [.width]
             gr.configure(name: g ?? "General", desks: members.map { status[$0.name] ?? DeskStatus() },
                          selected: selectedGroup == .some(g))
-            gr.onClick = { [weak self] in self?.onSelectGroup?(g) }
+            // A click looks at the group; a double-click goes to it (the
+            // desk used most recently there takes the place of the one
+            // you are in).
+            gr.onClick = { [weak self] in self?.browse(g) }
+            gr.onDoubleClick = { [weak self] in self?.onSelectGroup?(g) }
             if let g {
                 gr.onRename = { [weak self] in self?.onRenameGroup?(g) }
                 gr.onSort = { [weak self] in self?.onSortDesks?() }
@@ -565,13 +572,30 @@ final class SidebarView: NSView {
     @objc private func toggleLive() { onToggleLive?() }
     @objc private func togglePriority() { onTogglePriority?() }
 
+    /// The group clicked to look at, if any (see GroupOnShow).
+    private var browsing: String??
+    private var selectedName: String?
+
+    /// Show a group's desks in the list. Nothing on screen changes.
+    func browse(_ g: String?) {
+        guard let d = lastDesks else { return }
+        browsing = .some(g)
+        build(desks: d)
+        for (j, r) in rows { r.selected = (j == selected) }
+    }
+
     func select(_ i: Int) {
         lastSelected = i
         let before = selected
         selected = i
         for (j, r) in rows { r.selected = (j == i) }
+        let name = lastDesks.flatMap { $0.indices.contains(i) ? $0[i].name : nil }
+        let wasBrowsing = browsing != nil
+        browsing = GroupOnShow.browsing(browsing, afterSelecting: name, was: selectedName)
+        selectedName = name
         // A desk in another group: the Groups section shows which one now.
-        if let d = lastDesks, d.indices.contains(i), !d.indices.contains(before) || d[before].group != d[i].group {
+        if let d = lastDesks, d.indices.contains(i),
+           !d.indices.contains(before) || d[before].group != d[i].group || (wasBrowsing && browsing == nil) {
             build(desks: d)
             for (j, r) in rows { r.selected = (j == i) }
         }
@@ -784,6 +808,7 @@ final class OfferStrip: NSView {
 /// the name, and the one mark that matters most among its desks.
 final class GroupRow: NSView {
     var onClick: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
     private let avatar = NSTextField(labelWithString: "")
     private let name = NSTextField(labelWithString: "")
     private let count = NSTextField(labelWithString: "")
@@ -878,7 +903,7 @@ final class GroupRow: NSView {
     override func mouseUp(with e: NSEvent) {
         defer { downAt = nil; dragging = false; alphaValue = 1 }
         if dragging, let sv = superview { onDragEnded?(sv.convert(e.locationInWindow, from: nil)) }
-        else if downAt != nil { onClick?() }
+        else if downAt != nil { if e.clickCount >= 2, let go = onDoubleClick { go() } else { onClick?() } }
     }
     override func rightMouseDown(with e: NSEvent) {
         guard onRename != nil else { return }

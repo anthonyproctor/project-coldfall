@@ -8,6 +8,13 @@ opens this file.
 
 ## [Unreleased]
 
+### Changed
+- **Clicking a group is a look, not a move.** The list shows that group's desks and the
+  desk you are in stays on screen. Clicking a group used to take you to a desk in it,
+  which took the one you were working in off the screen when all you wanted was to find
+  another. The list goes back to following you when you go to a different desk.
+  Double-click a group for the old behaviour: straight to the desk you used last in it.
+
 ## [0.3.46] - 2026-11-13
 
 Right-click a tab.

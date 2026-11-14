@@ -44,6 +44,29 @@ public enum DeskTabs {
     }
 }
 
+/// Which group the desk list shows.
+///
+/// It follows the desk you are in, until you click another group: that is a
+/// look at what is there, and changes nothing on screen. The list goes back
+/// to following when you go to a different desk. (Clicking a group used to
+/// take you to a desk in it, which took the desk you were in off the screen
+/// when all you wanted was to find another one.)
+public enum GroupOnShow {
+    /// `browsing` is the group clicked (nil when none was), `selected` the
+    /// group of the desk you are in (nil when there is no such desk), and
+    /// `first` the first group with a desk in it. The inner optional is the
+    /// group's own name: nil there is the General group.
+    public static func group(browsing: String??, selected: String??, first: String??) -> String?? {
+        browsing ?? selected ?? first
+    }
+
+    /// The look lasts until you go to a different desk. Selecting the same
+    /// desk again (a reload, a re-sort) is not that.
+    public static func browsing(_ browsing: String??, afterSelecting desk: String?, was: String?) -> String?? {
+        desk == was ? browsing : nil
+    }
+}
+
 /// The desks on screen side by side: one to twelve, in a grid. One of them
 /// has the keys; the desk list and the tabs act on that one.
 public enum DeskGrid {
