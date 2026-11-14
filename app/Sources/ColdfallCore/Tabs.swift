@@ -44,6 +44,43 @@ public enum DeskTabs {
     }
 }
 
+/// How the Desks section is ordered. The button beside "Desks" steps
+/// through them.
+public enum DeskListMode: String, CaseIterable {
+    /// The desks of one group, in your order.
+    case group
+    /// Every running desk, by what it needs from you.
+    case priority
+    /// Every desk there is, by name: for finding one.
+    case all
+
+    public var next: DeskListMode {
+        switch self { case .group: return .priority; case .priority: return .all; case .all: return .group }
+    }
+    public var title: String {
+        switch self { case .group: return "By group"; case .priority: return "By priority"; case .all: return "All desks" }
+    }
+    public var tip: String {
+        switch self {
+        case .group: return "One group's desks. Click to list every running desk, most urgent first."
+        case .priority: return "Every running desk, most urgent first. Click to list every desk by name."
+        case .all: return "Every desk, by name, running or not. Click to list one group instead."
+        }
+    }
+
+    /// As saved: two switches, so a build from before "All desks" reads
+    /// the file as it always did.
+    public init(byPriority: Bool, all: Bool) { self = all ? .all : (byPriority ? .priority : .group) }
+
+    /// Every desk in the "All desks" list: by name, ignoring case, numbers
+    /// in order ("desk2" before "desk10"). Hidden desks stay under Hidden,
+    /// and pinned ones are already at the top of the section.
+    public static func byName(_ desks: [Desk]) -> [String] {
+        desks.filter { !$0.hidden && !$0.pinned }.map(\.name)
+            .sorted { $0.compare($1, options: [.caseInsensitive, .numeric]) == .orderedAscending }
+    }
+}
+
 /// Which group the desk list shows.
 ///
 /// It follows the desk you are in, until you click another group: that is a

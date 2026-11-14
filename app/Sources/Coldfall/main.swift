@@ -385,8 +385,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let self, self.desks.indices.contains(i) else { return }
             self.sessions[self.desks[i].name]?.markUnread()
         }
-        sidebar.byPriority = ui.desksByPriority || CommandLine.arguments.contains("--by-priority")
-        sidebar.onTogglePriority = { [weak self] in self?.toggleDeskPriority() }
+        sidebar.mode = CommandLine.arguments.contains("--all-desks") ? .all
+            : (CommandLine.arguments.contains("--by-priority") ? .priority : deskListMode)
+        sidebar.onNextMode = { [weak self] in if let self { self.setDeskList(self.deskListMode.next) } }
+        sidebar.onWantGroups = { [weak self] in self?.setDeskList(.group) }
         // An installed done hook is brought up to this version's script (it
         // now passes on why an agent is waiting). Never in a snapshot.
         if !CommandLine.arguments.contains("--snapshot") { DoneSignal.refreshScript() }
@@ -1302,8 +1304,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
         let pri = NSMenuItem(title: "Desks by Priority", action: #selector(toggleDeskPriority), keyEquivalent: "")
         pri.target = self
-        pri.state = ui.desksByPriority ? .on : .off
+        pri.state = deskListMode == .priority ? .on : .off
         deskMenu.addItem(pri)
+        let allD = NSMenuItem(title: "All Desks by Name", action: #selector(toggleDeskAll), keyEquivalent: "")
+        allD.target = self
+        allD.state = deskListMode == .all ? .on : .off
+        deskMenu.addItem(allD)
         let nd = NSMenuItem(title: "Next Desk", action: #selector(nextDesk), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         nd.keyEquivalentModifierMask = [.command, .option]
         nd.target = self
@@ -2010,10 +2016,16 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var lastLiveApply = Date.distantPast
 
     /// The Desks section by priority, or by group.
-    @objc func toggleDeskPriority() {
-        ui.desksByPriority.toggle()
+    @objc func toggleDeskPriority() { setDeskList(deskListMode == .priority ? .group : .priority) }
+    /// The Desks section as every desk by name, or by group.
+    @objc func toggleDeskAll() { setDeskList(deskListMode == .all ? .group : .all) }
+
+    var deskListMode: DeskListMode { DeskListMode(byPriority: ui.desksByPriority, all: ui.desksAll) }
+    func setDeskList(_ m: DeskListMode) {
+        ui.desksByPriority = m == .priority
+        ui.desksAll = m == .all
         ui.save()
-        sidebar.byPriority = ui.desksByPriority
+        sidebar.mode = m
         fitRail()
         installMenu()
     }

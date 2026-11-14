@@ -49,6 +49,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --changes          # the Changes window with a made-up diff, to shot-changes.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --asleep docs       # that desk put to sleep (the moon on its row)
 ./.build/release/Coldfall --snapshot /tmp/shot.png --by-priority      # the Desks section by priority instead of by group
+./.build/release/Coldfall --snapshot /tmp/shot.png --all-desks        # the Desks section as every desk by name
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```

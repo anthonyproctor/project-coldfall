@@ -1884,6 +1884,15 @@ do {
            DeskTabs.list(t, current: "work", running: ["work"], onScreen: ["work", "gone"]), ["work"])
     }
     do {
+        eq("list: the button steps group, priority, all, and round again",
+           [DeskListMode.group, .priority, .all].map(\.next), [.priority, .all, .group])
+        eq("list: saved as two switches", [DeskListMode(byPriority: false, all: false), DeskListMode(byPriority: true, all: false),
+                                         DeskListMode(byPriority: true, all: true)], [.group, .priority, .all])
+        var ad = [Desk(name: "work", group: "w"), Desk(name: "Api", group: "w"), Desk(name: "desk10"), Desk(name: "desk2"),
+                  Desk(name: "old", group: "w"), Desk(name: "hub")]
+        ad[4].hidden = true; ad[5].pinned = true
+        eq("list: all desks by name, case and numbers read as a person would, no hidden or pinned",
+           DeskListMode.byName(ad), ["Api", "desk2", "desk10", "work"])
         let work: String?? = .some("work"), general: String?? = .some(nil), none: String?? = nil
         check("groups: the list follows the desk you are in", GroupOnShow.group(browsing: none, selected: work, first: general) == work)
         check("groups: a clicked group is shown instead", GroupOnShow.group(browsing: general, selected: work, first: work) == general)

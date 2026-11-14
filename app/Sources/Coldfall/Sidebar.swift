@@ -21,8 +21,12 @@ final class SidebarView: NSView {
     var deferred: [String: Date] = [:]
     /// The Desks section by priority: every running desk, across groups,
     /// under Needs you, Done, Working, Idle. Off, it lists the selected group.
-    var byPriority = false { didSet { if byPriority != oldValue, let d = lastDesks { build(desks: d) } } }
-    var onTogglePriority: (() -> Void)?
+    var mode = DeskListMode.group { didSet { if mode != oldValue, let d = lastDesks { build(desks: d) } } }
+    var byPriority: Bool { mode == .priority }
+    /// The button beside "Desks": on to the next way of listing them.
+    var onNextMode: (() -> Void)?
+    /// A group was clicked while the list was not by group: list by group.
+    var onWantGroups: (() -> Void)?
     /// The sections as last drawn, to know when the list should change.
     private var drawnPriority: [DeskOrder.PrioritySection] = []
     /// The desks in the order the list shows them, for Next and Previous Desk.
@@ -276,7 +280,8 @@ final class SidebarView: NSView {
         title.autoresizingMask = [.width]
         addSubview(title)
         // How the section is ordered, and the way to change it.
-        let mode = NSButton(title: byPriority ? "By priority" : "By group", target: self, action: #selector(togglePriority))
+        let listMode = self.mode
+        let mode = NSButton(title: listMode.title, target: self, action: #selector(togglePriority))
         mode.isBordered = false
         mode.bezelStyle = .inline
         mode.font = .systemFont(ofSize: 11)
@@ -285,9 +290,7 @@ final class SidebarView: NSView {
             .withSymbolConfiguration(.init(pointSize: 8.5, weight: .medium))
         mode.imagePosition = .imageTrailing
         mode.imageHugsTitle = true
-        mode.toolTip = byPriority
-            ? "Every running desk, most urgent first. Click to list the selected group instead."
-            : "The selected group's desks. Click to list every running desk, most urgent first."
+        mode.toolTip = listMode.tip
         mode.sizeToFit()
         // Beside the title rather than flush right: the first build runs
         // before the rail has its width, and a right edge would be a guess.
@@ -333,7 +336,7 @@ final class SidebarView: NSView {
             }
             let stopped = desks.filter { !$0.hidden && !$0.pinned && status[$0.name]?.running != true }.count
             if stopped > 0 || drawnPriority.isEmpty {
-                let t = SectionTitle(drawnPriority.isEmpty && stopped == 0 ? "No desks" : "\(stopped) not running, under By group")
+                let t = SectionTitle(drawnPriority.isEmpty && stopped == 0 ? "No desks" : "\(stopped) not running, under All desks")
                 t.frame = NSRect(x: 16, y: y, width: w - 32, height: 15)
                 t.translatesAutoresizingMaskIntoConstraints = true
                 t.autoresizingMask = [.width]
@@ -343,10 +346,26 @@ final class SidebarView: NSView {
             }
         }
 
+        if listMode == .all {
+            // Every desk, by name, running or not: for finding one. Rows
+            // don't drag here; the order isn't yours.
+            let index = Dictionary(desks.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { a, _ in a })
+            for n in DeskListMode.byName(desks) {
+                guard let i = index[n] else { continue }
+                let r = row(i, desks[i], indent: 4, y: y, width: w)
+                r.groupHint = desks[i].group ?? "General"
+                r.onHide = { [weak self] in self?.onHideDesk?(i) }
+                zoneRows.insert(i)
+                shownOrder.append(n)
+                y += DeskRow.height + 2
+            }
+            y += 8
+        }
+
         // Only the group on show. Its name is the lit row above, so there
         // is no header here; a desk moves to another group by dragging it
         // onto that group's row.
-        for g in order where !byPriority && selectedGroup == .some(g) {
+        for g in order where listMode == .group && selectedGroup == .some(g) {
             let members = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden && !zones.contains($0.offset) }
             for (i, d) in members {
                 shownOrder.append(d.name)
@@ -570,7 +589,7 @@ final class SidebarView: NSView {
     }
     @objc private func sortAll() { onSortDesks?() }
     @objc private func toggleLive() { onToggleLive?() }
-    @objc private func togglePriority() { onTogglePriority?() }
+    @objc private func togglePriority() { onNextMode?() }
 
     /// The group clicked to look at, if any (see GroupOnShow).
     private var browsing: String??
@@ -580,6 +599,9 @@ final class SidebarView: NSView {
     func browse(_ g: String?) {
         guard let d = lastDesks else { return }
         browsing = .some(g)
+        // Asking for a group while the list shows something else is asking
+        // for the list by group.
+        if mode != .group { onWantGroups?() }
         build(desks: d)
         for (j, r) in rows { r.selected = (j == selected) }
     }

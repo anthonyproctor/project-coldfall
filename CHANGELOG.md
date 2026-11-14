@@ -8,6 +8,13 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **All desks, by name.** The button beside "Desks" now steps through three lists: *By
+  group*, *By priority*, and **All desks**: every desk you have, running or not, in
+  alphabetical order with its group beside it. For finding one without remembering which
+  group it is in. Also **Desks ▸ All Desks by Name**. Clicking a group goes back to *By
+  group*.
+
 ### Changed
 - **Clicking a group is a look, not a move.** The list shows that group's desks and the
   desk you are in stays on screen. Clicking a group used to take you to a desk in it,

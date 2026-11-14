@@ -49,6 +49,10 @@ final class DeskRow: NSView {
     var onUnpin: (() -> Void)?
     /// A small pin after the name, for a pinned desk.
     var showsPin = false { didSet { pinIcon.isHidden = !showsPin } }
+    /// The desk's group, shown where its detail goes when it has none: in
+    /// the list of every desk, which group a desk is in is how you tell
+    /// two apart.
+    var groupHint: String? { didSet { if groupHint != oldValue { restyle() } } }
     private let pinIcon = NSImageView()
     /// Toggle whether opening this desk asks about starting fresh. Nil where
     /// it can't be started fresh, so the item isn't offered.
@@ -201,7 +205,7 @@ final class DeskRow: NSView {
 
         // Why it waits, in amber; or what it's on, dim. A pinned desk's pin
         // sits where this goes, and the pin says more there.
-        info.stringValue = showsPin ? "" : (status.detail ?? "")
+        info.stringValue = showsPin ? "" : (status.detail ?? groupHint ?? "")
         mark.compact = !info.stringValue.isEmpty
         info.textColor = Mark(status) == .needsYou ? MarkView.pillInk : ui.dimText
         time.stringValue = status.lastOutput.map(Self.ago) ?? ""
