@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.47] - 2026-11-13
+
+Finding a desk: a list of all of them, and groups you can look into without leaving where you are.
+
 ### Added
 - **All desks, by name.** The button beside "Desks" now steps through three lists: *By
   group*, *By priority*, and **All desks**: every desk you have, running or not, in
@@ -1168,7 +1172,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...HEAD
+[0.3.47]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...v0.3.47
 [0.3.46]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...v0.3.46
 [0.3.45]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...v0.3.45
 [0.3.44]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...v0.3.44
