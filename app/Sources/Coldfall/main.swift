@@ -2804,8 +2804,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 s.dropRepaint()
                 let a = s.activity
                 if self.ui.notifyDesks, !CommandLine.arguments.contains("--snapshot") {
+                    // On screen means any place in the grid, not only the one with the keys.
                     let alert = NotifyRule.decide(from: self.lastActivity[name] ?? .quiet, to: a, signaled: s.isSignaled,
-                                                  appActive: front, deskVisible: s === self.visible)
+                                                  appActive: front, deskVisible: self.slotIndex(of: s) != nil,
+                                                  event: s.alertEvent, alerted: self.lastAlerted[name])
+                    if alert != .silent { self.lastAlerted[name] = s.alertEvent ?? .distantPast }
                     self.notifier.deliver(alert, desk: name, activity: a, reason: s.detailLine)
                 }
                 self.lastActivity[name] = a
@@ -2840,6 +2843,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var activityTimer: Timer?
     /// Each desk's state as of the last tick, to notice it change.
     var lastActivity: [String: DeskActivity] = [:]
+    /// The agent's report each desk was last alerted for (see NotifyRule).
+    var lastAlerted: [String: Date] = [:]
     let notifier = Notifier()
     var inboxServer: InboxServer?
     let peek = PeekPanel()

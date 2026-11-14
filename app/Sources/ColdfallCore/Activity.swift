@@ -108,6 +108,9 @@ public struct ActivityState {
     private var needsYouAt: Date?
     /// When the agent last said its turn was over.
     public private(set) var turnEndedAt: Date?
+    /// The report a "done" or "needs you" rests on: one alert per report,
+    /// however many times the mark comes and goes after it (see NotifyRule).
+    public var alertEvent: Date? { needsYou ? needsYouAt : turnEndedAt }
 
     /// Keys typed into the agent since the last Enter: a message half written.
     public private(set) var draftOpen = false
@@ -455,9 +458,18 @@ public enum NeedsYou {
 public enum NotifyRule {
     public enum Alert: Equatable { case silent, sound, banner }
 
+    ///
+    /// One alert per report from the agent. A finished desk goes on printing
+    /// (its status line ticks, a background job says something), which reads
+    /// as working for a moment and then as done again; each return to done
+    /// used to alert, ten times in a minute for one finished turn. `event`
+    /// is when the agent made the report this state rests on, and `alerted`
+    /// the report last alerted for: the same one is not announced twice.
     public static func decide(from old: DeskActivity, to new: DeskActivity, signaled: Bool,
-                              appActive: Bool, deskVisible: Bool) -> Alert {
+                              appActive: Bool, deskVisible: Bool,
+                              event: Date? = nil, alerted: Date? = nil) -> Alert {
         guard signaled, !(appActive && deskVisible) else { return .silent }
+        if let alerted, alerted == (event ?? .distantPast) { return .silent }
         let rises: Bool
         switch new {
         case .blocked: rises = old != .blocked

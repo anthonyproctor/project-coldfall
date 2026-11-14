@@ -781,6 +781,7 @@ final class DeskSession {
     var holdsDraft: Bool { activityState.holdsDraft() }
     /// Whether the done hook speaks for this desk.
     var isSignaled: Bool { activityState.signaled }
+    var alertEvent: Date? { activityState.alertEvent }
     var turnEndedAt: Date? { activityState.turnEndedAt }
 
     /// The agent pane as text, scrollback included, the last `lines` rows.

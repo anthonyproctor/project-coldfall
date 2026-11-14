@@ -25,6 +25,15 @@ opens this file.
   they are, and the list follows the desk that now has the keys.
 - A narrow pane header keeps the desk's name and drops the folder and the split buttons.
 
+### Fixed
+- **One alert for one finished turn.** A desk that finished and then went on printing (a
+  status line ticking, a background job reporting) read as working for a moment and as
+  done again, and every return to done sounded or sent a banner: ten in under a minute
+  for one answer. An alert now belongs to the agent's report, and the same report is
+  announced once.
+- With several desks on screen, none of them alerts while Coldfall is in front; only the
+  one with the keys used to count as seen.
+
 ## [0.3.43] - 2026-11-13
 
 Side by side across groups.

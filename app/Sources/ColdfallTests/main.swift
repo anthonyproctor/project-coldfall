@@ -3284,6 +3284,42 @@ do {
     eq("notify: once per change, not every tick", N.decide(from: .ready, to: .ready, signaled: true, appActive: false, deskVisible: false), .silent)
     eq("notify: blocked then answered-and-done isn't a second alarm", N.decide(from: .blocked, to: .ready, signaled: true, appActive: false, deskVisible: false), .silent)
     check("notify: the text holds nothing from the conversation", N.text(desk: "api", .blocked) == ("api needs you", "It's waiting for your answer."))
+    do {
+        // One finished turn, then the desk goes on printing: working, done,
+        // working, done. One alert, not one per return to done.
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        var st = ActivityState()
+        st.setVisible(false, at: t0.addingTimeInterval(-60))
+        st.noteInput(at: t0.addingTimeInterval(-30)); st.noteAsked()
+        st.noteSignal(.stop, at: t0)
+        var last = DeskActivity.working, alerted: Date?, alerts = 0
+        var now = t0.addingTimeInterval(ActivityState.quietFor + 1)
+        for _ in 0..<6 {
+            for a in [st.activity(now: now)] {
+                if N.decide(from: last, to: a, signaled: st.signaled, appActive: false, deskVisible: false,
+                            event: st.alertEvent, alerted: alerted) != .silent { alerts += 1; alerted = st.alertEvent ?? .distantPast }
+                last = a
+            }
+            st.noteOutput(at: now.addingTimeInterval(1))                       // a status line ticks
+            let busy = st.activity(now: now.addingTimeInterval(1.5))
+            _ = N.decide(from: last, to: busy, signaled: st.signaled, appActive: false, deskVisible: false,
+                         event: st.alertEvent, alerted: alerted)
+            last = busy
+            now = now.addingTimeInterval(ActivityState.quietFor + 5)
+        }
+        eq("notify: one finished turn alerts once, however often the mark returns", alerts, 1)
+        // The next turn is news again.
+        st.noteInput(at: now); st.noteAsked()
+        st.noteSignal(.stop, at: now.addingTimeInterval(20))
+        let again = N.decide(from: .working, to: st.activity(now: now.addingTimeInterval(20 + ActivityState.quietFor + 1)),
+                             signaled: st.signaled, appActive: false, deskVisible: false, event: st.alertEvent, alerted: alerted)
+        eq("notify: the next finished turn alerts again", again, .banner)
+        let e = Date(timeIntervalSince1970: 5)
+        eq("notify: a question after an alerted finish still alerts",
+           N.decide(from: .ready, to: .blocked, signaled: true, appActive: false, deskVisible: false, event: e.addingTimeInterval(9), alerted: e), .banner)
+        eq("notify: with no report time, once is still once",
+           N.decide(from: .working, to: .ready, signaled: true, appActive: false, deskVisible: false, event: nil, alerted: .distantPast), .silent)
+    }
 
     // Read and send.
     let names = ["hub", "api", "notes"], hidden: Set<String> = ["notes"]
