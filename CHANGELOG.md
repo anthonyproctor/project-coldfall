@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.46] - 2026-11-13
+
+Right-click a tab.
+
 ### Added
 - **Right-click a tab** for its desk's menu, the same one the desk has in the list: stop,
   rename, colour, pin, what it has, and the rest. For a desk that is on screen with
@@ -1150,7 +1154,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...HEAD
+[0.3.46]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...v0.3.46
 [0.3.45]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.44...v0.3.45
 [0.3.44]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.43...v0.3.44
 [0.3.43]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.42...v0.3.43
