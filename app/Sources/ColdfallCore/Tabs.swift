@@ -8,19 +8,19 @@ import Foundation
 /// Hidden desks get no tab unless they are the one on screen. Order is the
 /// rail's own, so tabs never shuffle as desks change state.
 ///
-/// A desk opened beside the one on screen has a tab too, whatever group it
-/// is in: both desks you are looking at are in the row. One from another
-/// group sits right after the desk on screen, where it is not pushed off
-/// the end by a full group.
+/// Every desk on screen has a tab, whatever group it is in: with several
+/// side by side, all the desks you are looking at are in the row. Ones from
+/// another group sit right after the desk that has the keys, where a full
+/// group does not push them off the end.
 public enum DeskTabs {
-    public static func list(_ desks: [Desk], current: String?, running: Set<String>, beside: String? = nil) -> [String] {
+    public static func list(_ desks: [Desk], current: String?, running: Set<String>, onScreen: [String] = []) -> [String] {
         guard let cur = current, let here = desks.first(where: { $0.name == cur }) else { return [] }
         var out = desks.filter { d in
-            d.group == here.group && (d.name == cur || d.name == beside || (running.contains(d.name) && !d.hidden))
+            d.group == here.group && (d.name == cur || onScreen.contains(d.name) || (running.contains(d.name) && !d.hidden))
         }.map(\.name)
-        if let b = beside, b != cur, !out.contains(b), desks.contains(where: { $0.name == b }),
-           let at = out.firstIndex(of: cur) {
-            out.insert(b, at: at + 1)
+        var at = (out.firstIndex(of: cur) ?? out.count - 1) + 1
+        for n in onScreen where n != cur && !out.contains(n) && desks.contains(where: { $0.name == n }) {
+            out.insert(n, at: at); at += 1
         }
         return out
     }
@@ -44,21 +44,78 @@ public enum DeskTabs {
     }
 }
 
-/// Two desks side by side: the one you switch with the desk list (main)
-/// and one opened beside it. A desk is on screen once at most.
-public enum DeskPair {
-    /// After choosing `name` in the desk list. Choosing the desk that is
-    /// beside swaps the two, rather than showing it twice or closing it.
-    public static func show(_ name: String, main: String?, beside: String?) -> (main: String, beside: String?) {
-        if name == beside { return (name, main) }
-        return (name, beside)
+/// The desks on screen side by side: one to twelve, in a grid. One of them
+/// has the keys; the desk list and the tabs act on that one.
+public enum DeskGrid {
+    /// Twelve terminals is already more than a screen reads; past it they
+    /// are too small to type in.
+    public static let most = 12
+
+    public enum Placement: Equatable {
+        /// Already on screen, in this place: go to it.
+        case focus(Int)
+        /// Not on screen: it takes the place of the desk that has the keys.
+        case replace(Int)
     }
 
-    /// After "Open Beside" on `name`. Nil when there is nothing to put it
-    /// beside, or it is the desk already on screen.
-    public static func openBeside(_ name: String, main: String?, beside: String?) -> (main: String, beside: String)? {
-        guard let main, name != main else { return nil }
-        return (main, name)
+    /// After choosing `name` in the desk list or the tabs. A desk is on
+    /// screen once at most, so choosing one that is there moves the keys to
+    /// it; any other takes the place of the one you are in.
+    public static func place(_ name: String, onScreen: [String], key: Int) -> Placement {
+        if let i = onScreen.firstIndex(of: name) { return .focus(i) }
+        return .replace(min(max(key, 0), max(onScreen.count - 1, 0)))
+    }
+
+    /// Whether one more desk fits, and is not on screen already.
+    public static func canAdd(_ name: String, onScreen: [String]) -> Bool {
+        !onScreen.isEmpty && onScreen.count < most && !onScreen.contains(name)
+    }
+
+    /// Which place has the keys once the desk at `index` is taken off: the
+    /// same desk as before, or, when it was that one, its left neighbour.
+    public static func keyAfterRemoving(_ index: Int, key: Int, count: Int) -> Int {
+        guard count > 1 else { return 0 }
+        if index < key { return key - 1 }
+        if index == key { return max(0, min(key - 1, count - 2)) }
+        return key
+    }
+
+    /// How many rows and columns `count` desks take: one row up to three,
+    /// two rows up to eight, three after that.
+    public static func shape(_ count: Int) -> (rows: Int, cols: Int) {
+        guard count > 0 else { return (0, 0) }
+        let rows = count <= 3 ? 1 : (count <= 8 ? 2 : 3)
+        return (rows, Int((Double(count) / Double(rows)).rounded(.up)))
+    }
+
+    /// Where each desk goes, top row first, y measured from the top. A last
+    /// row that is short shares the whole width. Two desks split at `split`
+    /// (the first one's share), kept at least `minWidth` each where there is
+    /// room for that.
+    public static func frames(count: Int, width: Double, height: Double,
+                              split: Double = 0.5, minWidth: Double = 260) -> [CGRect] {
+        guard count > 0 else { return [] }
+        if count == 1 { return [rect(0, 0, width, height)] }
+        if count == 2 {
+            let lo = min(minWidth, width / 2), hi = max(width - minWidth, width / 2)
+            let x = min(max((width * split).rounded(), lo), hi)
+            return [rect(0, 0, x, height), rect(x, 0, width - x, height)]
+        }
+        let (rows, cols) = shape(count)
+        var out: [CGRect] = []
+        for r in 0..<rows {
+            let inRow = r == rows - 1 ? count - cols * (rows - 1) : cols
+            let y0 = (height * Double(r) / Double(rows)).rounded(), y1 = (height * Double(r + 1) / Double(rows)).rounded()
+            for c in 0..<inRow {
+                let x0 = (width * Double(c) / Double(inRow)).rounded(), x1 = (width * Double(c + 1) / Double(inRow)).rounded()
+                out.append(rect(x0, y0, x1 - x0, y1 - y0))
+            }
+        }
+        return out
+    }
+
+    private static func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> CGRect {
+        CGRect(origin: CGPoint(x: CGFloat(x), y: CGFloat(y)), size: CGSize(width: CGFloat(w), height: CGFloat(h)))
     }
 
     /// One line of the Desks menu's Open Beside list.
@@ -70,14 +127,14 @@ public enum DeskPair {
         public var title: String { group.map { "\(name)  ·  \($0)" } ?? name }
     }
 
-    /// Every desk that can go beside the one on screen, whatever group the
+    /// Every desk that can go beside the ones on screen, whatever group the
     /// list is showing: running ones first, then the rest, each in the order
-    /// given. Not the desk on screen, not the one already beside, not hidden
-    /// ones. Empty when nothing is on screen to be beside.
+    /// given. Not one already on screen, not hidden ones. Empty when nothing
+    /// is on screen to be beside, or the screen is full.
     public static func choices(_ desks: [(name: String, group: String?, running: Bool, hidden: Bool)],
-                               main: String?, beside: String?) -> [Choice] {
-        guard let main else { return [] }
-        let ok = desks.filter { !$0.hidden && $0.name != main && $0.name != beside }
+                               onScreen: [String]) -> [Choice] {
+        guard !onScreen.isEmpty, onScreen.count < most else { return [] }
+        let ok = desks.filter { !$0.hidden && !onScreen.contains($0.name) }
             .map { Choice(name: $0.name, group: $0.group, running: $0.running) }
         return ok.filter(\.running) + ok.filter { !$0.running }
     }

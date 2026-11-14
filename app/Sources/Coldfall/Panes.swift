@@ -400,9 +400,24 @@ final class PaneHeader: NSView {
             buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             buttons.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        subGone = sub.widthAnchor.constraint(equalToConstant: 0)
         restyle()
     }
     required init?(coder: NSCoder) { nil }
+
+    // In a narrow card (several desks side by side) the name matters most:
+    // the folder and the split buttons give it their room.
+    private var subGone: NSLayoutConstraint!
+    private var narrow = false
+    override func layout() {
+        let n = bounds.width < 300
+        if n != narrow {
+            narrow = n
+            sub.isHidden = n; subGone.isActive = n
+            right.isHidden = n; down.isHidden = n
+        }
+        super.layout()
+    }
 
     /// The conversation's fullness. Quiet under 60%; orange, then red.
     func setContext(_ pct: Double?) {
@@ -446,6 +461,23 @@ final class PaneHeader: NSView {
         // A hairline between the header and the terminal.
         Theme.ui.border.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+    }
+
+    // Dragging a header moves its desk: dropped on another desk on screen,
+    // the two change places. A click still only focuses.
+    var onDrag: ((_ windowPoint: NSPoint, _ dropped: Bool) -> Void)?
+    private var downAt: NSPoint?
+    private var dragging = false
+    override func mouseDown(with e: NSEvent) { downAt = e.locationInWindow; dragging = false }
+    override func mouseDragged(with e: NSEvent) {
+        guard let d = downAt else { return }
+        let p = e.locationInWindow
+        if !dragging, hypot(p.x - d.x, p.y - d.y) > 6 { dragging = true; NSCursor.closedHand.push() }
+        if dragging { onDrag?(p, false) }
+    }
+    override func mouseUp(with e: NSEvent) {
+        if dragging { NSCursor.pop(); onDrag?(e.locationInWindow, true) }
+        downAt = nil; dragging = false
     }
 
     @objc private func splitR() { onAction?(.splitRight) }
@@ -550,66 +582,88 @@ final class PaneBox: NSView {
     }
 }
 
-/// Two desks side by side: the main one and, when asked for, a second.
+/// The desks on screen: one, or several side by side in a grid (see
+/// `DeskGrid` in the core for the shape).
 ///
-/// Laid out by hand rather than with NSSplitView, which takes a half added
-/// later for a collapsed pane and gives it no width. The boundary between
-/// the halves drags; double-click it for even halves again.
-final class DeskPairView: NSView {
-    private weak var main: NSView?
-    private weak var side: NSView?
-    /// The main desk's share of the width while two are shown.
+/// Laid out by hand rather than with NSSplitView, which takes a pane added
+/// later for a collapsed one and gives it no width. With two desks the
+/// boundary between them drags; double-click it for even halves again.
+final class DeskGridView: NSView {
+    private(set) var cells: [NSView] = []
+    /// The first desk's share of the width while two are shown.
     private(set) var ratio: CGFloat = 0.5
-    static let minHalf: CGFloat = 260
-    var showsSide = false { didSet { if showsSide != oldValue { if showsSide { ratio = 0.5 }; needsLayout = true; layoutSubtreeIfNeeded(); window?.invalidateCursorRects(for: self) } } }
+    override var isFlipped: Bool { true }
+    private let highlight = NSView()
 
-    func install(main: NSView, side: NSView) {
-        self.main = main; self.side = side
-        for v in [main, side] {
+    /// The cell a dragged desk would change places with, outlined.
+    var dropTarget: Int? { didSet { if dropTarget != oldValue { placeHighlight() } } }
+
+    func set(_ views: [NSView]) {
+        for v in cells where !views.contains(where: { $0 === v }) { v.removeFromSuperview() }
+        for v in views where v.superview !== self {
             v.translatesAutoresizingMaskIntoConstraints = true
             v.autoresizingMask = []
             addSubview(v)
         }
-        side.isHidden = true
+        if views.count != cells.count { ratio = 0.5 }
+        cells = views
+        dropTarget = nil
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        window?.invalidateCursorRects(for: self)
     }
 
-    private var boundary: CGFloat {
-        let w = bounds.width
-        let lo = min(Self.minHalf, w / 2), hi = max(w - Self.minHalf, w / 2)
-        return min(max((w * ratio).rounded(), lo), hi)
+    private var frames: [NSRect] {
+        DeskGrid.frames(count: cells.count, width: Double(bounds.width), height: Double(bounds.height),
+                        split: Double(ratio))
     }
 
     override func layout() {
         super.layout()
-        guard let main, let side else { return }
-        side.isHidden = !showsSide
-        if showsSide {
-            let x = boundary
-            main.frame = NSRect(x: 0, y: 0, width: x, height: bounds.height)
-            side.frame = NSRect(x: x, y: 0, width: bounds.width - x, height: bounds.height)
-        } else {
-            main.frame = bounds
-        }
-        // The halves' own contents are pinned to them with constraints, and
-        // those were solved before the frames above changed: solve again, or
-        // a desk keeps its old width under its neighbour.
-        for v in [main, side] { v.needsLayout = true; v.layoutSubtreeIfNeeded() }
+        for (v, f) in zip(cells, frames) { v.frame = f }
+        // Each cell's contents are pinned to it with constraints, and those
+        // were solved before the frames above changed: solve again, or a
+        // desk keeps its old size under its neighbour.
+        for v in cells { v.needsLayout = true; v.layoutSubtreeIfNeeded() }
+        placeHighlight()
     }
     override func setFrameSize(_ n: NSSize) { super.setFrameSize(n); needsLayout = true }
 
-    // The few points either side of the boundary belong to the drag.
-    private var grip: NSRect { NSRect(x: boundary - 4, y: 0, width: 8, height: bounds.height) }
-    override func hitTest(_ p: NSPoint) -> NSView? {
-        if showsSide, let sv = superview, grip.contains(convert(p, from: sv)) { return self }
-        return super.hitTest(p)
+    private func placeHighlight() {
+        guard let i = dropTarget, cells.indices.contains(i) else { highlight.removeFromSuperview(); return }
+        highlight.wantsLayer = true
+        highlight.layer?.cornerRadius = 8
+        highlight.layer?.borderWidth = 2
+        highlight.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        highlight.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+        highlight.frame = cells[i].frame.insetBy(dx: 4, dy: 4)
+        addSubview(highlight, positioned: .above, relativeTo: nil)
     }
-    override func resetCursorRects() { if showsSide { addCursorRect(grip, cursor: .resizeLeftRight) } }
+
+    /// The cell under a point in the window, if any.
+    func cell(at windowPoint: NSPoint) -> Int? {
+        let p = convert(windowPoint, from: nil)
+        return cells.firstIndex { $0.frame.contains(p) }
+    }
+
+    // With two desks, the few points either side of the boundary belong to
+    // the drag that resizes them.
+    private var grip: NSRect? {
+        guard cells.count == 2 else { return nil }
+        return NSRect(x: cells[0].frame.maxX - 4, y: 0, width: 8, height: bounds.height)
+    }
+    override func hitTest(_ p: NSPoint) -> NSView? {
+        if let g = grip, let sv = superview, g.contains(convert(p, from: sv)) { return self }
+        let hit = super.hitTest(p)
+        return hit === highlight ? nil : hit
+    }
+    override func resetCursorRects() { if let g = grip { addCursorRect(g, cursor: .resizeLeftRight) } }
     override func mouseDown(with e: NSEvent) {
-        guard showsSide else { return super.mouseDown(with: e) }
+        guard grip != nil else { return super.mouseDown(with: e) }
         if e.clickCount == 2 { ratio = 0.5; needsLayout = true; window?.invalidateCursorRects(for: self) }
     }
     override func mouseDragged(with e: NSEvent) {
-        guard showsSide, bounds.width > 0 else { return }
+        guard grip != nil, bounds.width > 0 else { return }
         ratio = convert(e.locationInWindow, from: nil).x / bounds.width
         needsLayout = true
     }
@@ -992,6 +1046,10 @@ final class DeskSession {
         if panes.count < 2 { zoomed = false }
         for (i, p) in panes.enumerated() {
             if !zoomed || i == focused { container.addArrangedSubview(p.box) }
+            p.box.header.onDrag = { [weak self] pt, dropped in
+                guard let self else { return }
+                DeskSession.onHeaderDrag?(self, pt, dropped)
+            }
             p.box.header.onAction = { [weak self, weak p] a in
                 guard let self, let p, let i = self.panes.firstIndex(where: { $0 === p }) else { return }
                 self.focus(i)
@@ -1006,12 +1064,15 @@ final class DeskSession {
     /// The pane headers' buttons go to the controller, which owns splitting
     /// and closing (and the window's first responder).
     static var onPaneAction: ((DeskSession, PaneAction) -> Void)?
+    /// A pane header dragged: where the pointer is in the window, and
+    /// whether it was let go there.
+    static var onHeaderDrag: ((DeskSession, NSPoint, Bool) -> Void)?
 
-    /// On screen next to another desk. Then the focus outline shows which
-    /// of the two desks the keys go to, even with one pane each.
+    /// On screen next to other desks. Then the focus outline shows which
+    /// desk the keys go to, even with one pane each.
     private(set) var paired = false
     private(set) var isKey = true
-    /// The second of the pair: its last pane's close button takes it off screen.
+    /// One of several on screen: its last pane's close button takes it off screen.
     private(set) var isBeside = false
     func setPair(_ paired: Bool, key: Bool, beside: Bool = false) {
         guard paired != self.paired || key != isKey || beside != isBeside else { return }

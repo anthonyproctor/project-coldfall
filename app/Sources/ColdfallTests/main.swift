@@ -1874,30 +1874,51 @@ do {
         eq("tabs: another group is another set", DeskTabs.list(t, current: "golf", running: ["b", "golf"]), ["golf"])
         eq("tabs: ungrouped desks share a set", DeskTabs.list(t, current: "hub", running: ["work"]), ["hub"])
         eq("tabs: a hidden desk gets no tab", DeskTabs.list(t, current: "work", running: ["old", "work"]), ["work"])
-        eq("tabs: the desk beside has a tab, from another group, after the one on screen",
-           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"], beside: "golf"), ["work", "golf", "b"])
-        eq("tabs: a desk beside from this group keeps its place",
-           DeskTabs.list(t, current: "work", running: ["b", "work"], beside: "b"), ["work", "b"])
-        eq("tabs: a desk beside that no longer exists adds nothing",
-           DeskTabs.list(t, current: "work", running: ["work"], beside: "gone"), ["work"])
-        eq("tabs: no desk on screen, no tabs", DeskTabs.list(t, current: nil, running: ["work"]), [])
-        eq("tabs: + offers this group's stopped desks", DeskTabs.startable(t, current: "work", running: ["work"]), ["a", "b"])
-        check("pair: choosing another desk keeps the one beside", DeskPair.show("c", main: "a", beside: "b") == ("c", Optional("b")))
-        check("pair: choosing the desk beside swaps them", DeskPair.show("b", main: "a", beside: "b") == ("b", Optional("a")))
-        check("pair: no desk beside, nothing to keep", DeskPair.show("b", main: "a", beside: nil) == ("b", nil))
-        check("pair: open beside the one on screen", DeskPair.openBeside("b", main: "a", beside: nil).map { $0 == ("a", "b") } == true)
-        check("pair: a desk can't be beside itself", DeskPair.openBeside("a", main: "a", beside: nil) == nil)
+        eq("tabs: a desk on screen has a tab, from another group, after the one with the keys",
+           DeskTabs.list(t, current: "work", running: ["b", "work", "golf"], onScreen: ["work", "golf"]), ["work", "golf", "b"])
+        eq("tabs: a desk on screen from this group keeps its place",
+           DeskTabs.list(t, current: "work", running: ["b", "work"], onScreen: ["b", "work"]), ["work", "b"])
+        eq("tabs: several from other groups keep their screen order",
+           DeskTabs.list(t, current: "a", running: ["a"], onScreen: ["golf", "a", "hub"]), ["a", "golf", "hub"])
+        eq("tabs: a desk on screen that no longer exists adds nothing",
+           DeskTabs.list(t, current: "work", running: ["work"], onScreen: ["work", "gone"]), ["work"])
+    }
+    do {
+        check("grid: choosing a desk that is on screen goes to it", DeskGrid.place("b", onScreen: ["a", "b", "c"], key: 0) == .focus(1))
+        check("grid: any other desk replaces the one with the keys", DeskGrid.place("d", onScreen: ["a", "b", "c"], key: 2) == .replace(2))
+        check("grid: nothing on screen yet, it takes the first place", DeskGrid.place("a", onScreen: [], key: 0) == .replace(0))
+        check("grid: one more fits", DeskGrid.canAdd("b", onScreen: ["a"]))
+        check("grid: a desk is on screen once", !DeskGrid.canAdd("a", onScreen: ["a", "b"]))
+        check("grid: nothing on screen, nothing to be beside", !DeskGrid.canAdd("a", onScreen: []))
+        check("grid: twelve is full", !DeskGrid.canAdd("z", onScreen: (0..<12).map { "d\($0)" }))
+        eq("grid: taking off one before the keys keeps the same desk", DeskGrid.keyAfterRemoving(0, key: 2, count: 3), 1)
+        eq("grid: taking off the one with the keys goes left", DeskGrid.keyAfterRemoving(2, key: 2, count: 3), 1)
+        eq("grid: taking off the first, with the keys, stays first", DeskGrid.keyAfterRemoving(0, key: 0, count: 3), 0)
+        eq("grid: taking off one after the keys changes nothing", DeskGrid.keyAfterRemoving(2, key: 0, count: 3), 0)
+        for (n, want) in [(1, (1, 1)), (2, (1, 2)), (3, (1, 3)), (4, (2, 2)), (5, (2, 3)), (6, (2, 3)), (8, (2, 4)), (9, (3, 3)), (12, (3, 4))] {
+            let got = DeskGrid.shape(n)
+            check("grid: \(n) desks are \(want.0) by \(want.1)", got.rows == want.0 && got.cols == want.1)
+        }
+        let two = DeskGrid.frames(count: 2, width: 1000, height: 600, split: 0.9)
+        eq("grid: two split where dragged, each keeping a usable width", two.map { Double($0.size.width) }, [740, 260])
+        let five = DeskGrid.frames(count: 5, width: 900, height: 600)
+        eq("grid: five are three over two", five.map { Double($0.origin.y) }, [0, 0, 0, 300, 300])
+        eq("grid: a short last row shares the whole width", five.map { Double($0.size.width) }, [300, 300, 300, 450, 450])
+        for n in 1...12 {
+            let f = DeskGrid.frames(count: n, width: 1001, height: 701)
+            let area = f.reduce(0.0) { $0 + Double($1.size.width) * Double($1.size.height) }
+            check("grid: \(n) desks cover the space exactly, none overlapping", f.count == n && abs(area - 1001 * 701) < 0.5)
+        }
         do {
             let all: [(name: String, group: String?, running: Bool, hidden: Bool)] = [
                 ("a", "one", true, false), ("b", "one", false, false), ("c", "two", true, false),
                 ("d", "two", true, true), ("e", nil, true, false)]
-            let c = DeskPair.choices(all, main: "a", beside: "e")
-            eq("pair: choices cross groups, running first, no main, beside or hidden", c.map(\.name), ["c", "b"])
-            eq("pair: a choice names its group", c.first?.title, "c  ·  two")
-            eq("pair: a desk with no group is just its name", DeskPair.Choice(name: "e", group: nil, running: true).title, "e")
-            check("pair: nothing on screen, nothing to be beside", DeskPair.choices(all, main: nil, beside: nil).isEmpty)
+            let c = DeskGrid.choices(all, onScreen: ["a", "e"])
+            eq("grid: choices cross groups, running first, none on screen or hidden", c.map(\.name), ["c", "b"])
+            eq("grid: a choice names its group", c.first?.title, "c  ·  two")
+            eq("grid: a desk with no group is just its name", DeskGrid.Choice(name: "e", group: nil, running: true).title, "e")
+            check("grid: nothing on screen, nothing to be beside", DeskGrid.choices(all, onScreen: []).isEmpty)
         }
-        check("pair: nothing on screen, nothing to be beside", DeskPair.openBeside("a", main: nil, beside: nil) == nil)
         let bm = DeskMenu.items(runtime: "claude", running: true, hidden: false, canReveal: false, canMakeDefault: false,
                                 hasInventory: true, hasMcp: true, canBeside: true)
         check("menu: a desk can open beside", bm.contains { $0.action == .beside })

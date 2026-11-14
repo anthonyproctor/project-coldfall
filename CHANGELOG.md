@@ -8,6 +8,23 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Up to twelve desks on screen.** *Open Beside* no longer stops at two: each desk you add
+  takes a place in a grid (three in a row, then two rows, then three), every one a whole
+  desk with its own card, colour and state.
+- **Drag a desk by its header to move it.** Drop it on another desk on screen and the two
+  change places.
+
+### Changed
+- **The list and the tabs act on the desk you are in.** With several desks on screen, the
+  one you click has the keys, and the desk list, the tabs, the explorer and the meter
+  follow it. Choosing a desk in the list or a tab replaces that one, wherever it sits; it
+  used to always replace the left one. Choosing a desk that is already on screen goes to it.
+- **Any desk can be taken off the screen**, not only the second: its close button, or
+  **Desks ▸ Take Desk Off Screen** (⌥⌘W, was *Close Beside Desk*). The others stay where
+  they are, and the list follows the desk that now has the keys.
+- A narrow pane header keeps the desk's name and drops the folder and the split buttons.
+
 ## [0.3.43] - 2026-11-13
 
 Side by side across groups.

@@ -42,6 +42,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --peek   # that desk peeked at, to shot-peek.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --split  # that desk as two pane cards
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --beside api   # that desk with another next to it
+./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --beside api,docs,review   # several, as a grid
 ./.build/release/Coldfall --snapshot /tmp/shot.png --terminal out.txt --feed   # Needs You with that desk's question, to shot-feed.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --schedules        # the Schedules window with made-up ones, to shot-schedules.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --conversations    # the Conversations window with made-up ones, to shot-conversations.png
@@ -87,6 +88,11 @@ terminal in a window, with no desks. `--ghostty-held <program>` runs that progra
 as a held desk drawn by Ghostty and prints its state as it changes (set
 `COLDFALL_HOLDER_DIR` to a short throwaway folder first); with
 `COLDFALL_GHOSTTY_SELFTEST=1` it answers the program's question and quits.
+
+`./.build/release/Coldfall --grid-selftest api,docs` (never with `--snapshot`, and
+only in a throwaway home with stand-in agents) starts the desk on screen, opens
+those beside it, then goes to one, replaces one, drags one onto another and takes
+two off, printing what is on screen after each step, and quits.
 
 Each start and exit of the app is one line in `~/.local/share/coldfall/exit.log`
 (a quit and its answer, the last window closing, or a signal and who sent it);

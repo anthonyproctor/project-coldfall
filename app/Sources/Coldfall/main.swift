@@ -14,7 +14,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var window: NSWindow!
     let sidebar = SidebarView()
     let tree = FileTreeView()
-    let host = NSView()
+    /// Where the desk that has the keys is drawn: its cell of the grid.
+    var host: NSView { slots[keySlot].view }
     let reader = ReaderView()
     let split = SoftSplitView()
     let meter = MeterBar()
@@ -153,10 +154,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Rail | terminal | reader. The reader used to live in a separate
         // floating window you had to arrange by hand; VS Code shows files
         // inside the window, beside the sidebar. It can still pop out.
-        host.translatesAutoresizingMaskIntoConstraints = false
-        // The desk on screen, and beside it a second one when asked for.
+        // The desks on screen: one, or several side by side.
         deskSplit.translatesAutoresizingMaskIntoConstraints = false
-        deskSplit.install(main: host, side: besideSlot)
+        deskSplit.set(slots.map(\.view))
         center.addSubview(tabs); center.addSubview(deskSplit)
         // The cards bring their own gap; this keeps them off the window's edges.
         let inset: CGFloat = 4
@@ -221,11 +221,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         strip.onToggleReader = { [weak self] in self?.toggleReader() }
         strip.onToggleMeter = { [weak self] in self?.toggleMeter() }
         strip.onUpdate = { [weak self] in self?.updates.openRelease() }
+        DeskSession.onHeaderDrag = { [weak self] s, pt, dropped in self?.headerDragged(s, to: pt, dropped: dropped) }
         DeskSession.onPaneAction = { [weak self] s, a in
             guard let self else { return }
-            // The button's own desk, when two are on screen.
-            self.keyIsBeside = s === self.beside
-            self.syncPairFocus()
+            // The button's own desk, when several are on screen.
+            if s !== self.visible, let k = self.slotIndex(of: s) { self.focusSlot(k) }
             switch a {
             case .splitRight: self.splitRight()
             case .splitDown: self.splitDown()
@@ -400,7 +400,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // Set the appearance BEFORE showing: every semantic colour in the app
         // resolves off it, so flipping after the fact repaints everything.
         Theme.apply(to: window)
-        Theme.paint(host, Theme.ui.sidebar)
+        for sl in slots { Theme.paint(sl.view, Theme.ui.sidebar) }
         Theme.paint(center, Theme.ui.sidebar)
 
         // `--snapshot <file.png>`: lay the window out, save a picture of it,
@@ -453,13 +453,21 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 ])
                 s.panes.first?.terminal.feed(text: text.replacingOccurrences(of: "\n", with: "\r\n"))
                 // `--beside <desk>`: with that desk next to it (not started).
-                if let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count,
-                   let other = desks.first(where: { $0.name == CommandLine.arguments[b + 1] }), other.name != desks[i].name {
+                // Several, separated by commas, make a grid.
+                if let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count {
                     visible = s
-                    let o = DeskSession(desk: other)
-                    sessions[other.name] = o
-                    mountBeside(o)
-                    o.panes.first?.terminal.feed(text: "> waiting for you\r\n")
+                    slots[keySlot].session = s
+                    for name in CommandLine.arguments[b + 1].split(separator: ",").map(String.init) {
+                        guard let other = desks.first(where: { $0.name == name }), sessions[name] == nil,
+                              other.name != desks[i].name, slots.count < DeskGrid.most else { continue }
+                        let o = DeskSession(desk: other)
+                        sessions[other.name] = o
+                        mount(o, in: addSlot())
+                        o.isVisible = true
+                        o.panes.first?.terminal.feed(text: "> waiting for you\r\n")
+                    }
+                    syncPairFocus()
+                    refreshTabs(sidebar.status)
                 }
                 // `--split`: with a shell pane beside it, to see the cards.
                 if CommandLine.arguments.contains("--split") { s.addPaneForPicture() }
@@ -969,16 +977,33 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // startup one once it is up. For trying two desks without a click.
         if !CommandLine.arguments.contains("--snapshot"),
            let b = CommandLine.arguments.firstIndex(of: "--beside"), b + 1 < CommandLine.arguments.count {
-            let name = CommandLine.arguments[b + 1]
+            let names = CommandLine.arguments[b + 1].split(separator: ",").map(String.init)
             // Once a desk is on screen to be beside (the launch screen waits
             // on Start first); given up on after half a minute.
             var tries = 0
             Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
                 tries += 1
                 guard let self, tries < 30 else { t.invalidate(); return }
-                guard self.visible?.started == true, let i = self.deskIndex(name) else { return }
+                guard self.visible?.started == true else { return }
                 t.invalidate()
-                self.openBeside(i)
+                for name in names { if let i = self.deskIndex(name) { self.openBeside(i) } }
+            }
+        }
+        // `--grid-selftest a,b,c`: once a desk is up, put those beside it and
+        // walk the grid (go to one, replace one, change places, take one
+        // off), printing what is on screen after each step. For a throwaway
+        // home; it quits when done.
+        if !CommandLine.arguments.contains("--snapshot"),
+           let g = CommandLine.arguments.firstIndex(of: "--grid-selftest"), g + 1 < CommandLine.arguments.count {
+            let names = CommandLine.arguments[g + 1].split(separator: ",").map(String.init)
+            var tries = 0
+            Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
+                tries += 1
+                guard let self, tries < 30 else { t.invalidate(); return }
+                // The launch screen waits on Start: press it.
+                guard self.visible?.started == true else { if tries == 2 { self.startWaiting() }; return }
+                t.invalidate()
+                self.gridSelfTest(names)
             }
         }
         watchSystemAppearance()
@@ -1027,13 +1052,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func show(_ i: Int) {
         guard desks.indices.contains(i) else { return }
         let d = desks[i]
-        // Choosing the desk that is beside swaps the two.
-        var swapIn: DeskSession?
-        if let b = beside, b.desk.name == d.name {
-            swapIn = visible
-            mountBeside(nil)
+        // A desk is on screen once: choosing one that is there, in another
+        // place, moves the keys to it. Any other takes the place of the desk
+        // that has the keys.
+        if case .focus(let k) = DeskGrid.place(d.name, onScreen: slots.map { $0.session?.desk.name ?? "" }, key: keySlot),
+           k != keySlot {
+            focusSlot(k)
+            return
         }
-        defer { if let old = swapIn, old !== visible { mountBeside(old) } }
         lastVisited[d.name] = Date()
         if !steppingHistory { history.visit(d.name) }
         if ui.sleeping.contains(d.name) { ui.sleeping.removeAll { $0 == d.name }; ui.save() }
@@ -1054,19 +1080,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // it was off screen; on screen it follows its slot, or it keeps
         // that size when the window or its neighbour changes.
         s.container.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(s.container)
-        NSLayoutConstraint.activate([
-            s.container.topAnchor.constraint(equalTo: host.topAnchor),
-            s.container.bottomAnchor.constraint(equalTo: host.bottomAnchor),
-            s.container.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-            s.container.trailingAnchor.constraint(equalTo: host.trailingAnchor),
-        ])
+        if let old = visible, old !== s { old.setPair(false, key: true) }
+        mount(s, in: slots[keySlot])
         if !s.started { checkInventory(d) }
         startOrAsk(s, d)
-        visible?.isVisible = false
+        if visible !== s { visible?.isVisible = false }
         s.isVisible = true
         visible = s
-        keyIsBeside = false
         syncPairFocus()
         meter.currentDesk = d.name
         // Follow the desk that is on screen.
@@ -1321,7 +1341,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         besideMenu.delegate = self
         ob.submenu = besideMenu
         deskMenu.addItem(ob)
-        let cb = NSMenuItem(title: "Close Beside Desk", action: #selector(closeBeside), keyEquivalent: "w")
+        let cb = NSMenuItem(title: "Take Desk Off Screen", action: #selector(closeBeside), keyEquivalent: "w")
         cb.keyEquivalentModifierMask = [.command, .option]
         cb.target = self
         deskMenu.addItem(cb)
@@ -1390,8 +1410,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// Back in front: if keys.json changed meanwhile, apply it.
     func applicationDidBecomeActive(_ n: Notification) {
         // Back in front of it: the desk on screen is seen again.
-        visible?.isVisible = true
-        beside?.isVisible = true
+        for s in onScreen { s.isVisible = true }
         let stamp = (try? FileManager.default.attributesOfItem(atPath: KeyMap.path))?[.modificationDate] as? Date
         if stamp != keyMapStamp { installMenu() }
     }
@@ -1400,8 +1419,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// at, so an answer that lands now is still news when you come back.
     func applicationDidResignActive(_ n: Notification) {
         guard !CommandLine.arguments.contains("--snapshot") else { return }
-        visible?.isVisible = false
-        beside?.isVisible = false
+        for s in onScreen { s.isVisible = false }
     }
 
     @objc func jump(_ sender: NSMenuItem) { open(sender.tag) }
@@ -1888,6 +1906,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         visible?.container.removeFromSuperview()
         visible?.isVisible = false
         visible = nil
+        slots[keySlot].session = nil
         stoppedNote?.removeFromSuperview(); stoppedNote = nil
 
         let title = NSTextField(labelWithString: "\(d.name)")
@@ -1962,10 +1981,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         memory.removeValue(forKey: d.name)
         closedDesks.closed(d.name)
         s.terminateAll()
-        if beside === s { mountBeside(nil) }
-        if visible === s {
+        // One of several on screen: its place closes and the rest stay.
+        if slots.count > 1, let k = slotIndex(of: s) {
+            closeSlot(k)
+        } else if visible === s {
             s.container.removeFromSuperview()
             visible = nil
+            slots[keySlot].session = nil
             // Stopped, it waits on its Start button like any desk not running.
             if let i = desks.firstIndex(where: { $0.name == d.name }) { showWaiting(i) }
         }
@@ -2740,7 +2762,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             DispatchQueue.main.async {
                 Theme.apply(to: self.window)
                 Theme.paint(self.rail, Theme.ui.sidebar)
-                Theme.paint(self.host, Theme.ui.sidebar)
+                for sl in self.slots { Theme.paint(sl.view, Theme.ui.sidebar) }
                 Theme.paint(self.center, Theme.ui.sidebar)
                 self.tabs.restyle()
                 for s in self.sessions.values {
@@ -2828,21 +2850,30 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// The desk shown next to the one on screen, if any. It is a whole desk
     /// with its own agent, not a pane of the first.
-    var beside: DeskSession?
-    let deskSplit = DeskPairView()
-    let besideSlot = NSView()
-    /// Which of the two the keys last went to: pane commands act on it.
-    var keyIsBeside = false
-    var activeSession: DeskSession? { keyIsBeside ? (beside ?? visible) : visible }
+    /// One place in the grid of desks on screen.
+    final class DeskSlot {
+        let view = NSView()
+        var session: DeskSession?
+    }
+    /// The desks on screen, in order. Always at least one place; the one at
+    /// `keySlot` holds `visible`, the desk the keys, the list and the tabs
+    /// are on.
+    var slots = [DeskSlot()]
+    var keySlot = 0
+    let deskSplit = DeskGridView()
+    var onScreen: [DeskSession] { slots.compactMap(\.session) }
+    func slotIndex(of s: DeskSession) -> Int? { slots.firstIndex { $0.session === s } }
+    /// The desk pane commands act on: the one with the keys.
+    var activeSession: DeskSession? { visible }
 
     let besideMenu = NSMenu(title: "Open Beside")
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === besideMenu else { return }
         menu.removeAllItems()
         let all = desks.map { (name: $0.name, group: $0.group, running: sessions[$0.name]?.started == true, hidden: $0.hidden) }
-        let list = DeskPair.choices(all, main: visible?.desk.name, beside: beside?.desk.name)
+        let list = DeskGrid.choices(all, onScreen: onScreen.map(\.desk.name))
         if list.isEmpty {
-            menu.addItem(NSMenuItem(title: visible == nil ? "No desk on screen" : "No other desks", action: nil, keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: visible == nil ? "No desk on screen" : (slots.count >= DeskGrid.most ? "The screen is full" : "No other desks"), action: nil, keyEquivalent: ""))
             return
         }
         var wasRunning = list.first?.running ?? false
@@ -2860,77 +2891,145 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         openBeside(i)
     }
 
-    /// Put a desk next to the one on screen, starting it if need be.
+    /// Put a desk next to the ones on screen, starting it if need be. It
+    /// goes after the desk that has the keys, and takes them.
     func openBeside(_ i: Int) {
         guard desks.indices.contains(i) else { return }
         let d = desks[i]
-        guard DeskPair.openBeside(d.name, main: visible?.desk.name, beside: beside?.desk.name) != nil else { NSSound.beep(); return }
-        let s = sessions[d.name] ?? {
-            let new = DeskSession(desk: d)
-            new.processDelegate = self
-            sessions[d.name] = new
-            return new
-        }()
-        mountBeside(s)
-        if !s.started { checkInventory(d) }
-        startOrAsk(s, d)
-        lastVisited[d.name] = Date()
-        notifier.clear(desk: d.name)
-        keyIsBeside = true
-        syncPairFocus()
-        window.makeFirstResponder(s.focusedPane.terminal.view)
+        if let k = slots.firstIndex(where: { $0.session?.desk.name == d.name }) { focusSlot(k); return }
+        guard visible != nil, DeskGrid.canAdd(d.name, onScreen: onScreen.map(\.desk.name)) else { NSSound.beep(); return }
+        // A new place with the keys and nothing in it yet: show() fills it,
+        // and finds no desk there to take off the screen.
+        _ = addSlot(after: keySlot)
+        keySlot += 1
+        visible = nil
+        show(i)
     }
 
-    /// Show `s` in the second slot, or nil to close the slot.
-    func mountBeside(_ s: DeskSession?) {
-        if let old = beside, old !== s {
-            old.container.removeFromSuperview()
-            if old !== visible { old.isVisible = false }
-            old.setPair(false, key: true)
-        }
-        beside = s
-        if let s {
-            s.container.delegate = self
-            s.container.translatesAutoresizingMaskIntoConstraints = false
-            besideSlot.addSubview(s.container)
-            NSLayoutConstraint.activate([
-                s.container.topAnchor.constraint(equalTo: besideSlot.topAnchor),
-                s.container.bottomAnchor.constraint(equalTo: besideSlot.bottomAnchor),
-                s.container.leadingAnchor.constraint(equalTo: besideSlot.leadingAnchor),
-                s.container.trailingAnchor.constraint(equalTo: besideSlot.trailingAnchor),
-            ])
-            s.isVisible = true
-            deskSplit.showsSide = true
-            if ProcessInfo.processInfo.environment["COLDFALL_SNAPSHOT_DEBUG"] != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    guard let self else { return }
-                    print("beside: split \(self.deskSplit.frame) host \(self.host.frame) slot \(self.besideSlot.frame) container \(s.container.frame) super \(String(describing: s.container.superview === self.besideSlot))")
-                    if let m = self.visible {
-                        print("beside: main container \(m.container.frame) in host \(m.container.superview === self.host) boxes \(m.panes.map { "\($0.box.frame.size) view \($0.terminal.view.frame.size) ambiguous \($0.terminal.view.hasAmbiguousLayout)" }) host subviews \(self.host.subviews.count)")
-                    }
-                    fflush(stdout)
-                }
-            }
-        } else {
-            deskSplit.showsSide = false
-            keyIsBeside = false
-        }
+    /// A new, empty place in the grid.
+    @discardableResult
+    func addSlot(after k: Int? = nil) -> DeskSlot {
+        let slot = DeskSlot()
+        Theme.paint(slot.view, Theme.ui.sidebar)
+        slots.insert(slot, at: min((k ?? slots.count - 1) + 1, slots.count))
+        deskSplit.set(slots.map(\.view))
+        return slot
+    }
+
+    /// Draw `s` in a place, pinned to it.
+    func mount(_ s: DeskSession, in slot: DeskSlot) {
+        if let old = slot.session, old !== s { old.container.removeFromSuperview() }
+        slot.session = s
+        s.container.delegate = self
+        s.container.translatesAutoresizingMaskIntoConstraints = false
+        guard s.container.superview !== slot.view else { return }
+        slot.view.addSubview(s.container)
+        NSLayoutConstraint.activate([
+            s.container.topAnchor.constraint(equalTo: slot.view.topAnchor),
+            s.container.bottomAnchor.constraint(equalTo: slot.view.bottomAnchor),
+            s.container.leadingAnchor.constraint(equalTo: slot.view.leadingAnchor),
+            s.container.trailingAnchor.constraint(equalTo: slot.view.trailingAnchor),
+        ])
+    }
+
+    /// Move the keys to the desk in place `k`. The list, the tabs, the
+    /// explorer and the meter follow it, as they follow a desk you choose.
+    func focusSlot(_ k: Int, takeKeys: Bool = true) {
+        guard slots.indices.contains(k), let s = slots[k].session else { return }
+        keySlot = k
+        visible = s
+        let d = s.desk
+        lastVisited[d.name] = Date()
+        if !steppingHistory { history.visit(d.name) }
+        notifier.clear(desk: d.name)
+        if ui.lastDesk != d.name { ui.lastDesk = d.name; ui.save() }
         syncPairFocus()
+        meter.currentDesk = d.name
+        watcher.start(root: d.resolvedCwd)
+        tree.setRoot(d.resolvedCwd)
+        if let i = deskIndex(d.name) { sidebar.select(i) }
+        window.title = "Project Coldfall — \(d.name)"
+        strip.setContext(d.name)
+        updateTermHeader()
+        if takeKeys { window.makeFirstResponder(s.focusedPane.terminal.view) }
+    }
+
+    /// Take the desk in place `k` off the screen. It keeps running. The
+    /// last one stays: a window shows at least one desk.
+    func closeSlot(_ k: Int) {
+        guard slots.count > 1, slots.indices.contains(k) else { return }
+        let hadKeys = k == keySlot
+        if let s = slots[k].session {
+            s.container.removeFromSuperview()
+            s.isVisible = false
+            s.setPair(false, key: true)
+        }
+        let next = DeskGrid.keyAfterRemoving(k, key: keySlot, count: slots.count)
+        slots.remove(at: k)
+        keySlot = next
+        deskSplit.set(slots.map(\.view))
+        if hadKeys || visible == nil { focusSlot(next) } else { syncPairFocus(); refreshTabs(sidebar.status) }
+    }
+
+    /// Take the desk that has the keys off the screen. It keeps running.
+    @objc func closeBeside() {
+        guard slots.count > 1 else { return }
+        closeSlot(keySlot)
+    }
+
+    /// A pane header dragged over the grid: the place under the pointer is
+    /// outlined, and letting go there makes the two desks change places.
+    func headerDragged(_ s: DeskSession, to pt: NSPoint, dropped: Bool) {
+        guard slots.count > 1, let from = slotIndex(of: s) else { return }
+        let over = deskSplit.cell(at: pt).flatMap { $0 == from ? nil : $0 }
+        guard dropped else { deskSplit.dropTarget = over; return }
+        deskSplit.dropTarget = nil
+        guard let to = over else { return }
+        let keyDesk = slots[keySlot].session
+        slots.swapAt(from, to)
+        keySlot = slots.firstIndex { $0.session === keyDesk } ?? keySlot
+        deskSplit.set(slots.map(\.view))
         refreshTabs(sidebar.status)
     }
 
-    /// Take the second desk off the screen. It keeps running.
-    @objc func closeBeside() {
-        guard beside != nil else { return }
-        mountBeside(nil)
-        if let s = visible { window.makeFirstResponder(s.focusedPane.terminal.view) }
+    func gridSelfTest(_ names: [String]) {
+        func say(_ what: String) {
+            let on = slots.map { $0.session?.desk.name ?? "-" }
+            let sizes = slots.map { "\(Int($0.view.frame.width))x\(Int($0.view.frame.height))" }
+            let running = Set(sessions.filter { $0.value.started }.map(\.key))
+            let row = DeskTabs.list(desks, current: visible?.desk.name, running: running, onScreen: onScreen.map(\.desk.name))
+            let seen = onScreen.filter(\.isVisible).map(\.desk.name)
+            print("grid: \(what): on screen \(on) keys \(visible?.desk.name ?? "-") tabs \(row) seen \(seen) title \(window.title) cells \(sizes)")
+            fflush(stdout)
+        }
+        var steps: [(String, () -> Void)] = []
+        say("start")
+        for n in names { steps.append(("open \(n) beside", { [self] in if let i = deskIndex(n) { openBeside(i) } })) }
+        if let first = slots.first?.session?.desk.name {
+            steps.append(("choose \(first), already on screen", { [self] in if let i = deskIndex(first) { show(i) } }))
+        }
+        if let spare = desks.first(where: { d in !names.contains(d.name) && d.name != visible?.desk.name && !d.hidden }) {
+            steps.append(("choose \(spare.name), not on screen", { [self] in if let i = deskIndex(spare.name) { show(i) } }))
+        }
+        steps.append(("drag the first onto the last", { [self] in
+            guard let s = slots.first?.session, let last = slots.last else { return }
+            let pt = last.view.convert(NSPoint(x: last.view.bounds.midX, y: last.view.bounds.midY), to: nil)
+            headerDragged(s, to: pt, dropped: false)
+            headerDragged(s, to: pt, dropped: true)
+        }))
+        steps.append(("take the one with the keys off", { [self] in closeBeside() }))
+        steps.append(("take the first off", { [self] in closeSlot(0) }))
+        var i = 0
+        Timer.inEveryMode(withTimeInterval: 1.2, repeats: true) { t in
+            guard i < steps.count else { t.invalidate(); print("grid: done"); fflush(stdout); exit(0) }
+            steps[i].1(); say(steps[i].0); i += 1
+        }
     }
 
-    /// The focus outline on whichever of the two desks has the keys.
+    /// The focus outline on whichever desk has the keys, when there are several.
     func syncPairFocus() {
-        let two = beside != nil
-        visible?.setPair(two, key: !keyIsBeside)
-        beside?.setPair(two, key: keyIsBeside, beside: true)
+        let many = slots.count > 1
+        for (k, sl) in slots.enumerated() { sl.session?.setPair(many, key: k == keySlot, beside: many) }
     }
 
     /// Put to sleep every desk that has earned it (see Hibernate). Checked
@@ -2939,7 +3038,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         guard ui.sleepIdleMinutes > 0, !CommandLine.arguments.contains("--snapshot") else { return }
         let now = Date(), after = TimeInterval(ui.sleepIdleMinutes * 60)
         for d in desks {
-            guard let s = sessions[d.name], s !== visible, s !== beside, !(peek.isOpen && peek.desk == d.name) else { continue }
+            guard let s = sessions[d.name], slotIndex(of: s) == nil, !(peek.isOpen && peek.desk == d.name) else { continue }
             let f = Hibernate.Facts(runtime: d.runtime, resumes: d.resumesItself, running: s.started, visible: s.isVisible,
                                     activity: s.activity, lastOutput: s.lastOutput, lastKey: s.lastKey,
                                     panes: s.panes.count, draft: s.holdsDraft)
@@ -3072,7 +3171,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // pane if there is more than one, otherwise the window. Beeping here
         // instead would quietly take cmd-w away from closing the window at all.
         // The second desk's only pane: off the screen, still running.
-        if keyIsBeside, let b = beside, b.panes.count < 2 { closeBeside(); return }
+        if slots.count > 1, let v = visible, v.panes.count < 2 { closeBeside(); return }
         guard let s = activeSession, s.panes.count > 1 else {
             window.performClose(nil); return
         }
@@ -3111,16 +3210,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] ev in
             guard let self, ev.window === self.window else { return ev }
             let pt = ev.locationInWindow
-            for s in [self.visible, self.beside].compactMap({ $0 }) {
+            for s in self.onScreen {
                 for (i, p) in s.panes.enumerated()
                 where p.box.superview != nil
                     && p.box.convert(p.box.bounds, to: nil).contains(pt) {
                     if s.panes.count > 1 { s.focus(i) }
-                    // With two desks on screen, the one clicked has the keys.
-                    if self.beside != nil, self.keyIsBeside != (s === self.beside) {
-                        self.keyIsBeside = s === self.beside
-                        self.syncPairFocus()
-                    }
+                    // With several desks on screen, the one clicked has the
+                    // keys, and the list and the tabs follow it.
+                    if s !== self.visible, let k = self.slotIndex(of: s) { self.focusSlot(k, takeKeys: false) }
                     return ev
                 }
             }
@@ -3391,7 +3488,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func refreshTabs(_ status: [String: DeskStatus]) {
         let current = waitingName ?? visible?.desk.name ?? snapDesk
         let running = Set(status.filter { $0.value.running }.map(\.key))
-        let names = DeskTabs.list(desks, current: current, running: running, beside: beside?.desk.name)
+        let names = DeskTabs.list(desks, current: current, running: running, onScreen: onScreen.map(\.desk.name))
         let list: [TabBar.Tab] = names.compactMap { n in
             guard let d = desks.first(where: { $0.name == n }) else { return nil }
             return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus(), color: d.color)
@@ -3454,7 +3551,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             }
             return
         }
-        if entry.value === beside { mountBeside(nil) }
+        if slots.count > 1, let k = slotIndex(of: entry.value) { closeSlot(k) }
         sessions.removeValue(forKey: entry.key)
     }
 
