@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.49] - 2026-11-14
+
+Tailscale machines as desks.
+
 ### Added
 - **Machines on your Tailscale network are offered as desks.** Settings, Agents,
   SSH hosts now lists them under the hosts from `~/.ssh/config`: each with its
@@ -1196,7 +1200,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.49...HEAD
+[0.3.49]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...v0.3.49
 [0.3.48]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...v0.3.48
 [0.3.47]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...v0.3.47
 [0.3.46]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.45...v0.3.46
