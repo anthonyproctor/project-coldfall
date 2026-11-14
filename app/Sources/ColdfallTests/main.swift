@@ -2295,6 +2295,59 @@ do {
     eq("budget: label rounds spent down", DeskBudget.label(.near(spent: 49.6, budget: 50)), "$49 of $50 this week")
 }
 
+// MARK: - Tailscale machines offered as hosts
+
+do {
+    let status = """
+    {"BackendState":"Running","Self":{"HostName":"this-mac","DNSName":"this-mac.tail0000.ts.net.","OS":"macOS","Online":true},
+     "Peer":{
+      "k1":{"HostName":"berry","DNSName":"berry.tail0000.ts.net.","OS":"linux","Online":true,"TailscaleIPs":["100.64.0.2","fd7a::2"]},
+      "k2":{"HostName":"Sam's iPhone","DNSName":"sams-iphone.tail0000.ts.net.","OS":"iOS","Online":true,"TailscaleIPs":["100.64.0.3"]},
+      "k3":{"HostName":"tower","DNSName":"tower.tail0000.ts.net.","OS":"windows","Online":false,"TailscaleIPs":["100.64.0.4"]},
+      "k4":{"HostName":"old","DNSName":"old.tail0000.ts.net.","OS":"linux","Online":false,"Expired":true,"TailscaleIPs":["100.64.0.5"]},
+      "k5":{"HostName":"nodns","DNSName":"","OS":"linux","Online":true,"TailscaleIPs":["fd7a::6","100.64.0.6"]},
+      "k6":{"HostName":"x","DNSName":"-oProxyCommand=id.tail0000.ts.net.","OS":"linux","Online":true,"TailscaleIPs":["100.64.0.7; id"]},
+      "k7":{"HostName":"apple","DNSName":"Apple.tail0000.ts.net.","OS":"macOS","Online":true,"TailscaleIPs":["100.64.0.8"]}
+     }}
+    """
+    let all = Tailnet.parse(Data(status.utf8))
+    eq("tailnet: online first, then by name; this Mac and an expired machine left out",
+       all.map(\.name), ["100.64.0.6", "apple", "berry", "sams-iphone", "tower"])
+    let berry = all.first { $0.name == "berry" }
+    eq("tailnet: ssh goes to the full name", berry?.command, "ssh -t berry.tail0000.ts.net")
+    eq("tailnet: the line says what it is", berry?.blurb, "tailscale · Linux · online")
+    eq("tailnet: with no name, the IPv4 address", all.first?.command, "ssh -t 100.64.0.6")
+    eq("tailnet: a name is lowercased", all.first { $0.name == "apple" }?.target, "apple.tail0000.ts.net")
+    check("tailnet: a name that reads as an ssh option, with no clean address, is not offered",
+          !all.contains { $0.target.contains("Proxy") || $0.target.contains(";") })
+    check("tailnet: a phone takes no ssh", all.first { $0.name == "sams-iphone" }?.takesSSH == false)
+    eq("tailnet: junk is no machines", Tailnet.parse(Data("not json".utf8)).count, 0)
+    eq("tailnet: no peers is no machines", Tailnet.parse(Data(#"{"Peer":null}"#.utf8)).count, 0)
+
+    let offered = Tailnet.undesked(all, desks: [], ssh: [])
+    eq("tailnet: phones are not offered", offered.map(\.name), ["100.64.0.6", "apple", "berry", "tower"])
+    eq("tailnet: a machine with a desk of its name is not offered again",
+       Tailnet.undesked(all, desks: [Desk(name: "Berry", cwd: "/srv/demo")], ssh: []).map(\.name), ["100.64.0.6", "apple", "tower"])
+    eq("tailnet: nor one a desk already connects to",
+       Tailnet.undesked(all, desks: [Desk(name: "pi", cwd: "/srv/demo", command: "ssh -t me@berry.tail0000.ts.net")], ssh: []).map(\.name),
+       ["100.64.0.6", "apple", "tower"])
+    eq("tailnet: a desk for another host with a longer name hides nothing",
+       Tailnet.undesked(all, desks: [Desk(name: "ci", cwd: "/srv/demo", command: "ssh -t berryfarm")], ssh: []).count, 4)
+    eq("tailnet: a machine ~/.ssh/config names by address is left to that entry",
+       Tailnet.undesked(all, desks: [], ssh: [SSHHost(alias: "box", hostName: "100.64.0.6", user: "me", port: nil)]).map(\.name),
+       ["apple", "berry", "tower"])
+    eq("tailnet: or by alias",
+       Tailnet.undesked(all, desks: [], ssh: [SSHHost(alias: "tower", hostName: nil, user: nil, port: nil)]).map(\.name),
+       ["100.64.0.6", "apple", "berry"])
+    let d = Tailnet.desk(from: berry!)
+    check("tailnet: the desk is named for the machine, in remote", d.name == "berry" && d.group == "remote" && d.command == "ssh -t berry.tail0000.ts.net")
+    check("tailnet: plain names only", Tailnet.plainName("a-b.c1") && !Tailnet.plainName("-a.b") && !Tailnet.plainName("a..b") && !Tailnet.plainName("a b") && !Tailnet.plainName(""))
+    check("tailnet: plain addresses only", Tailnet.plainIPv4("100.64.0.1") && !Tailnet.plainIPv4("100.64.0") && !Tailnet.plainIPv4("100.64.0.999") && !Tailnet.plainIPv4("fd7a::1") && !Tailnet.plainIPv4("1.2.3.4 "))
+    eq("tailnet: the command is found where the Mac app keeps it",
+       Tailnet.cli(exists: { $0.hasPrefix("/Applications") }), "/Applications/Tailscale.app/Contents/MacOS/Tailscale")
+    eq("tailnet: or not at all", Tailnet.cli(exists: { _ in false }), nil)
+}
+
 // MARK: - review fixes: quoting, pricing, the release URL
 
 do {

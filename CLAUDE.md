@@ -50,6 +50,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --asleep docs       # that desk put to sleep (the moon on its row)
 ./.build/release/Coldfall --snapshot /tmp/shot.png --by-priority      # the Desks section by priority instead of by group
 ./.build/release/Coldfall --snapshot /tmp/shot.png --all-desks        # the Desks section as every desk by name
+./.build/release/Coldfall --snapshot /tmp/shot.png --settings Agents --settings-at "ssh hosts" --tailnet status.json   # a tab scrolled to a heading, with made-up Tailscale machines
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```
@@ -76,6 +77,9 @@ context menu cannot be captured in an offscreen snapshot, so its order,
 wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
+
+A snapshot never asks Tailscale which machines exist (their names are private);
+`--tailnet file.json` gives it a made-up `tailscale status --json` instead.
 
 For a live picture of several desks, run the built binary in a throwaway home
 with stand-in agents and `--beside docs,review` (it presses Start on the launch

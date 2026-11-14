@@ -28,6 +28,8 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
     private var projectDir = FileManager.default.currentDirectoryPath
     private let discoveredStack = NSStackView()
     private let hostsStack = NSStackView()
+    /// Machines on the Tailscale network, read once when Settings opens.
+    private var tailnet: [TailnetMachine] = []
 
     convenience init(projectDir: String = FileManager.default.currentDirectoryPath) {
         // Never taller than the screen it opens on.
@@ -237,9 +239,12 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         hostsStack.alignment = .leading
         hostsStack.spacing = 3
         rtLines.append(hostsStack)
-        rtLines.append(note("Hosts from ~/.ssh/config with no desk yet. A remote box is exactly "
-            + "what a desk is for — it holds state between visits. Connects by alias, so ssh "
-            + "applies identity files and jump hosts from your own config."))
+        rtLines.append(note("Hosts from ~/.ssh/config with no desk yet, then machines on your "
+            + "Tailscale network. A remote box is exactly what a desk is for — it holds state "
+            + "between visits. A config host connects by alias, so ssh applies your identity "
+            + "files and jump hosts; a Tailscale machine connects by its name as the user you "
+            + "are here, which you can change in the desk's command."))
+        loadTailnet()
         refreshHosts()
 
         rtLines.append(caps("AGENT MAIL"))
@@ -521,32 +526,70 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         refreshDiscovered()
     }
 
+    /// Ask Tailscale which machines there are, off the main thread, and list
+    /// them when it answers. A picture never asks: it would put the real
+    /// machines' names in it. `--tailnet file.json` gives a picture made-up ones.
+    private func loadTailnet() {
+        let args = CommandLine.arguments
+        if let k = args.firstIndex(of: "--tailnet"), k + 1 < args.count {
+            tailnet = (try? Data(contentsOf: URL(fileURLWithPath: args[k + 1]))).map(Tailnet.parse) ?? []
+            return
+        }
+        if args.contains("--snapshot") { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let found = Tailnet.machines()
+            DispatchQueue.main.async {
+                guard let self, found != self.tailnet else { return }
+                self.tailnet = found
+                self.refreshHosts()
+            }
+        }
+    }
+
     private func refreshHosts() {
         hostsStack.subviews.forEach { $0.removeFromSuperview() }
         let found = SSHHosts.undesked(desks: desks)
-        if found.isEmpty {
+        let machines = Tailnet.undesked(tailnet, desks: desks, ssh: SSHHosts.all())
+        if found.isEmpty && machines.isEmpty {
             let l = NSTextField(labelWithString:
-                SSHHosts.all().isEmpty ? "no ~/.ssh/config hosts found" : "every host already has a desk")
+                SSHHosts.all().isEmpty && tailnet.isEmpty ? "no ~/.ssh/config hosts found" : "every host already has a desk")
             l.font = .systemFont(ofSize: 11); l.textColor = .tertiaryLabelColor
             hostsStack.addArrangedSubview(l)
             return
         }
         for h in found.prefix(20) {
-            let b = NSButton(title: "＋  \(h.alias)   \(h.blurb)", target: self,
-                             action: #selector(addHost(_:)))
-            b.bezelStyle = .inline; b.isBordered = false; b.alignment = .left
-            b.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-            b.contentTintColor = .controlAccentColor
-            b.toolTip = h.command
-            b.identifier = NSUserInterfaceItemIdentifier(h.alias)
-            hostsStack.addArrangedSubview(b)
+            hostsStack.addArrangedSubview(hostButton("\(h.alias)   \(h.blurb)", tip: h.command, id: h.alias,
+                                                     action: #selector(addHost(_:))))
         }
+        for m in machines.prefix(20) {
+            // An offline machine can still be given a desk; it just reads quieter.
+            hostsStack.addArrangedSubview(hostButton("\(m.name)   \(m.blurb)", tip: m.command, id: m.target,
+                                                     action: #selector(addMachine(_:)), quiet: !m.online))
+        }
+    }
+
+    private func hostButton(_ text: String, tip: String, id: String, action: Selector, quiet: Bool = false) -> NSButton {
+        let b = NSButton(title: "＋  " + text, target: self, action: action)
+        b.bezelStyle = .inline; b.isBordered = false; b.alignment = .left
+        b.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        b.contentTintColor = quiet ? .secondaryLabelColor : .controlAccentColor
+        b.toolTip = tip
+        b.identifier = NSUserInterfaceItemIdentifier(id)
+        return b
     }
 
     @objc private func addHost(_ sender: NSButton) {
         guard let alias = sender.identifier?.rawValue,
               let h = SSHHosts.all().first(where: { $0.alias == alias }) else { return }
         desks.append(SSHHosts.desk(from: h))
+        dirty = true
+        table.reloadData(); refreshHosts()
+    }
+
+    @objc private func addMachine(_ sender: NSButton) {
+        guard let target = sender.identifier?.rawValue,
+              let m = tailnet.first(where: { $0.target == target }) else { return }
+        desks.append(Tailnet.desk(from: m))
         dirty = true
         table.reloadData(); refreshHosts()
     }

@@ -321,7 +321,13 @@ case "holders":
     }
 
 case "hosts":
-    out(SSHHosts.all().map { ["alias": $0.alias, "target": $0.blurb, "command": $0.command] })
+    // ssh config hosts, then Tailscale machines the config doesn't name.
+    // Read only: `tailscale status --json` and nothing else.
+    let ssh = SSHHosts.all()
+    let machines = Tailnet.undesked(Tailnet.machines(), desks: [], ssh: ssh)
+    out(ssh.map { ["alias": $0.alias, "target": $0.blurb, "command": $0.command, "source": "ssh"] as [String: Any] }
+        + machines.map { ["alias": $0.name, "target": $0.target, "command": $0.command, "source": "tailscale",
+                          "os": Tailnet.osName($0.os), "online": $0.online] as [String: Any] })
 
 case "formats":
     out([
@@ -340,7 +346,7 @@ default:
 
       desks              configured desks and how each launches
       agents [dir]       agent definitions on disk that could become desks
-      hosts              ssh hosts that could become desks
+      hosts              ssh hosts and Tailscale machines that could become desks
       open <desk> [--show]  start a desk in the running Coldfall, as a click does
       running            which desks the running Coldfall has going, and how each is doing
       read <desk> [--lines N]  a desk's screen as text, without opening it

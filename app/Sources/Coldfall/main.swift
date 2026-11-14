@@ -936,6 +936,24 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                         sv.layer?.backgroundColor = Theme.ui.editor.cgColor
                     }
                     sv.layoutSubtreeIfNeeded()
+                    // `--settings-at "ssh hosts"`: scroll the tab so that
+                    // heading is at the top, for what sits below the fold.
+                    if let a = CommandLine.arguments.firstIndex(of: "--settings-at"), a + 1 < CommandLine.arguments.count {
+                        let want = CommandLine.arguments[a + 1].lowercased()
+                        func find(_ v: NSView) -> NSTextField? {
+                            if let t = v as? NSTextField, t.stringValue.lowercased() == want { return t }
+                            for c in v.subviews { if let hit = find(c) { return hit } }
+                            return nil
+                        }
+                        if let tab = sw.tabs?.selectedTabViewItem?.view, let label = find(tab),
+                           let scroll = label.enclosingScrollView, let doc = scroll.documentView {
+                            let r = label.convert(label.bounds, to: doc)
+                            let top = doc.isFlipped ? r.minY - 12 : r.maxY + 12 - scroll.contentView.bounds.height
+                            let most = max(0, doc.bounds.height - scroll.contentView.bounds.height)
+                            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(max(0, top), most)))
+                            scroll.reflectScrolledClipView(scroll.contentView)
+                        }
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         _ = sw          // keep the window alive until it is drawn
                         guard let srep = sv.bitmapImageRepForCachingDisplay(in: sv.bounds) else { exit(1) }

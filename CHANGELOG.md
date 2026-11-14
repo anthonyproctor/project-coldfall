@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Machines on your Tailscale network are offered as desks.** Settings, Agents,
+  SSH hosts now lists them under the hosts from `~/.ssh/config`: each with its
+  system and whether it is online. One click makes a desk that connects with
+  ssh, as the user you are on this Mac (change that in the desk's command).
+  Phones are left out, and so is a machine your ssh config already names, since
+  that entry carries the user and the key. Coldfall only ever reads
+  `tailscale status`; it changes nothing on your network. `coldfall-cli hosts`
+  lists them too.
+
 ## [0.3.48] - 2026-11-14
 
 Every running desk has a tab.
