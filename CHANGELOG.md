@@ -8,6 +8,15 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Right-click a tab** for its desk's menu, the same one the desk has in the list: stop,
+  rename, colour, pin, what it has, and the rest. For a desk that is on screen with
+  others it starts with **Take Off Screen**. Control-click works too.
+
+### Fixed
+- The command palette offers a desk's own actions for a desk from another group that is
+  on screen; it had them only for desks the list was showing.
+
 ## [0.3.45] - 2026-11-13
 
 A fix for 0.3.43 and 0.3.44: the menu bar could not be rebuilt.

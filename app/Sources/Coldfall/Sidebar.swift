@@ -149,8 +149,20 @@ final class SidebarView: NSView {
             syncPriority()
         }
     }
-    /// A desk's right-click menu, for the command palette.
-    func actionMenu(for i: Int) -> NSMenu? { rows[i]?.actionMenu() }
+    /// A desk's right-click menu, for the command palette and the tabs.
+    /// A desk the list isn't showing (it is in another group, and on screen
+    /// beside this one) has no row, so one is made for the menu alone.
+    func actionMenu(for i: Int) -> NSMenu? {
+        if let r = rows[i] { return r.actionMenu() }
+        guard let d = lastDesks, d.indices.contains(i) else { return nil }
+        let r = DeskRow(desk: d[i])
+        wire(r, i, d[i])
+        r.selected = i == selected
+        // The menu's items call back into the row, and hold it weakly.
+        menuRow = r
+        return r.actionMenu()
+    }
+    private var menuRow: DeskRow?
 
     /// Desks waiting on you, oldest first, as last drawn.
     private(set) var waiting: [String] = []
@@ -384,6 +396,14 @@ final class SidebarView: NSView {
                 let r = DeskRow(desk: d)
                 r.frame = NSRect(x: indent, y: y, width: w - indent - 4, height: DeskRow.height)
                 r.autoresizingMask = [.width]   // stretches with the rail; time stays flush right
+                wire(r, i, d)
+                addSubview(r)
+                rows[i] = r
+                return r
+    }
+
+    /// Everything a desk's row can do, and what it knows about the desk.
+    private func wire(_ r: DeskRow, _ i: Int, _ d: Desk) {
                 r.onClick = { [weak self] in self?.select(i); self?.onSelect?(i) }
                 r.onRemove = { [weak self] in self?.onRemoveDesk?(i) }
                 r.onReveal = d.agent == nil ? nil : { [weak self] in self?.onRevealAgent?(i) }
@@ -413,9 +433,6 @@ final class SidebarView: NSView {
                 r.status = status[d.name] ?? DeskStatus()
                 r.budget = budgets[d.name] ?? .unset
                 r.tick = tick
-                addSubview(r)
-                rows[i] = r
-                return r
     }
 
     /// The rail's real width is only known after the window lays out. Rebuild

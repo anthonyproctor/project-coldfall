@@ -242,6 +242,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let self, let i = self.deskIndex(n) else { return }
             self.open(i)
         }
+        tabs.onMenu = { [weak self] n in self?.tabMenu(n) }
         tabs.onStop = { [weak self] n in
             guard let self, let i = self.deskIndex(n) else { return }
             self.stopDesk(i)
@@ -2918,6 +2919,29 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         show(i)
     }
 
+    /// A tab's right-click menu: its desk's own, as in the list. For a desk
+    /// that is on screen, putting it beside or peeking at it means nothing,
+    /// and taking it off the screen does.
+    func tabMenu(_ name: String) -> NSMenu? {
+        guard let i = deskIndex(name), let m = sidebar.actionMenu(for: i) else { return nil }
+        guard slots.contains(where: { $0.session?.desk.name == name }) else { return m }
+        for it in m.items where it.title == "Open Beside" || it.title == "Peek" { m.removeItem(it) }
+        if slots.count > 1 {
+            let off = NSMenuItem(title: "Take Off Screen", action: #selector(takeOffFromMenu(_:)), keyEquivalent: "")
+            off.target = self
+            off.representedObject = name
+            m.insertItem(off, at: 0)
+            if m.items.count > 1, !m.items[1].isSeparatorItem { m.insertItem(.separator(), at: 1) }
+        }
+        while m.items.first?.isSeparatorItem == true { m.removeItem(at: 0) }
+        return m
+    }
+    @objc func takeOffFromMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String,
+              let k = slots.firstIndex(where: { $0.session?.desk.name == name }) else { return }
+        closeSlot(k)
+    }
+
     /// A new, empty place in the grid.
     @discardableResult
     func addSlot(after k: Int? = nil) -> DeskSlot {
@@ -3032,6 +3056,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // The menu bar is rebuilt whenever desks or keys change; twice here,
         // because a menu kept between builds raised on the second (0.3.43).
         steps.append(("rebuild the menu bar twice", { [self] in installMenu(); installMenu() }))
+        // Every tab has its desk's right-click menu, also for a desk from a
+        // group the list isn't showing.
+        steps.append(("tab menus", { [self] in
+            for s in onScreen {
+                let titles = tabMenu(s.desk.name)?.items.map { $0.isSeparatorItem ? "-" : $0.title } ?? []
+                print("grid: tab menu for \(s.desk.name): \(titles.count) items: \(titles.prefix(6))")
+            }
+        }))
         steps.append(("take the one with the keys off", { [self] in closeBeside() }))
         steps.append(("take the first off", { [self] in closeSlot(0) }))
         var i = 0

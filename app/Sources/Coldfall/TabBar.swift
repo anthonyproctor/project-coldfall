@@ -22,6 +22,8 @@ final class TabBar: NSView {
 
     var onSelect: ((String) -> Void)?
     var onStop: ((String) -> Void)?
+    /// A tab's right-click menu: the same one its desk has in the list.
+    var onMenu: ((String) -> NSMenu?)?
     /// "+": the menu is built by the controller, which knows the desks.
     var plusMenu: (() -> NSMenu?)?
     var onPromptHelper: (() -> Void)?
@@ -141,6 +143,7 @@ final class TabBar: NSView {
                 let v = TabView(name: t.name)
                 v.onClick = { [weak self] in self?.onSelect?(t.name) }
                 v.onClose = { [weak self] in self?.onStop?(t.name) }
+                v.onMenu = { [weak self] in self?.onMenu?(t.name) }
                 row.addArrangedSubview(v)
                 return v
             }
@@ -195,6 +198,9 @@ final class TabBar: NSView {
 private final class TabView: NSView {
     var onClick: (() -> Void)?
     var onClose: (() -> Void)?
+    var onMenu: (() -> NSMenu?)?
+    // Right-click and control-click both come here.
+    override func menu(for event: NSEvent) -> NSMenu? { onMenu?() ?? super.menu(for: event) }
 
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
@@ -295,6 +301,9 @@ private final class TabView: NSView {
     }
     override func mouseEntered(with e: NSEvent) { hovering = true }
     override func mouseExited(with e: NSEvent) { hovering = false }
-    override func mouseDown(with e: NSEvent) { onClick?() }
+    override func mouseDown(with e: NSEvent) {
+        if e.modifierFlags.contains(.control), let m = onMenu?() { NSMenu.popUpContextMenu(m, with: e, for: self); return }
+        onClick?()
+    }
     @objc private func closeIt() { onClose?() }
 }
