@@ -1340,7 +1340,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         deskMenu.addItem(zp)
         // Every desk, whatever group the list is on: the list only shows one
         // group, and clicking another group moves the desk on screen.
+        // A new menu each time the menu bar is built: the bar is rebuilt
+        // when desks.toml or keys.json changes, and a menu that is already
+        // one item's submenu cannot be given to another (AppKit raises).
         let ob = NSMenuItem(title: "Open Beside", action: nil, keyEquivalent: "")
+        besideMenu = NSMenu(title: "Open Beside")
         besideMenu.delegate = self
         ob.submenu = besideMenu
         deskMenu.addItem(ob)
@@ -2874,7 +2878,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// The desk pane commands act on: the one with the keys.
     var activeSession: DeskSession? { visible }
 
-    let besideMenu = NSMenu(title: "Open Beside")
+    var besideMenu = NSMenu(title: "Open Beside")
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === besideMenu else { return }
         menu.removeAllItems()
@@ -3025,6 +3029,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             headerDragged(s, to: pt, dropped: false)
             headerDragged(s, to: pt, dropped: true)
         }))
+        // The menu bar is rebuilt whenever desks or keys change; twice here,
+        // because a menu kept between builds raised on the second (0.3.43).
+        steps.append(("rebuild the menu bar twice", { [self] in installMenu(); installMenu() }))
         steps.append(("take the one with the keys off", { [self] in closeBeside() }))
         steps.append(("take the first off", { [self] in closeSlot(0) }))
         var i = 0

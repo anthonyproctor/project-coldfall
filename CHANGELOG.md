@@ -8,6 +8,15 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- **The menu bar could not be rebuilt (0.3.43 and 0.3.44).** The *Open Beside* submenu was
+  kept between builds of the menu bar, and AppKit refuses a menu that already belongs to
+  another item. Everything that rebuilds the bar stopped part-way: a change to desks.toml
+  made by hand never showed in the running app, and renaming, adding, hiding or removing a
+  desk left the menus stale. With some desk lists it also cut the launch short, so the
+  start was missing from `exit.log` and the steps after it never ran. The submenu is now
+  made fresh each time.
+
 ## [0.3.44] - 2026-11-13
 
 Up to twelve desks side by side, and one alert per finished turn.
