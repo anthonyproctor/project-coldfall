@@ -320,6 +320,22 @@ case "holders":
         out(Holder.held().map { ["desk": $0, "pid": Holder.heldPid(desk: $0).map(Int.init) ?? 0] as [String: Any] })
     }
 
+case "connector":
+    // What the Family Connector has waiting, as Coldfall sees it: counts and
+    // ids only. Their words stay out of the terminal.
+    let path = Connector.socketPath()
+    do {
+        let c = try ConnectorClient(path: path, token: Connector.token())
+        let items = try c.snapshot()
+        out(["state": "connected", "fixture": c.isFixture, "schema": c.hello["schema"] as? String ?? "",
+             "waiting": Connector.count(items),
+             "items": items.map { ["id": $0.id, "box": $0.box.rawValue, "state": $0.state, "kind": $0.kind,
+                                   "ai_help": $0.aiHelp, "quick": $0.quick] as [String: Any] }] as [String: Any])
+    } catch let f as ConnectorClient.Failure {
+        out(["state": "\(f)", "socket": path] as [String: Any])
+        exit(1)
+    }
+
 case "hosts":
     // ssh config hosts, then Tailscale machines the config doesn't name.
     // Read only: `tailscale status --json` and nothing else.
@@ -347,6 +363,7 @@ default:
       desks              configured desks and how each launches
       agents [dir]       agent definitions on disk that could become desks
       hosts              ssh hosts and Tailscale machines that could become desks
+      connector          what the Family Connector has waiting (counts and ids, no words)
       open <desk> [--show]  start a desk in the running Coldfall, as a click does
       running            which desks the running Coldfall has going, and how each is doing
       read <desk> [--lines N]  a desk's screen as text, without opening it

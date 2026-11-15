@@ -270,6 +270,21 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         feed.onGo = { [weak self] n in self?.showDesk(named: n) }
         feed.onAnswer = { [weak self] n, o in self?.answer(desk: n, with: o) }
+        feed.family = { [weak self] in self?.connector.items ?? [] }
+        feed.onDraft = { [weak self] it, b in self?.draftMenu(for: it, at: b) }
+        feed.onRelease = { [weak self] it, done in
+            self?.connector.request("release_request", ["draft": it.id]) { note in
+                if note == nil { ConnectorWatch.open(it) }
+                done(note)
+            }
+        }
+        feed.onSeen = { [weak self] it in self?.connector.request("mark_seen", ["ids": [it.id]]) { _ in } }
+        connector.onChange = { [weak self] in
+            guard let self else { return }
+            self.meter.setFamily(Connector.count(self.connector.items))
+        }
+        SettingsWindow.connectorSummary = { [weak self] in self?.connector.summary ?? "" }
+        if !CommandLine.arguments.contains("--snapshot") { connector.start() }
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
 
         // The VS Code behaviour: files the agent touches open themselves.
@@ -884,7 +899,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                         list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: "asked a question",
                                                    prompt: nil, tail: "Which of these should I keep?\n  the old parser, or the new one"))
                     }
-                    me.feed.show(list, size: NSSize(width: 620, height: 500))
+                    // `--connector`: plus what the Connector at CONNECTOR_SOCKET has
+                    // waiting (point it at connector-fixture, never a real one).
+                    var family: [Connector.Item] = []
+                    if CommandLine.arguments.contains("--connector") {
+                        me.connector.loadNow()
+                        family = me.connector.items
+                    }
+                    me.feed.show(list, family: family, size: NSSize(width: 620, height: family.isEmpty ? 500 : 1300))
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         guard let pv = me.feed.contentView,
                               let prep = pv.bitmapImageRepForCachingDisplay(in: pv.bounds) else { exit(1) }
@@ -1312,6 +1334,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         feedItem.keyEquivalentModifierMask = [.command, .option]
         feedItem.target = self
         deskMenu.addItem(feedItem)
+        let askItem = NSMenuItem(title: "Ask Through Family Connector…", action: #selector(askThroughConnector), keyEquivalent: "")
+        askItem.target = self
+        askItem.toolTip = "Write a question to someone in the Family Connector. It waits in Connector's outbox until you press Send there."
+        deskMenu.addItem(askItem)
         let shellItem = NSMenuItem(title: "New Shell Desk", action: #selector(newShellDesk), keyEquivalent: "n")
         shellItem.target = self
         deskMenu.addItem(shellItem)
@@ -2895,6 +2921,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     let peek = PeekPanel()
     let feed = FeedPanel()
     let changes = ChangesPanel()
+    /// The Family Connector, when it runs and has let Coldfall in.
+    let connector = ConnectorWatch()
 
     // MARK: - two desks side by side
 
@@ -3172,6 +3200,116 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// Needs You: the desks stopped on a question, to answer from one place.
     @objc func openFeed() { feed.toggle(over: window) }
+
+    // MARK: - Family Connector
+
+    /// Running agent desks to draft a reply with. A desk that isn't running
+    /// would drop the request while it starts, so only running ones.
+    func draftMenu(for it: Connector.Item, at view: NSView) {
+        let m = NSMenu()
+        let names = desks.filter { !$0.hidden && $0.runtime != "shell" && sessions[$0.name] != nil }.map(\.name)
+        if names.isEmpty {
+            let none = NSMenuItem(title: "Start a desk first, then draft with it", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            m.addItem(none)
+        }
+        for n in names {
+            let item = NSMenuItem(title: n, action: #selector(draftWith(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = [n, it.id]
+            m.addItem(item)
+        }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 4), in: view)
+    }
+
+    /// Type Coldfall's fixed request into that desk, unsent, and show it.
+    /// Their words aren't in it; the desk reads them through Connector.
+    @objc func draftWith(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [String], pair.count == 2,
+              let s = sessions[pair[0]], let text = Connector.draftRequest(ask: pair[1], desk: pair[0]) else { return }
+        if case .blocked = s.activity {
+            let a = NSAlert()
+            a.messageText = "\(pair[0]) is waiting on a question of its own"
+            a.informativeText = "Answer it first, then draft with it. Nothing was typed."
+            a.runModal()
+            return
+        }
+        feed.close()
+        showDesk(named: pair[0])
+        s.typeOnBehalf(Connector.typedUnsent(text))
+    }
+
+    /// A question to someone, written here, put in Connector's outbox. It
+    /// carries "coldfall" as the agent and waits for a press in Connector.
+    @objc func askThroughConnector() {
+        guard case .connected = connector.state else {
+            let a = NSAlert()
+            a.messageText = "Family Connector isn't reachable"
+            a.informativeText = connector.summary
+            a.addButton(withTitle: "OK")
+            a.addButton(withTitle: "Open Connector")
+            if a.runModal() == .alertSecondButtonReturn { ConnectorWatch.open(nil) }
+            return
+        }
+        let circles = connector.circles.filter(\.aiHelp)
+        guard !circles.isEmpty else {
+            let a = NSAlert()
+            a.messageText = "No circle lets agents ask"
+            a.informativeText = "Turn on AI help for a circle in the Connector app, then ask from here."
+            a.runModal()
+            return
+        }
+        let circlePop = NSPopUpButton()
+        for c in circles { circlePop.addItem(withTitle: c.name.isEmpty ? "(unnamed circle)" : c.name) }
+        let personPop = NSPopUpButton()
+        func fillPeople() {
+            personPop.removeAllItems()
+            personPop.addItem(withTitle: "Everyone in the circle")
+            for p in circles[max(0, circlePop.indexOfSelectedItem)].people { personPop.addItem(withTitle: p.name) }
+        }
+        fillPeople()
+        let box = NSTextView(frame: NSRect(x: 0, y: 0, width: 340, height: 96))
+        box.isRichText = false
+        box.font = .systemFont(ofSize: 13)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 96))
+        scroll.documentView = box
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let grid = NSGridView(views: [[NSTextField(labelWithString: "Circle"), circlePop],
+                                      [NSTextField(labelWithString: "To"), personPop]])
+        grid.rowSpacing = 8
+        let stack = NSStackView(views: [grid, scroll])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.frame = NSRect(x: 0, y: 0, width: 340, height: 170)
+        let a = NSAlert()
+        a.messageText = "Ask through the Family Connector"
+        a.informativeText = "It goes to Connector's outbox, labelled as from Coldfall, and waits there until you press Send."
+        a.accessoryView = stack
+        a.addButton(withTitle: "Put in Outbox")
+        a.addButton(withTitle: "Cancel")
+        let watcher = CircleChange { fillPeople() }
+        circlePop.target = watcher
+        circlePop.action = #selector(CircleChange.changed)
+        a.window.initialFirstResponder = box
+        let answer = a.runModal()
+        _ = watcher
+        guard answer == .alertFirstButtonReturn else { return }
+        let text = box.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let c = circles[max(0, circlePop.indexOfSelectedItem)]
+        var params: [String: Any] = ["circle": c.id, "text": String(text.prefix(4000))]
+        let k = personPop.indexOfSelectedItem
+        if k > 0, c.people.indices.contains(k - 1) { params["to"] = c.people[k - 1].id }
+        connector.request("ask_create", params) { note in
+            if let note {
+                let e = NSAlert(); e.messageText = "Connector didn't take it"; e.informativeText = note; e.runModal()
+            } else {
+                ConnectorWatch.open(nil)
+            }
+        }
+    }
 
     /// The desks waiting on an answer, longest wait first, each with the
     /// question read off its screen.

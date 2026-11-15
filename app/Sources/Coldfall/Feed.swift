@@ -33,6 +33,14 @@ final class FeedPanel: NSObject {
     /// Press this option in this desk. Returns a line to show if it couldn't.
     var onAnswer: ((String, Prompt.Option) -> String?)?
     var onGo: ((String) -> Void)?
+    /// What's waiting in the Family Connector, if it runs and let Coldfall in.
+    var family: (() -> [Connector.Item])?
+    /// Pick a desk to draft a reply to this question; the button is where to show the menu.
+    var onDraft: ((Connector.Item, NSView) -> Void)?
+    /// Ask Connector to open its Send window for this draft.
+    var onRelease: ((Connector.Item, @escaping (String?) -> Void) -> Void)?
+    var onSeen: ((Connector.Item) -> Void)?
+    private var shownFamily: [Connector.Item] = []
 
     var isOpen: Bool { panel.isVisible }
 
@@ -107,23 +115,26 @@ final class FeedPanel: NSObject {
     }
 
     /// For --snapshot: these items, no timer.
-    func show(_ fixed: [Item], size: NSSize) {
+    func show(_ fixed: [Item], family: [Connector.Item] = [], size: NSSize) {
         panel.setContentSize(size)
-        render(fixed)
+        render(fixed, family: family)
         panel.contentView?.layoutSubtreeIfNeeded()
     }
     var contentView: NSView? { panel.contentView }
 
     private func refresh(force: Bool) {
         let now = items?() ?? []
-        if force || now != shown { render(now) }
+        let fam = family?() ?? []
+        if force || now != shown || fam != shownFamily { render(now, family: fam) }
     }
 
-    private func render(_ list: [Item]) {
+    private func render(_ list: [Item], family fam: [Connector.Item] = []) {
         shown = list
+        shownFamily = fam
         for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
-        empty.isHidden = !list.isEmpty
-        heading.stringValue = list.isEmpty ? "Needs You" : "Needs You  ·  \(list.count)"
+        let total = list.count + Connector.count(fam)
+        empty.isHidden = total > 0 || !fam.isEmpty
+        heading.stringValue = total == 0 ? "Needs You" : "Needs You  ·  \(total)"
         for it in list {
             let card = FeedCard(it)
             card.onAnswer = { [weak self] opt in
@@ -134,7 +145,146 @@ final class FeedPanel: NSObject {
             stack.addArrangedSubview(card)
             card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+        guard !fam.isEmpty else { return }
+        let title = NSTextField(labelWithString: "Family Connector")
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        title.textColor = Theme.ui.dimText
+        let sub = NSTextField(wrappingLabelWithString: "Their words are shown as written and never handed to a desk. "
+                              + "Sending is always a press in the Connector app.")
+        sub.font = .systemFont(ofSize: 11)
+        sub.textColor = Theme.ui.dimText
+        let head = NSStackView(views: [title, sub])
+        head.orientation = .vertical
+        head.alignment = .leading
+        head.spacing = 2
+        if !list.isEmpty { stack.setCustomSpacing(18, after: stack.arrangedSubviews.last!) }
+        stack.addArrangedSubview(head)
+        head.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        sub.widthAnchor.constraint(equalTo: head.widthAnchor).isActive = true
+        for it in fam {
+            let card = FamilyCard(it)
+            card.onDraft = { [weak self] b in self?.onDraft?(it, b) }
+            card.onRelease = { [weak self] in
+                card.say("Asking Connector…")
+                self?.onRelease?(it) { note in card.say(note ?? "Connector's Send window is open. Read it there and press Send.") }
+            }
+            card.onSeen = { [weak self] in self?.onSeen?(it) }
+            stack.addArrangedSubview(card)
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
     }
+}
+
+/// One thing waiting in the Family Connector: who, where, their words, and
+/// what Coldfall can do about it (none of which sends).
+private final class FamilyCard: NSView {
+    var onDraft: ((NSView) -> Void)?
+    var onRelease: (() -> Void)?
+    var onSeen: (() -> Void)?
+    private let note = NSTextField(labelWithString: "")
+    private let item: Connector.Item
+
+    init(_ it: Connector.Item) {
+        item = it
+        super.init(frame: .zero)
+        let ui = Theme.ui
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.borderWidth = 1
+        layer?.borderColor = ui.border.cgColor
+        layer?.backgroundColor = ui.sidebar.cgColor
+
+        let symbol = it.box == .answers ? "bubble.left.and.text.bubble.right" : (it.box == .outbox ? "paperplane" : "person.2")
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.contentTintColor = it.box == .outbox ? ui.dimText : MarkView.pillInk
+        let name = NSTextField(labelWithString: Connector.heading(it))
+        name.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        name.textColor = ui.text
+        name.lineBreakMode = .byTruncatingTail
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let where_ = NSTextField(labelWithString: Connector.detail(it))
+        where_.font = .systemFont(ofSize: 11.5)
+        where_.textColor = it.quick ? MarkView.pillInk : ui.dimText
+        where_.lineBreakMode = .byTruncatingTail
+        where_.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let head = NSStackView(views: [icon, name, NSView(), where_])
+        head.orientation = .horizontal
+        head.spacing = 8
+        head.alignment = .centerY
+
+        let col = NSStackView(views: [head])
+        col.orientation = .vertical
+        col.alignment = .leading
+        col.spacing = 8
+        func words(_ label: String?, _ s: String?) {
+            guard let s, !s.isEmpty else { return }
+            let t = NSTextField(wrappingLabelWithString: (label.map { $0 + "  " } ?? "") + s)
+            t.font = .systemFont(ofSize: 12.5)
+            t.textColor = ui.text.withAlphaComponent(0.9)
+            t.maximumNumberOfLines = 8
+            t.isSelectable = true
+            // Plain text only: no links, no formatting from their words.
+            t.allowsEditingTextAttributes = false
+            col.addArrangedSubview(t)
+        }
+        if it.question != nil { words("They asked:", it.question); words("Draft:", it.text) } else { words(nil, it.text) }
+
+        var buttons: [NSButton] = []
+        func button(_ title: String, _ action: Selector, primary: Bool = false) {
+            let b = NSButton(title: title, target: self, action: action)
+            b.bezelStyle = .rounded
+            if primary { b.bezelColor = .controlAccentColor }
+            buttons.append(b)
+        }
+        switch it.box {
+        case .waiting:
+            if Connector.canDraft(it) { button("Draft with Desk…", #selector(draft(_:)), primary: true) }
+            button("Answer in Connector", #selector(openIt))
+        case .outbox:
+            if it.state == "awaiting_press" { button("Open Send Window", #selector(openIt), primary: true) }
+            else { button("Review and Send…", #selector(askToSend), primary: true) }
+        case .answers:
+            button("Seen", #selector(seen), primary: true)
+            button("Open in Connector", #selector(openIt))
+        }
+        let row = NSStackView(views: buttons)
+        row.orientation = .horizontal
+        row.spacing = 8
+        col.addArrangedSubview(row)
+        if it.box == .waiting && !it.aiHelp {
+            let off = NSTextField(labelWithString: "AI help is off in this circle, so no desk can draft here.")
+            off.font = .systemFont(ofSize: 11.5); off.textColor = ui.dimText
+            col.addArrangedSubview(off)
+        }
+        note.font = .systemFont(ofSize: 11.5)
+        note.textColor = ui.dimText
+        note.isHidden = true
+        col.addArrangedSubview(note)
+
+        col.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(col)
+        NSLayoutConstraint.activate([
+            col.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            col.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            col.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            col.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+            head.widthAnchor.constraint(equalTo: col.widthAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16), icon.heightAnchor.constraint(equalToConstant: 16),
+        ])
+        for v in col.arrangedSubviews where v is NSTextField {
+            v.widthAnchor.constraint(equalTo: col.widthAnchor).isActive = true
+        }
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func say(_ s: String) { note.stringValue = s; note.isHidden = false }
+
+    @objc private func draft(_ b: NSButton) { onDraft?(b) }
+    // Not "release": that name is NSObject's own, and overriding it crashes.
+    @objc private func askToSend() { onRelease?() }
+    @objc private func seen() { onSeen?() }
+    @objc private func openIt() { ConnectorWatch.open(item) }
 }
 
 

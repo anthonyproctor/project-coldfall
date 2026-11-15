@@ -81,6 +81,8 @@ final class DeskRow: NSView {
     private let icon = NSImageView()
     private let name = NSTextField(labelWithString: "")
     private let time = NSTextField(labelWithString: "")
+    /// The desk's memory, dim, before the time: "946 MB". Empty when not running.
+    private let mem = NSTextField(labelWithString: "")
     /// What it's doing: Needs you, working, done, idle (Mark).
     private let mark = MarkView()
     /// What the old second line said (vendor, state, budget, memory, news),
@@ -126,13 +128,15 @@ final class DeskRow: NSView {
         info.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(100), for: .horizontal)
         info.setContentHuggingPriority(.defaultLow, for: .horizontal)
         name.setContentHuggingPriority(.required, for: .horizontal)
-        for v in [icon, name, time, mark, pinIcon, info] as [NSView] {
+        for v in [icon, name, mem, time, mark, pinIcon, info] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
-        for f in [name, time] { f.lineBreakMode = .byTruncatingTail; f.isSelectable = false }
+        for f in [name, time, mem] { f.lineBreakMode = .byTruncatingTail; f.isSelectable = false }
         time.alignment = .right
-        for v in [time, mark] as [NSView] {
+        mem.alignment = .right
+        mem.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
+        for v in [time, mark, mem] as [NSView] {
             v.setContentCompressionResistancePriority(.required, for: .horizontal)
             v.setContentHuggingPriority(.required, for: .horizontal)
         }
@@ -153,11 +157,14 @@ final class DeskRow: NSView {
 
             pinIcon.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 5),
             pinIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            pinIcon.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
+            pinIcon.trailingAnchor.constraint(lessThanOrEqualTo: mem.leadingAnchor, constant: -6),
             info.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: 8),
             info.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
-            info.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -8),
-            name.trailingAnchor.constraint(lessThanOrEqualTo: time.leadingAnchor, constant: -6),
+            info.trailingAnchor.constraint(lessThanOrEqualTo: mem.leadingAnchor, constant: -8),
+            name.trailingAnchor.constraint(lessThanOrEqualTo: mem.leadingAnchor, constant: -6),
+
+            mem.trailingAnchor.constraint(equalTo: time.leadingAnchor, constant: -7),
+            mem.firstBaselineAnchor.constraint(equalTo: time.firstBaselineAnchor),
 
             time.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -8),
             time.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -210,6 +217,8 @@ final class DeskRow: NSView {
         info.textColor = Mark(status) == .needsYou ? MarkView.pillInk : ui.dimText
         time.stringValue = status.lastOutput.map(Self.ago) ?? ""
         time.font = .systemFont(ofSize: 11)
+        mem.stringValue = status.running ? (status.memory ?? "") : ""
+        mem.textColor = ui.dimText.withAlphaComponent(0.8)
         switch budget {
         case .over: time.textColor = .systemRed
         case .near: time.textColor = .systemOrange

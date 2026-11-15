@@ -8,6 +8,24 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **The Family Connector in Needs You.** When the Family Connector app runs on
+  this Mac and has let Coldfall in (in Connector: Settings, Agents on this Mac),
+  what's waiting there shows in Needs You under its own heading, with a
+  "from family" count in the bottom bar: questions to you, drafts waiting for
+  your press, and answers you haven't seen. **Draft with Desk…** types a short
+  request into a running desk, unsent, naming the question's id; the desk reads
+  the question itself through Connector, so the other person's words are never
+  pasted into a prompt. **Review and Send…** opens Connector's own Send window.
+  **Ask Through Family Connector…** (Desk menu) puts a question in Connector's
+  outbox. Coldfall never sends, never stores any of it, and shows nothing when
+  the Connector isn't there. A quick connect shows when it ends.
+  `coldfall-cli connector` prints what's waiting, as counts and ids.
+
+### Changed
+- **Each running desk's memory is back on its row**, dim, before the time. It
+  had moved into the tooltip when the rail went compact.
+
 ## [0.3.49] - 2026-11-14
 
 Tailscale machines as desks.

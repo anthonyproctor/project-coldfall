@@ -78,6 +78,15 @@ wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
 
+The Family Connector (a separate app) is read over its socket as agent
+`coldfall`; see `Connector` in the core. Never point Coldfall at the real one
+to test: run the Connector repo's `connector-fixture` (made-up people) and set
+`CONNECTOR_SOCKET` to its socket and `CONNECTOR_TOKEN=fixture-token-coldfall`.
+Then `--terminal out.txt --feed --connector` snapshots Needs You with its cards,
+`coldfall-test` with `COLDFALL_TEST_CONNECTOR=<socket>` (and
+`COLDFALL_TEST_CONNECTOR_PID`) also runs against it, and
+`COLDFALL_CONNECTOR_DEBUG=1` makes a live run print each change (counts only).
+
 A snapshot never asks Tailscale which machines exist (their names are private);
 `--tailnet file.json` gives it a made-up `tailscale status --json` instead.
 

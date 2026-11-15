@@ -325,6 +325,16 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             }
         }
 
+        updLines.append(caps("Family Connector"))   // a name: mixed case is kept
+        updLines.append(note(SettingsWindow.connectorSummary?() ?? "Not running on this Mac."))
+        let openConnector = NSButton(title: "Open Connector", target: self, action: #selector(openConnectorApp))
+        openConnector.bezelStyle = .rounded
+        updLines.append(openConnector)
+        updLines.append(note("The Family Connector is its own app, for asking and answering the people close to you. "
+            + "Coldfall shows what's waiting there in Needs You, can open a desk to draft a reply, and opens "
+            + "Connector's Send window; it never sends, and it keeps none of it on disk. For a desk to draft, "
+            + "let that desk in to Connector by its name too."))
+
         updLines.append(caps("SHORTCUTS"))
         let keysBtn = NSButton(title: "Edit Shortcuts…", target: self, action: #selector(editShortcuts))
         keysBtn.bezelStyle = .rounded
@@ -585,6 +595,11 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         dirty = true
         table.reloadData(); refreshHosts()
     }
+
+    /// What the Family Connector looks like from here, set by the app.
+    static var connectorSummary: (() -> String)?
+
+    @objc private func openConnectorApp() { ConnectorWatch.open(nil) }
 
     @objc private func addMachine(_ sender: NSButton) {
         guard let target = sender.identifier?.rawValue,

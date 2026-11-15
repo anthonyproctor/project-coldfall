@@ -16,6 +16,8 @@ final class MeterBar: NSView {
     private let needsChip = MarkView()
     private let workingChip = CountChip(mark: .working)
     private let doneChip = CountChip(mark: .done)
+    /// What's waiting in the Family Connector, when it runs.
+    private let familyChip = MarkView()
     private var counts = DeskCounts()
     /// Which desk is on screen. Context belongs to it, not to the vendor.
     var currentDesk: String? {
@@ -49,12 +51,15 @@ final class MeterBar: NSView {
         needsChip.toolTip = "Go to the desk that has waited longest  ⌘0"
         let tap = NSClickGestureRecognizer(target: self, action: #selector(needsYouClicked))
         needsChip.addGestureRecognizer(tap)
-        chips.setViews([needsChip, workingChip, doneChip], in: .leading)
+        familyChip.mark = .needsYou
+        familyChip.toolTip = "Waiting in the Family Connector. Opens Needs You  ⌥⌘0"
+        familyChip.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(needsYouClicked)))
+        chips.setViews([needsChip, familyChip, workingChip, doneChip], in: .leading)
         chips.orientation = .horizontal
         chips.spacing = 12
         chips.alignment = .centerY
         chips.setHuggingPriority(.required, for: .horizontal)
-        for c in [needsChip, workingChip, doneChip] as [NSView] { c.isHidden = true }
+        for c in [needsChip, familyChip, workingChip, doneChip] as [NSView] { c.isHidden = true }
 
         let stack = NSStackView(views: [chips, summary, NSView(), hint])
         stack.orientation = .horizontal
@@ -216,7 +221,14 @@ final class MeterBar: NSView {
         needsChip.isHidden = c.needsYou == 0
         workingChip.set(c.working, word: "working")
         doneChip.set(c.done, word: "done")
-        chips.isHidden = c.chips.isEmpty
+        chips.isHidden = c.chips.isEmpty && familyChip.isHidden
+    }
+
+    /// The Family Connector's count; 0 hides it.
+    func setFamily(_ n: Int) {
+        familyChip.pillText = "\(n) from family"
+        familyChip.isHidden = n == 0
+        chips.isHidden = counts.chips.isEmpty && n == 0
     }
 
     @objc private func needsYouClicked() { onNeedsYou?() }

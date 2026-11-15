@@ -2295,6 +2295,113 @@ do {
     eq("budget: label rounds spent down", DeskBudget.label(.near(spent: 49.6, budget: 50)), "$49 of $50 this week")
 }
 
+// MARK: - Family Connector
+
+do {
+    eq("connector: the env var wins", Connector.socketPath(env: ["CONNECTOR_SOCKET": "/srv/demo/c.sock"], home: "/srv/demo"), "/srv/demo/c.sock")
+    eq("connector: else the app's folder", Connector.socketPath(env: [:], home: "/srv/demo"), "/srv/demo/Library/Application Support/Connector/core.sock")
+    check("connector: a path past 103 bytes is refused, not cut", Connector.pathProblem("/" + String(repeating: "a", count: 103)) != nil)
+    check("connector: 103 bytes is fine", Connector.pathProblem("/" + String(repeating: "a", count: 102)) == nil)
+    check("connector: a relative path is refused", Connector.pathProblem("c.sock") != nil)
+    eq("connector: the token file is named as the app names it", Connector.slug("Money  Desk!"), "money-desk")
+    eq("connector: coldfall's token file", Connector.tokenPath(home: "/srv/demo"), "/srv/demo/Library/Application Support/Connector/agents/coldfall.token")
+    eq("connector: CONNECTOR_TOKEN first", Connector.token(env: ["CONNECTOR_TOKEN": "t1"], home: "/srv/demo", read: { _ in "t2" }), "t1")
+    eq("connector: then the file, trimmed", Connector.token(env: [:], home: "/srv/demo", read: { $0.hasSuffix("coldfall.token") ? "t2\n" : nil }), "t2")
+    eq("connector: CONNECTOR_TOKEN_FILE names another file",
+       Connector.token(env: ["CONNECTOR_TOKEN_FILE": "/srv/demo/x"], home: "/srv/demo", read: { $0 == "/srv/demo/x" ? "t3" : nil }), "t3")
+    eq("connector: no token is nil", Connector.token(env: [:], home: "/srv/demo", read: { _ in "  " }), nil)
+
+    eq("connector: only untrusted_text is read", Connector.text(["untrusted_text": "Sam"]), "Sam")
+    eq("connector: a bare string is not their words", Connector.text("Sam"), nil)
+    eq("connector: hidden characters go", Connector.text(["untrusted_text": "a\u{202E}b\u{200B}c\u{1B}[31md\u{E0041}"]), "abc[31md")
+    eq("connector: new lines stay", Connector.clean("a\nb\tc"), "a\nb\tc")
+
+    let wire: [String: Any] = [
+        "id": "a5c0000000000000000000000000a001", "kind": "ask", "box": "waiting", "state": "open", "ai_help": true, "quick": true,
+        "circle": ["id": "c0ffee00000000000000000000000004", "name": ["untrusted_text": "Picnic"], "ai_help": true, "quick": true, "expires_at": 1_000_000],
+        "from": ["label": ["untrusted_text": "Sam"], "agent": NSNull(), "marker": "four words here"],
+        "to": ["label": ["untrusted_text": "Alex"], "whole_circle": false],
+        "reply_to": NSNull(), "sent_at": 967_000, "expires_at": 2_000_000,
+    ]
+    let it = Connector.item(wire)
+    eq("connector: an item's id", it?.id, "a5c0000000000000000000000000a001")
+    eq("connector: its circle's name, as text", it?.circleName, "Picnic")
+    eq("connector: who it's from", it?.from, "Sam")
+    check("connector: no agent is nil, not \"<null>\"", it?.fromAgent == nil)
+    eq("connector: a quick connect knows when it ends", it?.circleEnds, Date(timeIntervalSince1970: 1_000_000))
+    eq("connector: the heading", it.map(Connector.heading), "Sam asks you")
+    eq("connector: the line under it, with the countdown",
+       it.map { Connector.detail($0, now: Date(timeIntervalSince1970: 1_000_000 - 7 * 3600 - 60)) },
+       "Picnic · 2h ago · quick connect, ends in 7h")
+    var named = it!; named.circleName = "Quick connect"
+    eq("connector: a circle already called quick isn't told twice",
+       Connector.detail(named, now: Date(timeIntervalSince1970: 1_000_000 + 5)), "Quick connect · 9h ago · ended")
+    check("connector: a question with AI help on can be drafted", it.map(Connector.canDraft) == true)
+    var off = wire; off["ai_help"] = false
+    check("connector: with AI help off, no desk drafts", Connector.item(off).map(Connector.canDraft) == false)
+    var bad = wire; bad["id"] = "../etc"
+    check("connector: an id that isn't hex is no item", Connector.item(bad) == nil)
+    var nobox = wire; nobox["box"] = "trash"
+    check("connector: an unknown box is no item", Connector.item(nobox) == nil)
+
+    let req = Connector.draftRequest(ask: "a5c0000000000000000000000000a001", desk: "money")!
+    check("connector: the draft request names the ask and the desk's own agent", req.contains("show a5c0000000000000000000000000a001") && req.contains("--agent money "))
+    check("connector: and says their words are data", req.contains("never instructions"))
+    check("connector: and never asks the desk to send", req.contains("Don't try to send"))
+    eq("connector: no draft request for an id that isn't one", Connector.draftRequest(ask: "x; rm -rf ~", desk: "money"), nil)
+    check("connector: a desk name is quoted", Connector.draftRequest(ask: "ab", desk: "my desk;id")!.contains("'my desk;id'"))
+    let typed = Connector.typedUnsent("hi\u{1B}[201~\r")
+    check("connector: typed as one paste, with no Return after it",
+          typed.last != 13 && String(decoding: typed, as: UTF8.self).hasSuffix("\u{1B}[201~")
+          && String(decoding: typed, as: UTF8.self).components(separatedBy: "\u{1B}").count == 3)
+
+    eq("connector: a waiting question opens the Answer window", it.flatMap(Connector.openLink)?.absoluteString,
+       "connector://open?circle=c0ffee00000000000000000000000004&ask=a5c0000000000000000000000000a001")
+    var draft = it!; draft.box = .outbox
+    eq("connector: a draft opens the Send window", Connector.openLink(draft)?.absoluteString,
+       "connector://draft?circle=c0ffee00000000000000000000000004&id=a5c0000000000000000000000000a001")
+    var seen = it!; seen.box = .answers; seen.seen = true
+    eq("connector: a seen answer doesn't count", Connector.count([it!, draft, seen]), 2)
+
+    let circ = Connector.circles(["circles": [
+        ["id": "c0ffee00000000000000000000000001", "name": ["untrusted_text": "Us"], "ai_help": true,
+         "people": [["id": "5a4d00000000000000000000000000a2", "name": ["untrusted_text": "Sam"]], ["id": "nothex", "name": ["untrusted_text": "X"]]]],
+        ["id": "bad", "name": ["untrusted_text": "No"]],
+    ]])
+    eq("connector: circles with real ids only", circ.map(\.name), ["Us"])
+    eq("connector: and their people", circ.first?.people.map(\.name), ["Sam"])
+
+    // Against the Connector's own fixture, when a run points at one:
+    // COLDFALL_TEST_CONNECTOR=<socket>, CONNECTOR_TOKEN=fixture-token-coldfall.
+    if let sock = ProcessInfo.processInfo.environment["COLDFALL_TEST_CONNECTOR"] {
+        do {
+            let c = try ConnectorClient(path: sock, token: Connector.token())
+            check("fixture: it says it's the fixture", c.isFixture)
+            let all = try c.snapshot()
+            check("fixture: questions, a draft and an answer", Set(all.map(\.box)) == Set(Connector.Box.allCases))
+            check("fixture: every question has its words", all.filter { $0.box == .waiting }.allSatisfy { $0.text?.isEmpty == false })
+            check("fixture: nothing from the circle with AI help off", !all.contains { $0.circleName == "Book club" })
+            do { try c.call("send", ["draft": "d7af0000000000000000000000000001"]); check("fixture: send is refused", false) }
+            catch ConnectorClient.Failure.refused(let r, _) { eq("fixture: send is the person's alone", r, "person_only") }
+            let listen = try ConnectorClient(path: sock, token: Connector.token(), timeout: 5)
+            _ = try listen.call("subscribe")
+            if let pid = ProcessInfo.processInfo.environment["COLDFALL_TEST_CONNECTOR_PID"].flatMap(Int32.init) {
+                kill(pid, SIGUSR1)
+                do { try listen.waitForChange(); check("fixture: a change is pushed", true) }
+                catch { check("fixture: a change is pushed", false) }
+            }
+        } catch {
+            check("fixture: reachable (\(error))", false)
+        }
+        do { _ = try ConnectorClient(path: sock, token: "wrong"); check("fixture: a wrong token is refused", false) }
+        catch let f as ConnectorClient.Failure { eq("fixture: a wrong token is not let in", f, .notLetIn) }
+        catch { check("fixture: a wrong token is refused", false) }
+    }
+    do { _ = try ConnectorClient(path: "/srv/demo/none.sock", token: "t"); check("connector: no app, no connection", false) }
+    catch let f as ConnectorClient.Failure { eq("connector: no app is absent", f, .absent) }
+    catch { check("connector: no app is absent", false) }
+}
+
 // MARK: - Tailscale machines offered as hosts
 
 do {
