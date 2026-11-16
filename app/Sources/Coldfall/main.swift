@@ -3234,6 +3234,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// To the desk it's reacting to; otherwise just to Coldfall.
     func dripClicked() {
+        // Hidden or minimized, it comes back first.
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         if let d = companion.desk { showDesk(named: d) }

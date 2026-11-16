@@ -8,6 +8,14 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Drip can be seen.** The notch is a hole in the screen, so Drip, drawn
+  inside it, never showed. It now lives in a black wing that carries the notch
+  on to the right along the menu bar: it roams there while desks work, tucking
+  into the notch at the end, and hangs below it as an amber drop when a desk
+  needs you. It also stays when Coldfall is hidden or minimized, and clicking
+  it brings Coldfall back.
+
 ## [0.3.50] - 2026-11-16
 
 Drip in the notch, the Family Connector in Needs You, and memory back on the rail.
