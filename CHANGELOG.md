@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.50] - 2026-11-16
+
+Drip in the notch, the Family Connector in Needs You, and memory back on the rail.
+
 ### Added
 - **Drip, in the notch (beta).** On a Mac with a notch, a small blob lives
   beside the camera and shows what your desks are doing: it drifts about while
@@ -1224,7 +1228,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.49...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.50...HEAD
+[0.3.50]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.49...v0.3.50
 [0.3.49]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...v0.3.49
 [0.3.48]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...v0.3.48
 [0.3.47]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.46...v0.3.47
