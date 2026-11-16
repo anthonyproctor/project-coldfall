@@ -285,6 +285,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         SettingsWindow.connectorSummary = { [weak self] in self?.connector.summary ?? "" }
         if !CommandLine.arguments.contains("--snapshot") { connector.start() }
+        drip.onClick = { [weak self] in self?.dripClicked() }
+        applyDrip()
         meter.onReport = { [weak self] r in self?.applyBudgets(r) }
 
         // The VS Code behaviour: files the agent touches open themselves.
@@ -366,6 +368,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let self, let on = n.object as? Bool else { return }
             self.ui.notifyDesks = on
             self.ui.save()
+        }
+        NotificationCenter.default.addObserver(forName: .coldfallDripChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let on = n.object as? Bool else { return }
+            self.ui.dripOn = on
+            self.ui.save()
+            self.applyDrip()
         }
         NotificationCenter.default.addObserver(forName: .coldfallTerminalChanged, object: nil, queue: .main) {
             [weak self] n in
@@ -627,6 +636,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 }
                 if let png = rep.representation(using: .png, properties: [:]) {
                     try? png.write(to: URL(fileURLWithPath: out))
+                }
+                // `--drip`: Drip in each mood, in a stand-in notch, to <out>-drip.png.
+                if CommandLine.arguments.contains("--drip") {
+                    guard let png = DripView.sheet().representation(using: .png, properties: [:]) else { exit(1) }
+                    do { try png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-drip.png")) } catch { exit(1) }
+                    exit(0)
                 }
                 if CommandLine.arguments.contains("--prompt-helper") {
                     let helper = PromptHelper()
@@ -2905,6 +2920,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             for (name, s) in self.sessions { s.setMark(Mark(map[name] ?? DeskStatus())) }
             self.serveRemote(map)
             self.noteRunning()
+            if self.ui.dripOn {
+                var acts: [String: DeskActivity] = [:]
+                for (n, st) in map where st.running { acts[n] = st.activity }
+                self.companion.update(acts, at: Date())
+                self.drip.set(self.companion)
+            }
 
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.
@@ -3200,6 +3221,23 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
     /// Needs You: the desks stopped on a question, to answer from one place.
     @objc func openFeed() { feed.toggle(over: window) }
+
+    // MARK: - Drip, in the notch
+
+    let drip = DripWindow()
+    var companion = Companion()
+
+    /// Never in a snapshot: it would sit over the real notch.
+    func applyDrip() {
+        if ui.dripOn && !CommandLine.arguments.contains("--snapshot") { drip.show() } else { drip.hide() }
+    }
+
+    /// To the desk it's reacting to; otherwise just to Coldfall.
+    func dripClicked() {
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if let d = companion.desk { showDesk(named: d) }
+    }
 
     // MARK: - Family Connector
 
@@ -3870,6 +3908,7 @@ extension Notification.Name {
     static let coldfallSleepChanged = Notification.Name("coldfallSleepChanged")
     static let coldfallTerminalChanged = Notification.Name("coldfallTerminalChanged")
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
+    static let coldfallDripChanged = Notification.Name("coldfallDripChanged")
     static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
     static let coldfallReopenSettings = Notification.Name("coldfallReopenSettings")
     /// Settings asked for the Remove Files dialog, which the controller owns.

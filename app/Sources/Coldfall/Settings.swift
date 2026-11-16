@@ -224,6 +224,13 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + "you aren't looking at. A notification when Coldfall is in the background; a sound when it's "
             + "in front. Click the notification to go to the desk. A desk stopped on a question shows "
             + "orange in the list until you answer it."))
+        let dripSwitch = NSButton(checkboxWithTitle: "Show Drip in the notch (beta)",
+                                  target: self, action: #selector(toggleDrip(_:)))
+        dripSwitch.state = UIState.load().dripOn ? .on : .off
+        rtLines.append(dripSwitch)
+        rtLines.append(note("A little blob that lives by the camera on a Mac with a notch. It drifts about while "
+            + "desks work, hops when one finishes, hangs down in amber when one is waiting on a question, "
+            + "and sleeps when nothing runs. Click it to go to the desk it's reacting to."))
         rtLines.append(caps("AGENTS FOUND ON DISK"))
         discoveredStack.orientation = .vertical
         discoveredStack.alignment = .leading
@@ -690,6 +697,9 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         return ns
     }
 
+    @objc private func toggleDrip(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .coldfallDripChanged, object: sender.state == .on)
+    }
     @objc private func toggleNotify(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallNotifyChanged, object: sender.state == .on)
     }

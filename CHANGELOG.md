@@ -9,6 +9,12 @@ opens this file.
 ## [Unreleased]
 
 ### Added
+- **Drip, in the notch (beta).** On a Mac with a notch, a small blob lives
+  beside the camera and shows what your desks are doing: it drifts about while
+  one is mid-answer, hops when one finishes, hangs down out of the notch in
+  amber when one is waiting on a question, and sleeps when nothing is going on.
+  Click it to go to the desk it's reacting to. Turn it off in Settings, Agents
+  (Show Drip in the notch).
 - **The Family Connector in Needs You.** When the Family Connector app runs on
   this Mac and has let Coldfall in (in Connector: Settings, Agents on this Mac),
   what's waiting there shows in Needs You under its own heading, with a

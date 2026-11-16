@@ -3834,6 +3834,74 @@ do {
     check("claim: can't be taken after", !RemoteOpen.claim(late) && !RemoteOpen.taken(late))
 }
 
+// MARK: - Drip, the character in the notch
+
+do {
+    let t0 = Date(timeIntervalSince1970: 1_000_000)
+    var c = Companion()
+    eq("drip: nothing running, asleep", c.mood, .asleep)
+    c.update([:], at: t0)
+    eq("drip: still asleep with no desks", c.mood, .asleep)
+    c.update(["api": .quiet, "docs": .quiet], at: t0)
+    eq("drip: running but idle desks are asleep, not working", c.mood, .asleep)
+    c.update(["api": .working, "docs": .quiet], at: t0)
+    eq("drip: a desk mid-answer, working", c.mood, .working)
+    eq("drip: working goes to no desk in particular", c.desk, nil)
+    c.update(["api": .ready, "docs": .quiet], at: t0.addingTimeInterval(1))
+    eq("drip: working to ready is a finish", c.mood, .done)
+    eq("drip: and it points at that desk", c.desk, "api")
+    c.update(["api": .ready, "docs": .quiet], at: t0.addingTimeInterval(4))
+    eq("drip: still celebrating inside the window", c.mood, .done)
+    c.update(["api": .ready, "docs": .quiet], at: t0.addingTimeInterval(1 + Companion.celebrateFor + 0.1))
+    eq("drip: after the window, back to asleep", c.mood, .asleep)
+
+    // Looking at the desk: it goes working to quiet, still a finish.
+    c.update(["api": .working], at: t0.addingTimeInterval(20))
+    c.update(["api": .quiet], at: t0.addingTimeInterval(21))
+    eq("drip: working to quiet (you were looking) is a finish too", c.mood, .done)
+
+    // A question outranks everything, and names the desk.
+    c.update(["api": .working, "docs": .blocked], at: t0.addingTimeInterval(22))
+    eq("drip: a desk on a question, needs", c.mood, .needs)
+    eq("drip: needs points at the blocked desk", c.desk, "docs")
+    c.update(["api": .blocked, "docs": .blocked], at: t0.addingTimeInterval(23))
+    eq("drip: two on questions, the first by name", c.desk, "api")
+    check("drip: the tip names the desk", c.tip.contains("api"))
+
+    // Working into a question is not a finish.
+    var q = Companion()
+    q.update(["api": .working], at: t0)
+    q.update(["api": .blocked], at: t0.addingTimeInterval(1))
+    q.update(["api": .quiet], at: t0.addingTimeInterval(2))
+    eq("drip: answering a question after working is not celebrated", q.mood, .asleep)
+
+    // A desk that stops mid-answer has not finished.
+    var s = Companion()
+    s.update(["api": .working], at: t0)
+    s.update([:], at: t0.addingTimeInterval(1))
+    eq("drip: a desk that stopped running mid-answer isn't celebrated", s.mood, .asleep)
+
+    // The celebration ends early if that desk stops.
+    var e = Companion()
+    e.update(["api": .working], at: t0)
+    e.update(["api": .ready], at: t0.addingTimeInterval(1))
+    e.update([:], at: t0.addingTimeInterval(2))
+    eq("drip: no celebrating a desk that's gone", e.mood, .asleep)
+
+    // Where the notch is.
+    eq("notch: between the two menu bar areas, at the top",
+       Notch.find(screenTop: 982, leftEnds: 661, rightStarts: 851, inset: 32), Notch(x: 661, y: 950, width: 190, height: 32))
+    eq("notch: none without a top inset", Notch.find(screenTop: 982, leftEnds: 661, rightStarts: 851, inset: 0), nil)
+    eq("notch: none without the areas", Notch.find(screenTop: 982, leftEnds: nil, rightStarts: nil, inset: 32), nil)
+    eq("notch: none when the areas meet", Notch.find(screenTop: 982, leftEnds: 661, rightStarts: 600, inset: 32), nil)
+
+    // A saved ui.json from before Drip keeps it on.
+    let old = try? JSONDecoder().decode(UIState.self, from: Data("{\"compactRail\":false}".utf8))
+    eq("drip: an older ui.json turns it on", old?.dripOn, true)
+    let off = try? JSONDecoder().decode(UIState.self, from: Data("{\"dripOn\":false}".utf8))
+    eq("drip: and off stays off", off?.dripOn, false)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

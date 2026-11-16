@@ -56,6 +56,8 @@ public struct UIState: Codable {
     public var inboxOn: Bool = false
     /// One line per desk in the rail (View, Compact Desk List).
     public var compactRail: Bool = true
+    /// Drip, the character in the notch (see Companion). Beta.
+    public var dripOn: Bool = true
 
     public init() {}
 
@@ -95,6 +97,7 @@ public struct UIState: Codable {
         notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
         inboxOn = try c.decodeIfPresent(Bool.self, forKey: .inboxOn) ?? false
         compactRail = try c.decodeIfPresent(Bool.self, forKey: .compactRail) ?? true
+        dripOn = try c.decodeIfPresent(Bool.self, forKey: .dripOn) ?? true
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

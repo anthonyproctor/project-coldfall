@@ -51,6 +51,7 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --by-priority      # the Desks section by priority instead of by group
 ./.build/release/Coldfall --snapshot /tmp/shot.png --all-desks        # the Desks section as every desk by name
 ./.build/release/Coldfall --snapshot /tmp/shot.png --settings Agents --settings-at "ssh hosts" --tailnet status.json   # a tab scrolled to a heading, with made-up Tailscale machines
+./.build/release/Coldfall --snapshot /tmp/shot.png --drip             # Drip in each mood in a stand-in notch, to shot-drip.png (a snapshot never shows the real one)
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
 ```
