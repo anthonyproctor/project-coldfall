@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.51] - 2026-11-16
+
+Drip, where you can see it.
+
 ### Fixed
 - **Drip can be seen.** The notch is a hole in the screen, so Drip, drawn
   inside it, never showed. It now lives in a black wing that carries the notch
@@ -1236,7 +1240,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.50...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.51...HEAD
+[0.3.51]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.50...v0.3.51
 [0.3.50]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.49...v0.3.50
 [0.3.49]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...v0.3.49
 [0.3.48]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.47...v0.3.48
