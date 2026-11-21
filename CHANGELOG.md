@@ -8,6 +8,25 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **`coldfall-cli wake <desk> --from <desk> "message"`**: one desk reaching
+  another that isn't running. The desk starts (picking up its last
+  conversation where Coldfall can, and the result says whether it resumed or
+  started fresh), gets the message marked as coming from another desk, works
+  until it's done or needs you, and its reply is printed. A desk that was off
+  goes back to sleep afterwards; one that was already running, or that someone
+  has started using, is left alone; one that stops on a question is left
+  running and you're told as for any desk. Exit 0 done, 2 needs you, 3 still
+  working, 4 not allowed.
+- **Who may wake a desk** is the desk's own setting in desks.toml:
+  `wake_from = ["hub", "billing"]`. A desk that says nothing takes wakes only
+  from the hub. A desk is woken at most 6 times an hour (`wake_per_hour`), one
+  wake at a time, and a desk that was itself woken can't wake another in the
+  same run unless that desk sets `wake_chain = true`. Every wake, and every
+  refusal, is one line in `~/.local/share/coldfall/wake/wake.log`: when, from,
+  to, how it went. Never the message. Nothing about a woken desk's permissions
+  changes: what would ask you still asks you.
+
 ## [0.3.51] - 2026-11-16
 
 Drip, where you can see it.

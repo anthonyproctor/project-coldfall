@@ -10,6 +10,7 @@
 //   coldfall-cli usage [--days N] consumption by vendor and desk
 //   coldfall-cli inventory <desk> a desk's MCP servers, hooks, skills, plugins
 //   coldfall-cli formats          where everything lives on disk
+//   coldfall-cli wake <desk> --from <desk> "message"   start a desk that is off, ask it, put it back
 import Foundation
 import ColdfallCore
 
@@ -302,6 +303,122 @@ case "ask":
     }
     exit(w.code)
 
+case "wake":
+    // Start a desk that's off, hand it a message from another desk, wait for
+    // it to finish or need you, print its reply, and put it back to sleep if
+    // it was off before. See Wake for who may wake whom.
+    // Exit 0 done, 2 needs you (left running), 3 still working (left
+    // running), 4 not allowed, 1 otherwise.
+    var rest = Array(args.dropFirst())
+    var from: String?, timeout: TimeInterval = 600
+    if let k = rest.firstIndex(of: "--from"), k + 1 < rest.count { from = rest[k + 1]; rest.removeSubrange(k...(k + 1)) }
+    if let k = rest.firstIndex(of: "--timeout"), k + 1 < rest.count, let t = Double(rest[k + 1]) {
+        timeout = t; rest.removeSubrange(k...(k + 1))
+    }
+    guard let name = rest.first, let from, rest.count >= 2 else {
+        print("usage: coldfall-cli wake <desk> --from <your desk> \"message\" [--timeout S]"); exit(2)
+    }
+    let text = rest.dropFirst().joined(separator: " ")
+    guard let target = DeskConfig.load().first(where: { $0.name == name }) else {
+        print("There's no desk called \"\(name)\"."); exit(1)
+    }
+    let began = Date().timeIntervalSince1970
+    func record(_ outcome: String, _ start: String? = nil) {
+        Wake.log(Wake.Entry(time: Date().timeIntervalSince1970, from: from, to: name, outcome: outcome, start: start))
+    }
+    let caller = ProcessInfo.processInfo.environment["CLAUDE_DESK"]
+    if let no = Wake.refusal(from: from, target: target, caller: caller, log: Wake.entries(),
+                             active: Wake.active(), now: began) {
+        print(no.message)
+        let kind: String
+        switch no {
+        case .notYou: kind = "identity"
+        case .notAllowed: kind = "allowlist"
+        case .tooMany: kind = "cap"
+        case .chain: kind = "chain"
+        case .busy: kind = "busy"
+        case .itself: kind = "itself"
+        }
+        record("refused-\(kind)")
+        exit(4)
+    }
+    guard let st = RemoteOpen.status() else {
+        print("Project Coldfall isn't running, so nothing was woken. Open the app on the Mac first.")
+        record("failed-coldfall-not-running"); exit(1)
+    }
+    let wasRunning = st.desks.first(where: { $0.name == name })?.running == true
+    let start = wasRunning ? "already running" : Wake.startKind(target)
+    guard Wake.begin(name, Wake.Active(from: from, started: began, until: began + timeout + 300)) else {
+        print("Not woken: another wake of \(name) started just now."); record("refused-busy"); exit(4)
+    }
+    func end(_ code: Int32, _ outcome: String) -> Never {
+        Wake.finish(name); record(outcome, start); exit(code)
+    }
+
+    if !wasRunning {
+        guard let a = remote(RemoteOpen.Request(desk: name)) else { end(1, "failed-open") }
+        guard a.outcome == .started || a.outcome == .alreadyRunning else { print(a.message); end(1, "failed-open") }
+        switch start {
+        case "resumed": print("Started \(name), picking up its last conversation.")
+        case "fresh": print("Started \(name) fresh: it had no earlier conversation to pick up.")
+        default: print("Started \(name) with its own command, which decides whether it picks up where it left off.")
+        }
+        // Let the agent come up: running, and its first screen settled.
+        let ready = Date().addingTimeInterval(90)
+        while Date() < ready {
+            if let d = RemoteOpen.status()?.desks.first(where: { $0.name == name }), d.running,
+               let o = d.outputAt, Date().timeIntervalSince1970 - o >= 3 { break }
+            Thread.sleep(forTimeInterval: 1)
+        }
+    } else {
+        print("\(name) is already running; giving it the message.")
+        if let d = RemoteOpen.status()?.desks.first(where: { $0.name == name }), d.activity == "working" {
+            print("\(name) is busy; waiting for it to finish first.")
+            let first = waitFor(name, since: Date().timeIntervalSince1970 - 2, timeout: timeout)
+            guard first.code == 0 else { end(first.code, first.code == 2 ? "needs-you" : "busy-before-send") }
+        }
+    }
+
+    // Deliver. Just after a start the agent may not be taking input yet.
+    var sent: RemoteOpen.Answer?
+    let sendBy = Date().addingTimeInterval(wasRunning ? 0 : 45)
+    repeat {
+        guard let a = remote(RemoteOpen.Request(desk: name, action: "send", text: Wake.framed(from: from, text: text)),
+                             timeout: ActivityState.draftHold + 15) else { end(1, "failed-send") }
+        if a.outcome == .sent { sent = a; break }
+        if (a.outcome == .notRunning || a.outcome == .notAnAgent), Date() < sendBy { Thread.sleep(forTimeInterval: 2); continue }
+        print(a.message); end(1, a.outcome == .blocked ? "needs-you" : "failed-send")
+    } while true
+    guard let sent else { end(1, "failed-send") }
+
+    Thread.sleep(forTimeInterval: 2)
+    let w = waitFor(name, since: sent.at ?? began, timeout: timeout)
+    if let after = remote(RemoteOpen.Request(desk: name, action: "read", lines: 400)), let t = after.text {
+        let reply = RemoteOpen.reply(before: sent.text ?? "", after: t)
+        print("")
+        print(reply.isEmpty ? RemoteOpen.lastLines(t, lines: 40) : reply)
+        print("")
+    }
+    switch w.code {
+    case 0:
+        guard !wasRunning else { end(0, "done") }
+        // Keys after the message went in are a person's; the message's own
+        // typing is recorded as a keypress too, so it starts the clock.
+        if let a = remote(RemoteOpen.Request(desk: name, action: "sleep", since: (sent.at ?? began) + 2)) {
+            print(a.message)
+            end(0, a.outcome == .slept ? "done-slept" : "done-kept-awake")
+        }
+        end(0, "done-not-slept")
+    case 2:
+        print("Left \(name) running: it's waiting on a question, and Coldfall tells you about it the way it does for any desk.")
+        end(2, "needs-you")
+    case 3:
+        print("Left \(name) running so its work isn't cut off.")
+        end(3, "still-working")
+    default:
+        end(1, "stopped")
+    }
+
 case "running":
     // What the running Coldfall says about its desks: which are running, and
     // whether each is working or has an answer waiting.
@@ -370,6 +487,8 @@ default:
       send <desk> "message"    type a message into a desk's agent and press Enter
       wait <desk> [--timeout S]  until it's done or needs you (exit 0 done, 2 needs you, 3 still working)
       ask <desk> "message"     send, wait for it to finish, and print what it added
+      wake <desk> --from <desk> "message"  start a desk that's off, ask it, put it back to sleep
+                         (exit 0 done, 2 needs you, 3 still working, 4 not allowed; see wake_from)
       holders [end <desk>]  desks kept running outside the app; end one
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
@@ -377,8 +496,8 @@ default:
       usage [--days N]   consumption by vendor and by desk (default: this week)
       formats            where every file Project Coldfall reads or writes lives
 
-    Listings are JSON on stdout; open, send, read, ask, wait and holders end
-    print a line of plain text (read and ask print the desk's text), and say
+    Listings are JSON on stdout; open, send, read, ask, wake, wait and holders end
+    print a line of plain text (read, ask and wake print the desk's text), and say
     how it went in the exit status. A front end in any language can use this
     instead of reimplementing the core.
     """)

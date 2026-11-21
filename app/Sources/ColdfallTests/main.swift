@@ -19,6 +19,7 @@ Limits.configDir = testSandbox + "/config"
 DoneSignal.logPath = testSandbox + "/share/signals.log"
 ScreenChange.logPath = testSandbox + "/share/logs/green.log"
 RemoteOpen.root = testSandbox + "/share/remote"
+Wake.root = testSandbox + "/share/wake"
 // Short: a unix socket path has to fit in 104 bytes.
 Holder.root = NSTemporaryDirectory() + "cfh\(getpid())"
 /// Whether a real usage cache existed before any test ran. Lets the final
@@ -3832,6 +3833,107 @@ do {
     try? RemoteOpen.submit(late)
     eq("claim: withdrawn before it was taken", RemoteOpen.wait(for: late, timeout: 0.3), nil)
     check("claim: can't be taken after", !RemoteOpen.claim(late) && !RemoteOpen.taken(late))
+}
+
+// MARK: - wake: one desk starting another that's off
+
+do {
+    let now = 2_000_000.0
+    var money = Desk(name: "money", cwd: "/srv/demo")
+    money.wakeFrom = ["hub", "cf", "connector"]
+    let plain = Desk(name: "docs", cwd: "/srv/demo")
+
+    // Who may wake whom.
+    eq("wake: the hub may wake a desk that says nothing", Wake.refusal(from: "hub", target: plain, caller: nil, log: [], active: [:], now: now), nil)
+    eq("wake: by default nobody else may", Wake.refusal(from: "cf", target: plain, caller: nil, log: [], active: [:], now: now),
+       .notAllowed(allowed: ["hub"]))
+    eq("wake: a desk on the list may", Wake.refusal(from: "connector", target: money, caller: nil, log: [], active: [:], now: now), nil)
+    eq("wake: a desk off the list may not", Wake.refusal(from: "golf", target: money, caller: nil, log: [], active: [:], now: now),
+       .notAllowed(allowed: ["hub", "cf", "connector"]))
+    check("wake: the refusal names who may", Wake.Refusal.notAllowed(allowed: ["hub", "cf"]).message.contains("hub, cf"))
+    var closed = Desk(name: "vault", cwd: "/srv/demo"); closed.wakeFrom = []
+    eq("wake: an empty list means nobody, the hub included",
+       Wake.refusal(from: "hub", target: closed, caller: nil, log: [], active: [:], now: now), .notAllowed(allowed: []))
+    eq("wake: a desk can't claim to be another", Wake.refusal(from: "hub", target: money, caller: "golf", log: [], active: [:], now: now),
+       .notYou(actual: "golf"))
+    eq("wake: run inside the desk it names, fine", Wake.refusal(from: "cf", target: money, caller: "cf", log: [], active: [:], now: now), nil)
+    eq("wake: not itself", Wake.refusal(from: "money", target: { var d = Desk(name: "money", cwd: "/srv/demo"); d.wakeFrom = ["money"]; return d }(),
+                                        caller: nil, log: [], active: [:], now: now), .itself)
+
+    // The hourly cap: refusals don't count, older than an hour doesn't count.
+    let five = (0..<5).map { Wake.Entry(time: now - Double($0) * 60, from: "hub", to: "money", outcome: "done-slept", start: "resumed") }
+    eq("wake: five in the hour, a sixth is fine", Wake.refusal(from: "hub", target: money, caller: nil, log: five, active: [:], now: now), nil)
+    let six = five + [Wake.Entry(time: now - 3000, from: "cf", to: "money", outcome: "needs-you", start: "fresh")]
+    eq("wake: six in the hour, the seventh is refused", Wake.refusal(from: "hub", target: money, caller: nil, log: six, active: [:], now: now),
+       .tooMany(perHour: 6))
+    let refused = five + [Wake.Entry(time: now - 10, from: "golf", to: "money", outcome: "refused-allowlist")]
+    eq("wake: a refused wake doesn't use one up", Wake.refusal(from: "hub", target: money, caller: nil, log: refused, active: [:], now: now), nil)
+    let old = five + [Wake.Entry(time: now - 3700, from: "hub", to: "money", outcome: "done-slept")]
+    eq("wake: one over an hour ago doesn't count", Wake.refusal(from: "hub", target: money, caller: nil, log: old, active: [:], now: now), nil)
+    let others = five + [Wake.Entry(time: now - 10, from: "hub", to: "docs", outcome: "done-slept")]
+    eq("wake: another desk's wakes don't count", Wake.refusal(from: "hub", target: money, caller: nil, log: others, active: [:], now: now), nil)
+    var tight = money; tight.wakePerHour = 1
+    eq("wake: wake_per_hour sets the cap",
+       Wake.refusal(from: "hub", target: tight, caller: nil, log: [five[0]], active: [:], now: now), .tooMany(perHour: 1))
+
+    // Chains: a woken desk can't wake a third one in the same run.
+    let cfWoken = ["cf": Wake.Active(from: "hub", started: now - 30, until: now + 600)]
+    eq("wake: a desk that was woken can't wake another", Wake.refusal(from: "cf", target: money, caller: nil, log: [], active: cfWoken, now: now),
+       .chain(wokenBy: "hub"))
+    var chainy = money; chainy.wakeChain = true
+    eq("wake: unless the desk takes chains", Wake.refusal(from: "cf", target: chainy, caller: nil, log: [], active: cfWoken, now: now), nil)
+    let moneyBusy = ["money": Wake.Active(from: "hub", started: now - 30, until: now + 600)]
+    eq("wake: one wake at a time per desk", Wake.refusal(from: "cf", target: money, caller: nil, log: [], active: moneyBusy, now: now),
+       .busy(by: "hub"))
+
+    // Back to sleep only if it was off before; a question keeps it up.
+    eq("wake: off before and done, back to sleep",
+       Wake.keepAwake(wasRunning: false, running: true, blocked: false, onScreen: false, draft: false, typedSince: false), nil)
+    check("wake: running before, left as it was",
+          Wake.keepAwake(wasRunning: true, running: true, blocked: false, onScreen: false, draft: false, typedSince: false) != nil)
+    check("wake: needs you, left running",
+          Wake.keepAwake(wasRunning: false, running: true, blocked: true, onScreen: false, draft: false, typedSince: false)?.contains("question") == true)
+    check("wake: someone opened it on screen, left running",
+          Wake.keepAwake(wasRunning: false, running: true, blocked: false, onScreen: true, draft: false, typedSince: false) != nil)
+    check("wake: someone typed into it, left running",
+          Wake.keepAwake(wasRunning: false, running: true, blocked: false, onScreen: false, draft: false, typedSince: true) != nil)
+
+    // The message is framed as another desk's, and says outbound waits.
+    let f = Wake.framed(from: "hub", text: "  check the March statement  \n")
+    check("wake: framed as from that desk", f.hasPrefix("[A message from the hub desk"))
+    check("wake: framed as information, not instructions", f.contains("not from the person you work for"))
+    check("wake: framed with outbound still waiting", f.contains("still waits"))
+    check("wake: the message itself follows, trimmed", f.hasSuffix("\n\ncheck the March statement"))
+
+    // How it says it started.
+    eq("wake: a desk with its own command decides for itself", Wake.startKind(Desk(name: "x", cwd: "/srv/demo", command: "./run.sh")), "own command")
+    eq("wake: a desk with no earlier conversation starts fresh",
+       Wake.startKind(Desk(name: "wake-test-\(UUID().uuidString)", runtime: "codex", cwd: "/srv/demo-\(UUID().uuidString)")), "fresh")
+
+    // The config round trip.
+    let tmp = NSTemporaryDirectory() + "coldfall-wake-\(UUID().uuidString).toml"
+    var written = money; written.wakeChain = true; written.wakePerHour = 3
+    DeskConfig.write([written, plain], to: tmp)
+    let back = DeskConfig.load(path: tmp)
+    eq("wake: wake_from survives a write", back.first?.wakeFrom, ["hub", "cf", "connector"])
+    eq("wake: wake_chain survives a write", back.first?.wakeChain, true)
+    eq("wake: wake_per_hour survives a write", back.first?.wakePerHour, 3)
+    eq("wake: a desk that says nothing stays nil", back.last?.wakeFrom ?? ["unset"], ["unset"])
+    try? FileManager.default.removeItem(atPath: tmp)
+
+    // The log and the runs under way, on disk (in the test sandbox).
+    Wake.log(Wake.Entry(time: now, from: "hub", to: "money", outcome: "done-slept", start: "resumed"))
+    eq("wake: the log reads back", Wake.entries().last?.outcome, "done-slept")
+    let raw = (try? String(contentsOfFile: Wake.logPath, encoding: .utf8)) ?? ""
+    check("wake: the log holds names and outcomes, no message", !raw.contains("March") && raw.contains("money"))
+    let live = Date().timeIntervalSince1970
+    check("wake: a run can begin", Wake.begin("money", Wake.Active(from: "hub", started: live, until: live + 60)))
+    check("wake: and a second can't begin alongside it", !Wake.begin("money", Wake.Active(from: "cf", started: live, until: live + 60)))
+    eq("wake: it shows as under way", Wake.active()["money"]?.from, "hub")
+    Wake.finish("money")
+    eq("wake: finished, it's gone", Wake.active()["money"], nil)
+    check("wake: an expired run is dropped", Wake.begin("docs", Wake.Active(from: "hub", started: live - 900, until: live - 1)))
+    eq("wake: and doesn't block the next", Wake.active()["docs"], nil)
 }
 
 // MARK: - Drip, the character in the notch

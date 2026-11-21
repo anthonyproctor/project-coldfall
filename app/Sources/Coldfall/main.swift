@@ -2149,6 +2149,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             lastRemoteServe = now
             for r in RemoteOpen.pending(now: now) {
                 if r.action == "read" || r.action == "send" { serveReadSend(r); continue }
+                if r.action == "sleep" { serveSleep(r); continue }
                 guard RemoteOpen.claim(r) else { continue }
                 let running = Set(sessions.filter { $0.value.started || $0.value.resolving || $0.value.holding }.keys)
                 let a = RemoteOpen.decide(r.desk, names: desks.map(\.name),
@@ -2207,6 +2208,28 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         a.at = Date().timeIntervalSince1970
         s?.typeOnBehalf(RemoteOpen.keystrokes(text))
         RemoteOpen.answer(r, a)
+    }
+
+    /// `coldfall-cli wake` putting a desk it woke back to sleep: as Sleep
+    /// does after idle time, unless someone has started using it since.
+    func serveSleep(_ r: RemoteOpen.Request) {
+        guard RemoteOpen.claim(r) else { return }
+        guard let s = sessions[r.desk], let d = desks.first(where: { $0.name == r.desk }) else {
+            RemoteOpen.answer(r, RemoteOpen.Answer(.keptAwake, "\(r.desk) isn't running any more.")); return
+        }
+        let since = r.since.map { Date(timeIntervalSince1970: $0) } ?? .distantFuture
+        if let why = Wake.keepAwake(wasRunning: false, running: s.started, blocked: s.isBlocked,
+                                    onScreen: slotIndex(of: s) != nil || (peek.isOpen && peek.desk == d.name),
+                                    draft: s.holdsDraft, typedSince: (s.lastKey ?? .distantPast) > since) {
+            RemoteOpen.answer(r, RemoteOpen.Answer(.keptAwake, "Left \(d.name) running: \(why).")); return
+        }
+        // A desk that picks up its conversation rests with the moon on its
+        // row; one with its own command is simply stopped.
+        if d.resumesItself, !ui.sleeping.contains(d.name) { ui.sleeping.append(d.name); ui.save() }
+        sessions.removeValue(forKey: d.name)
+        memory.removeValue(forKey: d.name)
+        s.terminateAll()
+        RemoteOpen.answer(r, RemoteOpen.Answer(.slept, d.resumesItself ? "Put \(d.name) back to sleep." : "Stopped \(d.name)."))
     }
 
     /// Start a desk for someone who isn't at the Mac. Like a click, but it

@@ -73,6 +73,10 @@ it was last used, and whether opening it would ask about starting fresh.
 `coldfall-cli versions` prints each agent's version as the update notice reads it;
 `--agent-news` snapshots the rail with a made-up update.
 
+`coldfall-cli wake <desk> --from <desk> "message"` starts a desk that is off, asks it and puts it back (see
+`Wake` in the core). Try it only in a throwaway home with stand-in agents (a desk whose `command` is a small
+script that reads a line and prints a reply), never against real desks.
+
 `coldfall-cli menu [desk]` prints a desk's right-click menu as data. A
 context menu cannot be captured in an offscreen snapshot, so its order,
 wording and tone are checked there and in the core's tests.

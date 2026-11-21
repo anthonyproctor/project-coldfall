@@ -62,6 +62,14 @@ public struct Desk {
     /// Tints its pane, its tab and its row, so you can tell at a glance
     /// which agent you are about to type into.
     public var color: String?
+    /// Which desks may wake this one with `coldfall-cli wake` (see Wake).
+    /// Nil means the default: only the hub. `wake_from` in desks.toml.
+    public var wakeFrom: [String]?
+    /// Whether a desk that was itself woken may wake this one in the same
+    /// run (`wake_chain`). Off: wakes go one step deep.
+    public var wakeChain: Bool = false
+    /// Wakes allowed per hour (`wake_per_hour`); nil is Wake.defaultPerHour.
+    public var wakePerHour: Int?
     /// Whether this desk is held, given the global setting.
     public func keepsRunning(global: Bool) -> Bool {
         guard runtime != "shell" || command != nil else { return keepRunning ?? false }
@@ -427,6 +435,9 @@ public enum DeskConfig {
             case "pinned":  current?.pinned = val == "true"
             case "icon":    current?.icon = val.isEmpty ? nil : String(val.prefix(2))
             case "color", "colour": current?.color = DeskColor.rgb(val) == nil ? nil : val.lowercased()
+            case "wake_from": current?.wakeFrom = TomlText.stringArray(val)
+            case "wake_chain": current?.wakeChain = val == "true"
+            case "wake_per_hour": current?.wakePerHour = Int(val).map { max(0, $0) }
             case "keep_running": current?.keepRunning = val == "true" ? true : (val == "false" ? false : nil)
             case "session": current?.session = UUID(uuidString: val) != nil ? val.lowercased() : nil
             case "cwd":     current?.cwd = val
@@ -577,6 +588,11 @@ public enum DeskConfig {
             if d.hidden { out += "hidden = true\n" }
             if d.pinned { out += "pinned = true\n" }
             if let k = d.keepRunning { out += "keep_running = \(k)\n" }
+            if let w = d.wakeFrom {
+                out += "wake_from = [" + w.map { "\"\(TomlText.escape($0))\"" }.joined(separator: ", ") + "]\n"
+            }
+            if d.wakeChain { out += "wake_chain = true\n" }
+            if let n = d.wakePerHour { out += "wake_per_hour = \(n)\n" }
             if let i = d.icon { out += "icon = \"\(TomlText.escape(i))\"\n" }
             if let c = d.color { out += "color = \"\(TomlText.escape(c))\"\n" }
             if !d.mcpOff.isEmpty {

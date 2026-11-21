@@ -44,10 +44,13 @@ public enum RemoteOpen {
         public var text: String?
         /// For read: how many lines from the bottom.
         public var lines: Int?
+        /// For sleep: when the wake began. A key pressed in the desk since
+        /// then means someone is using it, so it stays awake.
+        public var since: Double?
         public init(id: String = UUID().uuidString, desk: String, show: Bool = false, time: Double = Date().timeIntervalSince1970,
-                    action: String? = nil, text: String? = nil, lines: Int? = nil) {
+                    action: String? = nil, text: String? = nil, lines: Int? = nil, since: Double? = nil) {
             self.id = id; self.desk = desk; self.show = show; self.time = time
-            self.action = action; self.text = text; self.lines = lines
+            self.action = action; self.text = text; self.lines = lines; self.since = since
         }
     }
 
@@ -56,6 +59,8 @@ public enum RemoteOpen {
         case read, sent, notRunning, notAnAgent, blocked, draft
         /// The inbox pressed keys in a desk's question; or it wasn't asking one.
         case pressed, notAsking
+        /// `wake` putting a desk back to sleep: done, or left awake (why in the message).
+        case slept, keptAwake
     }
 
     public struct Answer: Codable, Equatable {
