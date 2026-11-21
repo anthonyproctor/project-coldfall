@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.52] - 2026-11-20
+
+One desk can wake another.
+
 ### Added
 - **`coldfall-cli wake <desk> --from <desk> "message"`**: one desk reaching
   another that isn't running. The desk starts (picking up its last
@@ -1259,7 +1263,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.51...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.52...HEAD
+[0.3.52]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.51...v0.3.52
 [0.3.51]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.50...v0.3.51
 [0.3.50]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.49...v0.3.50
 [0.3.49]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.48...v0.3.49
