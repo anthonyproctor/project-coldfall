@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.54] - 2026-11-26
+
+Face ID before answering from your phone, and Coldfall keeps working in the background.
+
 ### Added
 - **Face ID before answering from your phone.** Press **Set Up a Phone** in
   Settings (General), open the inbox on the phone over its https link within
@@ -1397,7 +1401,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.53...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.54...HEAD
+[0.3.54]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.53...v0.3.54
 [0.3.53]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.52...v0.3.53
 [0.3.52]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.51...v0.3.52
 [0.3.51]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.50...v0.3.51
