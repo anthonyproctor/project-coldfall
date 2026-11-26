@@ -302,8 +302,8 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + "and only with the link below. Works for every desk, Codex ones too. Anyone with the link can type "
             + "into your desks: keep it to yourself, and use New Link if it gets out."))
         if inboxOn {
-            if !Holder.portAnswers(Inbox.defaultPort) {
-                let l = note("Coldfall couldn't open port \(Inbox.defaultPort) for the inbox, so the link wouldn't work. "
+            if !Holder.portAnswers(Inbox.localPort) {
+                let l = note("Coldfall couldn't open port \(Inbox.localPort) for the inbox, so the link wouldn't work. "
                     + "Another app may be using it; quit that, or turn the inbox off and on again.")
                 l.textColor = .systemOrange
                 updLines.append(l)
@@ -347,7 +347,7 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                 } else {
                     updLines.append(note("To keep the inbox on your phone's Home Screen like an app, and get notifications there, "
                         + "it has to be served over HTTPS. Tailscale can do that. Run this once in Terminal, then press Check Again:"))
-                    let cmd = Tailnet.serveCommand(port: Inbox.defaultPort)
+                    let cmd = Tailnet.serveCommand(port: Inbox.localPort)
                     serveCommand = cmd
                     let cf = NSTextField(labelWithString: cmd)
                     cf.isSelectable = true
@@ -367,6 +367,32 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                         + "for this Mac is on public record, so the Mac's Tailscale name can be looked up by anyone. "
                         + "The page itself can't. Coldfall never runs this command for you."))
                 }
+                // Face ID: a passkey on the phone, so the link alone can't answer.
+                let phones = PhoneKey.keys().count
+                let faceLine: String
+                if PhoneKey.pairing() {
+                    faceLine = "Setting up a phone: open the inbox on it now (the https link) and tap Set up Face ID. "
+                        + "Open for \(Int(PhoneKey.pairingLeft() / 60) + 1) more minutes."
+                } else if phones > 0 {
+                    faceLine = "Face ID: answering, sending or starting a desk from a phone asks for Face ID first, on "
+                        + (phones == 1 ? "the phone" : "the \(phones) phones") + " set up for it. The link alone can't."
+                } else {
+                    faceLine = "Face ID: have the phone ask for Face ID before it answers a desk, so the link alone can't. "
+                        + "Press Set Up a Phone, then open the inbox on the phone (the https link) within five minutes."
+                }
+                updLines.append(note(faceLine))
+                let setUp = NSButton(title: "Set Up a Phone…", target: self, action: #selector(setUpPhoneKey))
+                setUp.bezelStyle = .rounded
+                var faceButtons: [NSView] = [setUp]
+                if phones > 0 {
+                    let forget = NSButton(title: "Forget Phones", target: self, action: #selector(forgetPhoneKeys))
+                    forget.bezelStyle = .rounded
+                    forget.toolTip = "Removes every phone's passkey. Answering from a phone stops asking for Face ID."
+                    faceButtons.append(forget)
+                }
+                let faceRow = NSStackView(views: faceButtons)
+                faceRow.spacing = 8
+                updLines.append(faceRow)
                 let pushSwitch = NSButton(checkboxWithTitle: "Notify my phone when a desk needs me or finishes",
                                           target: self, action: #selector(togglePush(_:)))
                 pushSwitch.state = UIState.load().pushOn ? .on : .off
@@ -777,6 +803,23 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func toggleInbox(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallInboxChanged, object: sender.state == .on)
+        rebuildForInbox()
+    }
+
+    @objc private func setUpPhoneKey() {
+        PhoneKey.openPairing()
+        rebuildForInbox()
+    }
+
+    @objc private func forgetPhoneKeys() {
+        let a = NSAlert()
+        a.messageText = "Forget every phone's Face ID?"
+        a.informativeText = "Answering from a phone stops asking for Face ID, so the inbox link alone can answer again. "
+            + "You can set a phone up again afterwards."
+        a.addButton(withTitle: "Forget Phones")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        PhoneKey.forgetAll()
         rebuildForInbox()
     }
 

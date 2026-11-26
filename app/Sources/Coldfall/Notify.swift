@@ -65,6 +65,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// A notification about Coldfall itself, not a desk (its memory).
+    func notice(id: String, title: String, body: String) {
+        guard available, allowed else { return }
+        let c = UNMutableNotificationContent()
+        c.title = title
+        c.body = body
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "coldfall." + id, content: c, trigger: nil))
+    }
+
     /// Clear a desk's banner once you've gone to it.
     func clear(desk: String) {
         guard available else { return }

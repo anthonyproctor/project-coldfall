@@ -35,6 +35,17 @@ public enum MemoryUse {
         return m > noted ? m : nil
     }
 
+    /// From here on a mark also tells the person, not just the log.
+    public static let noticeMark: UInt64 = 2 << 30
+
+    /// What to say when Coldfall passes a mark this high; nil below it.
+    public static func notice(_ bytes: UInt64, mark: UInt64) -> (title: String, body: String)? {
+        guard mark >= noticeMark else { return nil }
+        return ("Coldfall is using \(text(bytes)) of memory",
+                "Far more than it should (a few hundred MB). Quitting and reopening Coldfall frees it; desks kept "
+                + "running carry on. When it passed each mark is in ~/.local/share/coldfall/exit.log.")
+    }
+
     /// "1.4GB", "820MB".
     public static func text(_ bytes: UInt64) -> String {
         bytes >= 1 << 30 ? String(format: "%.1fGB", Double(bytes) / Double(1 << 30)) : "\(bytes >> 20)MB"

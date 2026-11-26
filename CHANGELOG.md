@@ -8,6 +8,33 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **Face ID before answering from your phone.** Press **Set Up a Phone** in
+  Settings (General), open the inbox on the phone over its https link within
+  five minutes, and tap **Set up Face ID**. The phone keeps a passkey for the
+  inbox, and from then on answering a question, sending a message or starting a
+  desk from a phone asks for Face ID first; one covers the next five minutes.
+  The link on its own can no longer act on a desk. A phone can only be added
+  while the Mac has pairing open, and **Forget Phones** turns it off.
+- **A notification when Coldfall's memory passes 2GB**, as well as the line in
+  exit.log, saying a quit and reopen frees it (held desks carry on).
+- **`scripts/release.sh`**: the whole release as one script, checks and soak
+  test included.
+
+### Changed
+- **The inbox's 127.0.0.1 side has its own port, 47101**, which `tailscale
+  serve` now points at (Settings shows the new command). Sharing one port
+  between two addresses needed port sharing, which another account on the Mac
+  could have used to listen beside Coldfall.
+
+### Fixed
+- **`coldfall-cli` no longer says Coldfall isn't running when it's only in the
+  background.** macOS slows the timers of a background app (App Nap), and
+  Coldfall's status for `coldfall-cli` went up to 16 seconds between updates,
+  past the 15 the CLI allowed. Coldfall now opts out of App Nap while it runs
+  (the Mac still sleeps), and the CLI takes a late status from a Coldfall that
+  is still running as running for up to 90 seconds.
+
 ## [0.3.53] - 2026-11-26
 
 Coldfall stays small. It no longer grows until the Mac runs out of memory, and

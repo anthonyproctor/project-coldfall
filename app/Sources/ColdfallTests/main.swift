@@ -668,6 +668,8 @@ do {
     let big = gone + "2026-11-22T21:00:00-07:00 pid 2 v0.3.52 memory: 64.2GB, past 64.0GB\n"
     check("its last memory note is the last line", MemoryUse.unexplained(log: big)?.contains("64.2GB") == true)
     eq("an empty log", MemoryUse.unexplained(log: ""), nil)
+    check("1GB goes in the log only", MemoryUse.notice(g + g / 4, mark: g) == nil)
+    check("2GB tells the person too", MemoryUse.notice(2 * g + g / 10, mark: 2 * g)?.title == "Coldfall is using 2.1GB of memory")
 }
 
 print("\ninbox hardening")
@@ -761,6 +763,87 @@ do {
     eq("keeping its permissions", (try? FileManager.default.attributesOfItem(atPath: f))?[.posixPermissions] as? Int, 0o600)
     check("a small log is left alone", !LogTrim.trim(f))
     check("a missing log is nothing", !LogTrim.trim(f + ".none"))
+}
+
+extension Result {
+    var failureValue: Failure? { if case .failure(let f) = self { return f }; return nil }
+}
+print("\nFace ID before answering (PhoneKey)")
+do {
+    let was = PhoneKey.path
+    PhoneKey.path = testSandbox + "/phone-keys-\(UUID().uuidString).json"
+    defer { PhoneKey.forgetAll(); PhoneKey.path = was; PhoneKey.closePairing() }
+    let e = PhoneKey.Expect(origin: "https://mac.demo.ts.net", rpId: "mac.demo.ts.net")
+    let phone = P256.Signing.PrivateKey()
+    let credId = Data((0..<16).map { UInt8($0) })
+    func clientData(_ type: String, _ challenge: String, origin: String = e.origin) -> String {
+        PhoneKey.b64url(Data("{\"type\":\"\(type)\",\"challenge\":\"\(challenge)\",\"origin\":\"\(origin)\",\"crossOrigin\":false}".utf8))
+    }
+    func authData(flags: UInt8, count: UInt32, rp: String = e.rpId, key: Bool) -> Data {
+        var d = Data(SHA256.hash(data: Data(rp.utf8)))
+        d.append(flags)
+        d.append(contentsOf: [UInt8(count >> 24 & 0xff), UInt8(count >> 16 & 0xff), UInt8(count >> 8 & 0xff), UInt8(count & 0xff)])
+        if key {
+            let pt = phone.publicKey.x963Representation      // 04 || x || y
+            d.append(Data(count: 16))                          // aaguid
+            d.append(contentsOf: [0, UInt8(credId.count)]); d.append(credId)
+            d.append(CBOR.map([.int(1): .int(2), .int(3): .int(-7), .int(-1): .int(1),
+                               .int(-2): .bytes(pt[1..<33]), .int(-3): .bytes(pt[33..<65])]).encoded())
+        }
+        return d
+    }
+    func attestation(flags: UInt8 = 0x45) -> String {
+        PhoneKey.b64url(CBOR.map([.text("fmt"): .text("none"), .text("attStmt"): .map([:]),
+                                  .text("authData"): .bytes(authData(flags: flags, count: 0, key: true))]).encoded())
+    }
+    func register(flags: UInt8 = 0x45, origin: String = e.origin) -> Result<PhoneKey.Key, PhoneKey.Failure> {
+        PhoneKey.register(clientDataJSON: clientData("webauthn.create", PhoneKey.challenge(), origin: origin),
+                          attestationObject: attestation(flags: flags), expect: e)
+    }
+    func assertion(count: UInt32 = 0, flags: UInt8 = 0x05, challenge: String? = nil, signer: P256.Signing.PrivateKey? = nil,
+                   rp: String = e.rpId) -> Result<String, PhoneKey.Failure> {
+        let cd = clientData("webauthn.get", challenge ?? PhoneKey.challenge())
+        let ad = authData(flags: flags, count: count, rp: rp, key: false)
+        let sig = try! (signer ?? phone).signature(for: ad + Data(SHA256.hash(data: PhoneKey.unb64url(cd)!)))
+        return PhoneKey.verify(id: PhoneKey.b64url(credId), clientDataJSON: cd, authenticatorData: PhoneKey.b64url(ad),
+                               signature: PhoneKey.b64url(sig.derRepresentation), expect: e)
+    }
+
+    check("CBOR reads back what it wrote",
+          CBOR.decode(CBOR.map([.text("a"): .array([.int(-7), .int(300), .bytes(Data([1, 2]))])]).encoded())
+            == .map([.text("a"): .array([.int(-7), .int(300), .bytes(Data([1, 2]))])]))
+    check("CBOR refuses a length past the end", CBOR.decode(Data([0x5a, 0xff, 0xff, 0xff, 0xff])) == nil)
+    check("no phone: answering doesn't ask", !PhoneKey.required)
+    eq("adding a phone without pairing opened on the Mac", register().failureValue, .notPairing)
+    PhoneKey.openPairing()
+    eq("a key made without Face ID (no user verification)", register(flags: 0x41).failureValue, .noFaceID)
+    PhoneKey.openPairing()
+    eq("a key made for another address", register(origin: "https://evil.example").failureValue, .wrongOrigin)
+    PhoneKey.openPairing()
+    check("a phone is added while pairing is open", (try? register().get()) != nil)
+    check("then answering asks for Face ID", PhoneKey.required)
+    check("and pairing closes behind it", !PhoneKey.pairing())
+    eq("a second phone needs pairing opened again", register().failureValue, .notPairing)
+
+    guard case .success(let ticket) = assertion() else { fatalError("Face ID didn't verify") }
+    check("Face ID gives an unlock", PhoneKey.unlocked(ticket))
+    check("which lasts five minutes", !PhoneKey.unlocked(ticket, now: Date().addingTimeInterval(PhoneKey.unlockSeconds + 1)))
+    check("a made-up unlock is nothing", !PhoneKey.unlocked("nope") && !PhoneKey.unlocked(nil))
+    eq("a signature from another key", assertion(signer: P256.Signing.PrivateKey()).failureValue, .badSignature)
+    eq("a tap without Face ID", assertion(flags: 0x01).failureValue, .noFaceID)
+    eq("a challenge never issued", assertion(challenge: "made-up").failureValue, .staleChallenge)
+    let c = PhoneKey.challenge()
+    _ = assertion(challenge: c)
+    eq("a challenge used twice", assertion(challenge: c).failureValue, .staleChallenge)
+    eq("signed for another name", assertion(rp: "evil.example").failureValue, .wrongName)
+    check("a counter that moves on is fine", (try? assertion(count: 5).get()) != nil)
+    eq("one that goes back is a copied key", assertion(count: 3).failureValue, .replayed)
+    check("forgetting phones stops the asking", { PhoneKey.forgetAll(); return !PhoneKey.required }())
+
+    eq("passkeys need a name, not an IP", PhoneKey.expect(host: "100.64.0.1:47100", secure: true)?.rpId, nil)
+    eq("nor plain http, but for localhost", PhoneKey.expect(host: "mac.demo.ts.net", secure: false)?.rpId, nil)
+    eq("localhost over http", PhoneKey.expect(host: "localhost:47101", secure: false)?.origin, "http://localhost:47101")
+    eq("the https name", PhoneKey.expect(host: "mac.demo.ts.net", secure: true)?.origin, "https://mac.demo.ts.net")
 }
 
 // MARK: - dropping a file onto a desk
@@ -3654,7 +3737,9 @@ do {
     RemoteOpen.writeStatus(st)
     eq("remote: status reads back while the app is alive", RemoteOpen.status(now: now, alive: { _ in true }), st)
     eq("remote: not once the app has gone", RemoteOpen.status(now: now, alive: { _ in false }), nil)
-    eq("remote: nor when it has gone quiet", RemoteOpen.status(now: now.addingTimeInterval(60), alive: { _ in true }), nil)
+    eq("remote: a late status from a live app still counts (slowed, not gone)", RemoteOpen.status(now: now.addingTimeInterval(60), alive: { _ in true }), st)
+    eq("remote: but not one late for minutes (hung)", RemoteOpen.status(now: now.addingTimeInterval(120), alive: { _ in true }), nil)
+    eq("remote: nor a late one from an app that has gone", RemoteOpen.status(now: now.addingTimeInterval(20), alive: { _ in false }), nil)
 }
 
 // MARK: - desks that keep running (Holder)

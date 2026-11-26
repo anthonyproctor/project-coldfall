@@ -63,8 +63,7 @@ Fixes go into the newest release only.
   same files Coldfall can.
 - The download not being signed or notarized. That is known and said in the
   README; building from source is the careful path until it is.
-- Another account on the same Mac listening on the inbox's port. The inbox
-  has to share its port between the Tailscale address and 127.0.0.1, and the
-  Mac only allows that with port sharing on, which another account could use
-  too. The inbox trusts the Mac's own accounts; a Mac shared with people you
-  don't trust shouldn't turn it on.
+- Answering from the phone without Face ID before a phone has been set up
+  for it (Settings, General, Set Up a Phone). Until then the inbox link alone
+  can answer, as the Settings text says. Getting past Face ID once a phone is
+  set up is a hole.

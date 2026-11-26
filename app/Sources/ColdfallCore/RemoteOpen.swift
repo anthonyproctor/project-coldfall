@@ -29,8 +29,13 @@ public enum RemoteOpen {
     /// A request older than this is dropped unanswered: whoever asked has
     /// given up, and opening a desk minutes later would surprise them.
     public static let requestTTL: TimeInterval = 120
-    /// A status older than this means Coldfall isn't running (or is hung).
+    /// A status this fresh means Coldfall is running.
     public static let statusTTL: TimeInterval = 15
+    /// Older than statusTTL but this fresh, with Coldfall's process still
+    /// there: running, just late (macOS slowing a background app, a Mac short
+    /// of memory). Saying "isn't running" then sent desks to open it again.
+    /// Older than this, it is taken as hung.
+    public static let slowTTL: TimeInterval = 90
 
     public struct Request: Codable, Equatable {
         public var id: String
@@ -326,7 +331,7 @@ public enum RemoteOpen {
     }
 
     public static func fresh(_ s: Status, now: Date, alive: (Int32) -> Bool) -> Bool {
-        now.timeIntervalSince1970 - s.time <= statusTTL && alive(s.pid)
+        now.timeIntervalSince1970 - s.time <= slowTTL && alive(s.pid)
     }
 
     public static func submit(_ r: Request) throws {

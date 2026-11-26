@@ -51,6 +51,7 @@ enum ExitLog {
             guard let now = MemoryUse.footprint(), let m = MemoryUse.mark(now, noted: ExitLog.memoryNoted) else { return }
             ExitLog.memoryNoted = m
             note("memory: \(MemoryUse.text(now)), past \(MemoryUse.text(m))")
+            ExitLog.onMemoryMark?(now, m)
         }
 
         // Signals that would stop the app: note who sent it, then stop the
@@ -77,6 +78,8 @@ enum ExitLog {
         atexit { if !ExitLog.normal { ExitLog.note("exit() with no reason recorded") } }
     }
 
+    /// Told each new mark (the app shows a notification from 2GB).
+    nonisolated(unsafe) static var onMemoryMark: ((UInt64, UInt64) -> Void)?
     /// The highest memory mark written down this run.
     nonisolated(unsafe) static var memoryNoted: UInt64 = 0
 

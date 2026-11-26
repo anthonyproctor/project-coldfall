@@ -31,6 +31,13 @@ import CryptoKit
 /// every decision, so it can be tested.
 public enum Inbox {
     public static let defaultPort: UInt16 = 47100
+    /// On 127.0.0.1 the inbox has a port of its own: what `tailscale serve`
+    /// passes the https address on to. One port on two addresses needed port
+    /// sharing, which another account on the Mac could have used to listen
+    /// beside Coldfall.
+    public static let localPort: UInt16 = 47101
+    /// The port the inbox listens on at this address.
+    public static func port(for address: String) -> UInt16 { address == "127.0.0.1" ? localPort : defaultPort }
     public static let cookieName = "cf_inbox"
 
     public static var tokenPath: String {
@@ -402,6 +409,12 @@ extension Inbox {
         }
     }
 
+    /// Once a phone has a passkey, what acts on a desk needs a fresh Face ID.
+    static func needsFaceID(_ f: [String: String]) -> Response? {
+        guard PhoneKey.required, !PhoneKey.unlocked(f["unlock"]) else { return nil }
+        return .json(["needsFaceID": true, "message": "Face ID first."], status: 403)
+    }
+
     /// A request that got through the gate, answered.
     public static func route(_ r: Request, host: InboxHost, allowedHosts: [String] = []) -> Response {
         func answer(_ a: RemoteOpen.Answer) -> Response { .json(["outcome": a.outcome.rawValue, "message": a.message]) }
@@ -460,20 +473,55 @@ extension Inbox {
             return .json(o)
         case ("POST", "/api/send"):
             let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
             guard let name = f["desk"], let text = f["text"] else { return .json(["message": "Send needs a desk and text."], status: 400) }
             return answer(host.inboxSend(name, text: text))
         case ("POST", "/api/keys"):
             let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
             guard let name = f["desk"], let k = f["key"], let bytes = keys[k] else {
                 return .json(["message": "That isn't a key the inbox presses."], status: 400)
             }
             return answer(host.inboxPress(name, keys: bytes))
         case ("POST", "/api/open"):
-            guard let name = fields(r.body)["desk"] else { return .json(["message": "Open needs a desk."], status: 400) }
+            let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
+            guard let name = f["desk"] else { return .json(["message": "Open needs a desk."], status: 400) }
             return answer(host.inboxOpen(name))
+        case ("POST", "/api/faceid/state"):
+            let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r))
+            return .json(["required": PhoneKey.required, "pairing": PhoneKey.pairing(), "here": e != nil,
+                          "ids": PhoneKey.keys().filter { $0.rpId == e?.rpId }.map(\.id)])
+        case ("POST", "/api/faceid/begin"):
+            guard let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r)) else {
+                return .json(["message": "Face ID needs the https address (Tailscale's serve), not this one."], status: 400)
+            }
+            return .json(["challenge": PhoneKey.challenge(), "rpId": e.rpId, "pairing": PhoneKey.pairing(),
+                          "ids": PhoneKey.keys().filter { $0.rpId == e.rpId }.map(\.id)])
+        case ("POST", "/api/faceid/register"):
+            let f = fields(r.body)
+            guard let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r)),
+                  let cd = f["clientDataJSON"], let att = f["attestationObject"] else {
+                return .json(["ok": false, "message": PhoneKey.Failure.badData.message], status: 400)
+            }
+            switch PhoneKey.register(clientDataJSON: cd, attestationObject: att, expect: e) {
+            case .success: return .json(["ok": true, "message": "Face ID is set up. Answering from a phone now asks for it."])
+            case .failure(let why): return .json(["ok": false, "message": why.message], status: 403)
+            }
+        case ("POST", "/api/faceid/verify"):
+            let f = fields(r.body)
+            guard let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r)),
+                  let id = f["id"], let cd = f["clientDataJSON"], let ad = f["authenticatorData"], let sig = f["signature"] else {
+                return .json(["ok": false, "message": PhoneKey.Failure.badData.message], status: 400)
+            }
+            switch PhoneKey.verify(id: id, clientDataJSON: cd, authenticatorData: ad, signature: sig, expect: e) {
+            case .success(let t): return .json(["ok": true, "unlock": t, "seconds": Int(PhoneKey.unlockSeconds)])
+            case .failure(let why): return .json(["ok": false, "message": why.message], status: 403)
+            }
         case (_, "/"), (_, "/api/desks"), (_, "/api/read"), (_, "/api/send"), (_, "/api/keys"), (_, "/api/open"),
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
-             (_, "/api/push/unsubscribe"), (_, "/api/push/test"):
+             (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
+             (_, "/api/faceid/register"), (_, "/api/faceid/verify"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)

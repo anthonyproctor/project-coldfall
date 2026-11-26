@@ -78,6 +78,10 @@ textarea{flex:1;min-height:46px;max-height:30vh;resize:vertical;background:var(-
         <button class="hidden" id="pushoff">Turn off</button>
       </div>
     </div>
+    <div class="card" id="face" style="margin-top:8px">
+      <div id="facesay"></div>
+      <div class="keys hidden" id="facekeys"><button class="go" id="faceset">Set up Face ID</button></div>
+    </div>
   </section>
 </main>
 <script>
@@ -154,7 +158,7 @@ function refreshDesk() {
       $("opts").textContent = "";
       for (const o of opts) {
         const b = document.createElement("button"); b.textContent = o.key + "  " + o.label;
-        b.onclick = () => { const desk = current; api("/api/keys", {desk, key: o.key}).then(a => { if (current === desk) { $("note").textContent = a.message || ""; setTimeout(refreshDesk, 400); } }); };
+        b.onclick = () => { const desk = current; act("/api/keys", {desk, key: o.key}).then(a => { if (current === desk) { $("note").textContent = a.message || ""; setTimeout(refreshDesk, 400); } }); };
         $("opts").appendChild(b);
       }
     }
@@ -174,7 +178,7 @@ function show() {
   current = m ? decodeURIComponent(m[1]) : null;
   $("msg").value = (current && drafts[current]) || "";
   $("list").classList.toggle("hidden", !!current);
-  $("phone").classList.toggle("hidden", !!current || !$("pushsay").textContent);
+  phoneShow();
   $("detail").classList.toggle("hidden", !current);
   $("back").style.display = current ? "inline" : "none";
   $("title").textContent = current || "Desks";
@@ -186,19 +190,19 @@ function show() {
 
 for (const [label, key] of [["1","1"],["2","2"],["3","3"],["↑","up"],["↓","down"],["Return","enter"],["Esc","esc"]]) {
   const b = document.createElement("button"); b.textContent = label;
-  b.onclick = () => { const desk = current; api("/api/keys", {desk, key}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 400); } }); };
+  b.onclick = () => { const desk = current; act("/api/keys", {desk, key}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 400); } }); };
   $("keys").appendChild(b);
 }
 $("send").onclick = () => {
   const desk = current, text = $("msg").value;
   if (!desk || !text.trim()) return;
   $("note").textContent = "Sending to " + desk + "…";
-  api("/api/send", {desk, text}).then(r => {
+  act("/api/send", {desk, text}).then(r => {
     if (r.outcome === "sent") { drafts[desk] = ""; if (current === desk) $("msg").value = ""; }
     if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 600); }
   }).catch(e => { $("note").textContent = e.message; });
 };
-$("open").onclick = () => { const desk = current; api("/api/open", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 1500); } }); };
+$("open").onclick = () => { const desk = current; act("/api/open", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 1500); } }); };
 $("back").onclick = () => { location.hash = ""; };
 
 // This device as an app: its notifications. Everything here is optional; the
@@ -214,7 +218,7 @@ function pushSay(text, on, test, off) {
   $("pushtest").classList.toggle("hidden", !test);
   $("pushoff").classList.toggle("hidden", !off);
   $("pushkeys").classList.toggle("hidden", !(on || test || off));
-  $("phone").classList.toggle("hidden", !!current || !text);
+  phoneShow();
 }
 // An iPhone or iPad in Safari, not yet on the Home Screen.
 const inSafariOnly = navigator.standalone === false;
@@ -259,13 +263,75 @@ $("pushoff").onclick = async () => {
   } catch (e) {}
   pushState();
 };
+function phoneShow() {
+  $("phone").classList.toggle("hidden", !!current || (!$("pushsay").textContent && !$("facesay").textContent));
+}
+
+// Face ID: once a phone has a passkey here, acting on a desk asks for it.
+// One Face ID covers the next five minutes on this page.
+let unlock = "", unlockUntil = 0, face = {required: false, pairing: false, here: false, ids: []};
+function b64u(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+const cancelled = e => e && e.name === "NotAllowedError";
+async function faceUnlock() {
+  if (!window.PublicKeyCredential || !window.isSecureContext) throw new Error("Answering needs Face ID, which needs Coldfall's https link. It's in Settings on the Mac, under General.");
+  const b = await api("/api/faceid/begin", {});
+  if (!b.challenge) throw new Error(b.message || "Face ID isn't available here.");
+  const c = await navigator.credentials.get({publicKey: {challenge: keyBytes(b.challenge), rpId: b.rpId, userVerification: "required", timeout: 60000,
+    allowCredentials: b.ids.map(id => ({type: "public-key", id: keyBytes(id)}))}});
+  const r = await api("/api/faceid/verify", {id: b64u(c.rawId), clientDataJSON: b64u(c.response.clientDataJSON),
+    authenticatorData: b64u(c.response.authenticatorData), signature: b64u(c.response.signature)});
+  if (!r.ok) throw new Error(r.message);
+  unlock = r.unlock; unlockUntil = Date.now() + (r.seconds - 10) * 1000;
+}
+// Acting on a desk (an answer, a message, a start): Face ID first when asked.
+async function act(path, body) {
+  try {
+    if (face.required && Date.now() >= unlockUntil) await faceUnlock();
+    let r = await api(path, Object.assign({}, body, {unlock}));
+    if (r.needsFaceID) { unlockUntil = 0; await faceUnlock(); r = await api(path, Object.assign({}, body, {unlock})); }
+    return r;
+  } catch (e) {
+    return {message: cancelled(e) ? "Face ID was cancelled, so nothing was sent." : e.message};
+  }
+}
+async function faceState() {
+  try {
+    face = await api("/api/faceid/state", {});
+    const can = !!window.PublicKeyCredential && window.isSecureContext && face.here;
+    let say = "", setUp = false;
+    if (face.pairing && can) { say = "Set up Face ID: after this, answering a desk from a phone asks for it."; setUp = true; }
+    else if (face.pairing) say = "To set up Face ID, open Coldfall's https link on your phone. It's in Settings on the Mac, under General.";
+    else if (face.required && face.ids.length) say = "Answering from here asks for Face ID.";
+    else if (face.required) say = "Answering asks for Face ID, which this address can't do. Open Coldfall's https link on the phone you set up.";
+    else say = "Want Face ID before answering from your phone? Start it on the Mac: Settings, General, Set Up a Phone.";
+    $("facesay").textContent = say;
+    $("facekeys").classList.toggle("hidden", !setUp);
+    phoneShow();
+  } catch (e) {}
+}
+$("faceset").onclick = async () => {
+  try {
+    const b = await api("/api/faceid/begin", {});
+    if (!b.challenge) throw new Error(b.message);
+    const c = await navigator.credentials.create({publicKey: {challenge: keyBytes(b.challenge), rp: {id: b.rpId, name: "Coldfall"},
+      user: {id: crypto.getRandomValues(new Uint8Array(16)), name: "Coldfall inbox", displayName: "Coldfall inbox"},
+      pubKeyCredParams: [{type: "public-key", alg: -7}], timeout: 60000, attestation: "none",
+      authenticatorSelection: {authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged"},
+      excludeCredentials: b.ids.map(id => ({type: "public-key", id: keyBytes(id)}))}});
+    const r = await api("/api/faceid/register", {clientDataJSON: b64u(c.response.clientDataJSON), attestationObject: b64u(c.response.attestationObject)});
+    $("facesay").textContent = r.message || "";
+    if (r.ok) { $("facekeys").classList.add("hidden"); face.required = true; setTimeout(faceState, 3000); }
+  } catch (e) { $("facesay").textContent = cancelled(e) ? "Face ID setup was cancelled." : "Couldn't set up Face ID: " + e.message; }
+};
+
 function seen() { if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {}); }
 
 window.addEventListener("hashchange", show);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { show(); seen(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { show(); seen(); faceState(); } });
 show();
 seen();
 pushState();
+faceState();
 </script>
 </body>
 </html>

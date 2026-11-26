@@ -54,7 +54,13 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --drip             # Drip in each mood in a stand-in notch, to shot-drip.png (a snapshot never shows the real one)
 ../scripts/build-app.sh                                        # ~/Applications/Project Coldfall.app
 ../scripts/release-zip.sh                                      # the zip a GitHub release ships
+../scripts/release.sh X.Y.Z "summary"                          # the whole release (see below)
 ```
+
+`scripts/release.sh X.Y.Z "summary"` is the whole release: the CI checks, the soak test, the release
+commit and tag, push and wait for CI, the zip, the GitHub release, checking the download, and deploying
+the site. `--dry-run` changes nothing; `--skip-soak` skips the ten-minute soak. It never restarts
+Coldfall. Only with the person's go-ahead for that release.
 
 A release zip always comes from `scripts/release-zip.sh`, never a hand-made
 zip of the local bundle. The local bundle carries the builder's home path (in
@@ -148,12 +154,13 @@ desk's environment carries the real holders folder, and a throwaway Coldfall
 that inherits it shares that folder with the real one.
 
 The inbox (see `Inbox` in the core) can be tried the same way with `"inboxOn":true`
-in the throwaway ui.json: curl `http://127.0.0.1:47100/?t=<inbox-token>` for the
+in the throwaway ui.json: curl `http://127.0.0.1:47101/?t=<inbox-token>` (127.0.0.1 has its own port, 47101,
+which `tailscale serve` points at; the Tailscale address is on 47100) for the
 cookie, then the `/api/*` routes with `X-Coldfall: 1` on POSTs. A Mac can't reach
 its own Tailscale address, so the tailnet side is only checkable from another device.
 The page is also an app for a phone's Home Screen (`/manifest.webmanifest`, `/sw.js`, `/icon-512.png`)
 and takes notification subscriptions (`/api/push/*`; see `WebPush` in the core). A headless Chrome
-with a throwaway `--user-data-dir` pointed at `http://localhost:47100/?t=<inbox-token>` runs the
+with a throwaway `--user-data-dir` pointed at `http://localhost:47101/?t=<inbox-token>` runs the
 page's script for real (`--dump-dom`, `--screenshot`). Never subscribe a real device or send a
 notification from a test: that calls Apple's or Google's service. `COLDFALL_PUSH_DEBUG=1` prints how
 each send went (kind, whose service, its answer). `--settings General --settings-at "inbox for your

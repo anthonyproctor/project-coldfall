@@ -44,7 +44,25 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         promptHelper?.window?.makeKeyAndOrderFront(nil)
     }
 
+    /// Held for the app's life: no App Nap. macOS slows the timers of an app
+    /// that is in the background, and Coldfall's are the point of it (status
+    /// for coldfall-cli, desks noticed waiting, schedules). Measured: status
+    /// went 16 seconds between writes on an idle Mac, past what coldfall-cli
+    /// allows. The Mac can still sleep.
+    var noNap: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ n: Notification) {
+        // `--pair-phone`: open Face ID pairing at launch, as Settings' Set Up a
+        // Phone does (for trying it with a browser's virtual authenticator).
+        if CommandLine.arguments.contains("--pair-phone") { PhoneKey.openPairing() }
+        ExitLog.onMemoryMark = { [weak self] bytes, mark in
+            guard let t = MemoryUse.notice(bytes, mark: mark) else { return }
+            self?.notifier.notice(id: "memory", title: t.title, body: t.body)
+        }
+        if !CommandLine.arguments.contains("--snapshot") {
+            noNap = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
+                                                          reason: "Watching desks and answering coldfall-cli")
+        }
         #if COLDFALL_GHOSTTY
         // `--ghostty-demo [command]`: one Ghostty terminal in a window and
         // nothing else: no desks, no rail. For trying the new terminal by

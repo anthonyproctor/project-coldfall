@@ -57,14 +57,11 @@ final class InboxServer {
         addresses = Inbox.tailscaleAddresses() + ["127.0.0.1"]
         for ip in addresses {
             let p = NWParameters.tcp
-            p.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ip), port: NWEndpoint.Port(rawValue: port)!)
-            // Needed: without it Network.framework refuses the second address
-            // on the same port (EADDRINUSE), so 127.0.0.1, which `tailscale
-            // serve` forwards to, never listened. Tried and measured. The cost:
-            // a process of another account on this Mac that also asks for
-            // reuse could listen on the port beside Coldfall. The inbox trusts
-            // the Mac's own accounts (see SECURITY.md).
-            p.allowLocalEndpointReuse = true
+            // Each address on a port of its own (127.0.0.1 on localPort), with
+            // no port sharing: something else on the port makes this fail,
+            // rather than both listening and that one catching some requests.
+            let at = ip == "127.0.0.1" ? Inbox.localPort : port
+            p.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(ip), port: NWEndpoint.Port(rawValue: at)!)
             guard let l = try? NWListener(using: p) else { continue }
             l.newConnectionHandler = { [weak self] c in self?.serve(c, token: token) }
             // A port someone else holds fails here, not at start: drop the
@@ -96,7 +93,7 @@ final class InboxServer {
     /// Ask Tailscale for this Mac's name and whether it serves the inbox over
     /// HTTPS. Two read-only commands, off the main thread.
     func refreshFacts() {
-        let port = self.port
+        let port = Inbox.localPort      // what `tailscale serve` passes the https address to
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let f = Tailnet.inboxFacts(port: port)
             DispatchQueue.main.async {
