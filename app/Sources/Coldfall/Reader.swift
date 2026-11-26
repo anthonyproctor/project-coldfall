@@ -310,13 +310,21 @@ final class ReaderView: NSView {
 
     /// Agents rewrite files while you are reading them, so each tab watches its
     /// own file and refreshes in place, keeping scroll position.
+    private var pendingRefresh = Set<URL>()
+
     private func watch(_ url: URL) -> DispatchSourceFileSystemObject? {
         let fd = Darwin.open(url.path, O_EVTONLY)
         guard fd >= 0 else { return nil }
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
         src.setEventHandler { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self?.refresh(url) }
+            // One refresh per burst of writes, not one per write: each rebuilds
+            // and re-highlights up to 2MB on the main thread.
+            guard let self, self.pendingRefresh.insert(url).inserted else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.pendingRefresh.remove(url)
+                self?.refresh(url)
+            }
         }
         src.setCancelHandler { Darwin.close(fd) }
         src.resume()

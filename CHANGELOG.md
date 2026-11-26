@@ -8,6 +8,107 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+- **The inbox as an app on your phone.** Put the inbox behind Tailscale's own
+  HTTPS (Settings, General, shows the one command to run; Coldfall never runs
+  it), open the new https link on the phone and add it to the Home Screen. It
+  then opens from its own icon, full screen, and says "can't reach your Mac"
+  instead of a browser error when the Mac is asleep or Tailscale is off. Still
+  only your own devices, still only with the secret. If the app is opened
+  without the secret (a new link, a fresh install), it asks you to paste it
+  instead of showing a dead end.
+- **Notifications on your phone** when a desk needs you or finishes
+  (Settings, General, *Notify my phone…*; off by default, and each phone turns
+  it on for itself from the inbox). They go out only once the Mac has gone
+  untouched for two minutes, so not while you're sitting at it, and a desk
+  that finished just before you walked off is still told. A notification says
+  "A desk needs you" or "A desk is done", never which desk or why; tapping it
+  opens that desk, and the icon carries a count. *Send a test* on the phone
+  checks the whole path and says how the service answered.
+- **Needs You says when an agent's version is new to it.** Coldfall reads a
+  waiting desk's choices off its screen, and a vendor's update can change how
+  they are drawn. It now notes which version of its agent each desk was
+  started on, and which version it last read choices from, on your Mac. When
+  a desk is waiting and its choices can't be read, the card (and the phone
+  inbox) says so if Coldfall has no record of reading that version, for
+  example "Coldfall hasn't read choices from Claude Code 2.1.330 yet (it last
+  did on 2.1.280)". A question asked in words has no choices to read, so on a
+  version already read from the line stays as it was. `coldfall-cli versions
+  --read` lists each agent's installed version beside the one last read from.
+- **A security policy.** `SECURITY.md` says how to report a hole privately,
+  what counts and what doesn't.
+- **Tabs you can move, and group.** Drag a tab along the row and it stays
+  where you put it; a desk started later turns up beside its neighbour from
+  the desk list. Right-click a tab for *Add to New Tab Group…*: the group
+  gets a coloured label in front of its tabs and a line of that colour along
+  the top of each. Click the label to fold the group's tabs away (the desk on
+  screen and any desk that needs you stay out), right-click it to rename,
+  recolour or ungroup. Drop a tab between two of a group's tabs, or onto the
+  group at either end, and it joins; drag it off the end and it leaves. Tab
+  groups are about the tab row only: a desk's group in the desk list is
+  untouched, and so is desks.toml.
+
+### Fixed
+- **Coldfall no longer grows until the Mac runs out of memory.** The usage meter
+  read each Claude conversation changed this week from the start, every two
+  minutes, and with a busy desk's file in the hundreds of megabytes one pass
+  took longer than the gap between passes. They piled up; on one Mac Coldfall
+  reached about 100GB in half a day and macOS ended it, which also made
+  `coldfall-cli` say Coldfall wasn't running while it was still open but too
+  starved to answer. Now one pass runs at a time, each reads only what a
+  conversation gained since the last, and only the lines that carry usage are
+  parsed.
+- **Lighter all round.** The same "read only what's new" now covers the usage
+  window's breakdown, Codex's usage and Codex's quota (which was read on the
+  main thread on every desk switch). The desk list no longer redraws rows whose
+  look hasn't changed (every desk printing anything was restyled three times a
+  second), the Dock badge is set only when it changes, the memory reading runs
+  one at a time and half as often while Coldfall is in the background, settings
+  aren't saved every half minute for nothing, the file viewer reloads once per
+  burst of writes, and Drip draws no frames nobody can see.
+- **Removing a running desk ends it.** It used to keep running with no row and
+  no Stop, and a held one ran on past quitting until the Mac restarted.
+- **Things that were never let go of:** every Needs You card ever drawn (each
+  card held itself), the Needs You timer after closing it with its close
+  button (it read desks every 0.7s for the rest of the day), and what Coldfall
+  kept for a desk after it was removed or renamed (a renamed desk could also
+  notify again for a question already announced).
+- **Logs that grew for good** (held desks, wake, schedule runs) are trimmed at
+  launch.
+- **Coldfall notes its own memory** in exit.log at 1GB and each doubling, and
+  the next launch says when the last run stopped without a word.
+- **A desk that was answered somewhere else no longer keeps saying "needs
+  you".** The mark came off only for an answer typed into the desk, or when
+  the turn ended. A question answered another way (from Claude's own app on a
+  phone, by a click, or by Claude's auto mode allowing the thing itself) left
+  the desk orange while it worked, sometimes for minutes. For Claude desks,
+  Coldfall now reads the end of the conversation Claude keeps on this Mac:
+  once Claude has replied after the question, and no choices are left on the
+  desk's screen, the mark comes off within a few seconds. Other agents are
+  as before.
+
+### Changed
+- An agent's update is noticed when a desk starts, not only when Coldfall
+  launches, so a Coldfall left open for days still says "updated to…".
+- The inbox also answers to this Mac's Tailscale name, not only its address.
+- The inbox gives a phone its icon and Home Screen details without the
+  secret. They say only "Coldfall"; everything else still needs it.
+
+### Security
+- The README's "What Coldfall sends" now covers phone notifications.
+- Notifications are the first thing Coldfall sends anywhere on its own. They
+  go only to the notification services of the browser makers (Apple, Google,
+  Mozilla, Microsoft); a subscription pointing anywhere else is refused. The
+  message is encrypted for the one phone (RFC 8291), so the service sees when,
+  not what. The sender's contact in each request is the project's site, the
+  same for every copy of Coldfall, never anything of yours.
+- A request that reached the inbox through Tailscale Funnel (Tailscale's
+  public kind of serving) is refused, with or without the secret, and Settings
+  warns if Funnel is on for the inbox.
+- Over HTTPS the inbox's cookie is marked so it never travels any other way.
+- Serving over Tailscale's HTTPS puts this Mac's Tailscale name on public
+  certificate record. Settings says so beside the command.
+
 ## [0.3.52] - 2026-11-20
 
 One desk can wake another.

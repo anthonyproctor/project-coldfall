@@ -122,11 +122,13 @@ public struct Tokenomics {
         let fm = FileManager.default
         guard let projects = try? fm.contentsOfDirectory(atPath: root) else { return }
         var titles: [String: String?] = [:]
+        var live = Set<String>()
+        defer { tail.keep(live) }
         for proj in projects {
             let dir = (root as NSString).appendingPathComponent(proj)
             // Sessions and their subagents' transcripts, see Usage.transcripts.
             for (path, parent) in Usage.transcripts(in: dir) {
-                let hint = parent.flatMap { Usage.title(ofTranscript: $0, cache: &titles) }
+                live.insert(path)
                 guard let fp = UsageCache.fingerprint(path), fp.modified >= since else { continue }
                 // A transcript that has not changed gives the same answer as
                 // last time. Without this the panel re-parsed 800MB on every
@@ -135,11 +137,12 @@ public struct Tokenomics {
                     t.merge(hit)
                     continue
                 }
-                guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
-                var one = Tokenomics()
-                read(text, since: since, into: &one, desk: hint)
-                TokenomicsCache.store(one, for: path, key: fp.key, since: since)
-                t.merge(one)
+                // Only what the file gained since the last look (see LineTail).
+                guard let got = tail.read(path, tag: "\(since.timeIntervalSince1970)|\(Pricing.checked)",
+                                          fresh: { Reading(desk: parent.flatMap { Usage.title(ofTranscript: $0, cache: &titles) }) },
+                                          line: { take($0, into: &$1, since: since) }) else { continue }
+                TokenomicsCache.store(got.t, for: path, key: fp.key, since: since)
+                t.merge(got.t)
             }
         }
     }
@@ -196,12 +199,14 @@ public struct Tokenomics {
     /// A tool result's size in tokens, estimated at four characters a token,
     /// with images counted as images.
     public static func measure(_ content: Any?) -> (tokens: Int, images: Int) {
-        if let s = content as? String { return (s.count / 4, 0) }
+        // UTF-16 length, not Character count: the same for plain text, and
+        // known without walking a large result character by character.
+        if let s = content as? String { return (s.utf16.count / 4, 0) }
         guard let items = content as? [[String: Any]] else { return (0, 0) }
         var tok = 0, imgs = 0
         for it in items {
             if it["type"] as? String == "image" { imgs += 1; tok += imageTokens }
-            else if let s = it["text"] as? String { tok += s.count / 4 }
+            else if let s = it["text"] as? String { tok += s.utf16.count / 4 }
         }
         return (tok, imgs)
     }
@@ -219,96 +224,111 @@ public struct Tokenomics {
     /// `desk` is the desk to attribute to when the transcript names none
     /// (a subagent's), from its parent session.
     public static func read(_ text: String, since: Date, into t: inout Tokenomics, desk hint: String? = nil) {
-        var desk: String? = hint
+        var r = Reading(desk: hint)
+        r.t = t
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            take(Data(line.utf8), into: &r, since: since)
+        }
+        t = r.t
+    }
+
+    /// Reading one transcript: what it has added up to, and what a later line
+    /// needs from earlier ones.
+    struct Reading {
+        var t = Tokenomics()
+        var desk: String?
         var seen = Set<String>()
-        var first = true
         // When the previous turn in THIS transcript happened: a rebuild is a
         // big write after the cache had time to lapse, not any big write.
         var lastTurn: Date? = nil
         // Which tool each call was, so its result can be sized by kind.
         var tools: [String: String] = [:]
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        init(desk: String?) { self.desk = desk }
+    }
 
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let d = line.data(using: .utf8),
-                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
-            if desk == nil, o["type"] as? String == "custom-title" { desk = o["customTitle"] as? String }
-            // Tool calls and their results: what fills a conversation up.
-            if let msg = o["message"] as? [String: Any], let blocks = msg["content"] as? [[String: Any]],
-               let ts = o["timestamp"] as? String,
-               let when = iso.date(from: ts) ?? ISO8601DateFormatter().date(from: ts), when >= since {
-                for b in blocks {
-                    switch b["type"] as? String {
-                    case "tool_use":
-                        guard let id = b["id"] as? String, let name = b["name"] as? String,
-                              tools[id] == nil else { continue }
-                        tools[id] = name
-                        if Tokenomics.toolKind(name) == Tokenomics.subagentKind {
-                            t.all.subagents += 1
-                            if let n = desk, !n.isEmpty { t.byDesk[n, default: DeskStats()].subagents += 1 }
-                        }
-                    case "tool_result":
-                        guard let id = b["tool_use_id"] as? String, let name = tools[id] else { continue }
-                        let (tok, imgs) = Tokenomics.measure(b["content"])
-                        let kind = Tokenomics.toolKind(name)
-                        t.all.toolTokens[kind, default: 0] += tok
-                        t.all.images += imgs
-                        if let n = desk, !n.isEmpty {
-                            t.byDesk[n, default: DeskStats()].toolTokens[kind, default: 0] += tok
-                            t.byDesk[n, default: DeskStats()].images += imgs
-                        }
-                    default: break
+    /// Where reading each transcript stopped, between passes.
+    static let tail = LineTail<Reading>()
+
+    private static let marks = ["\"usage\"", "\"tool_use\"", "\"tool_result\"", "\"custom-title\""].map { Data($0.utf8) }
+
+    /// One line of a transcript.
+    static func take(_ line: Data, into r: inout Reading, since: Date) {
+        // Only a reply, a tool call or result, or the title says anything here.
+        guard marks.contains(where: { line.range(of: $0) != nil }),
+              let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return }
+        if r.desk == nil, o["type"] as? String == "custom-title" { r.desk = o["customTitle"] as? String }
+        let desk = r.desk
+        // Tool calls and their results: what fills a conversation up.
+        if let msg = o["message"] as? [String: Any], let blocks = msg["content"] as? [[String: Any]],
+           let ts = o["timestamp"] as? String, let when = Usage.iso(ts), when >= since {
+            for b in blocks {
+                switch b["type"] as? String {
+                case "tool_use":
+                    guard let id = b["id"] as? String, let name = b["name"] as? String,
+                          r.tools[id] == nil else { continue }
+                    r.tools[id] = name
+                    if Tokenomics.toolKind(name) == Tokenomics.subagentKind {
+                        r.t.all.subagents += 1
+                        if let n = desk, !n.isEmpty { r.t.byDesk[n, default: DeskStats()].subagents += 1 }
                     }
+                case "tool_result":
+                    guard let id = b["tool_use_id"] as? String, let name = r.tools[id] else { continue }
+                    let (tok, imgs) = Tokenomics.measure(b["content"])
+                    let kind = Tokenomics.toolKind(name)
+                    r.t.all.toolTokens[kind, default: 0] += tok
+                    r.t.all.images += imgs
+                    if let n = desk, !n.isEmpty {
+                        r.t.byDesk[n, default: DeskStats()].toolTokens[kind, default: 0] += tok
+                        r.t.byDesk[n, default: DeskStats()].images += imgs
+                    }
+                default: break
                 }
             }
-            guard let msg = o["message"] as? [String: Any],
-                  let u = msg["usage"] as? [String: Any] else { continue }
-            if let id = msg["id"] as? String {
-                if seen.contains(id) { continue }
-                seen.insert(id)
-            }
-            guard let ts = o["timestamp"] as? String,
-                  let when = iso.date(from: ts) ?? ISO8601DateFormatter().date(from: ts),
-                  when >= since else { continue }
-
-            let fresh = u["input_tokens"] as? Int ?? 0
-            let write = u["cache_creation_input_tokens"] as? Int ?? 0
-            let read = u["cache_read_input_tokens"] as? Int ?? 0
-            let out = u["output_tokens"] as? Int ?? 0
-            let model = msg["model"] as? String ?? ""
-            let (w5, w1) = Pricing.writeSplit(u)
-            let usd = Pricing.cost(model: model, fresh: fresh, read: read, write: write,
-                                   write5m: w5, write1h: w1, output: out)
-            let rebuildCost = Pricing.writeCost(model: model, write: write, write5m: w5, write1h: w1)
-
-            func add(_ s: inout DeskStats) {
-                s.turns += 1
-                s.fresh += fresh; s.cacheWrite += write; s.cacheRead += read; s.output += out
-                s.usd += usd
-                s.byModel[family(model), default: 0] += fresh + write + read + out
-                let sent = fresh + write + read
-                if sent > 0, s.floor == 0 || sent < s.floor { s.floor = sent }
-                // A rebuild: most of a big turn written to cache rather than
-                // read from it, an hour or more after the previous turn of
-                // the same conversation. A new conversation's first turn, a
-                // compaction and a big file read mid-flow all write a lot too,
-                // and used to be counted; none of them is a break.
-                if write >= Tokenomics.rebuildTokens, write > read,
-                   let prev = lastTurn, when.timeIntervalSince(prev) >= Tokenomics.cacheLifetime {
-                    s.rebuilds += 1
-                    s.rebuildUsd += rebuildCost
-                }
-            }
-            add(&t.all)
-            if let name = desk, !name.isEmpty {
-                var s = t.byDesk[name] ?? DeskStats()
-                add(&s)
-                t.byDesk[name] = s
-            }
-            first = false
-            lastTurn = when
         }
+        guard let msg = o["message"] as? [String: Any],
+              let u = msg["usage"] as? [String: Any] else { return }
+        if let id = msg["id"] as? String {
+            if r.seen.contains(id) { return }
+            r.seen.insert(id)
+        }
+        guard let ts = o["timestamp"] as? String, let when = Usage.iso(ts), when >= since else { return }
+
+        let fresh = u["input_tokens"] as? Int ?? 0
+        let write = u["cache_creation_input_tokens"] as? Int ?? 0
+        let read = u["cache_read_input_tokens"] as? Int ?? 0
+        let out = u["output_tokens"] as? Int ?? 0
+        let model = msg["model"] as? String ?? ""
+        let (w5, w1) = Pricing.writeSplit(u)
+        let usd = Pricing.cost(model: model, fresh: fresh, read: read, write: write,
+                               write5m: w5, write1h: w1, output: out)
+        let rebuildCost = Pricing.writeCost(model: model, write: write, write5m: w5, write1h: w1)
+        let lastTurn = r.lastTurn
+
+        func add(_ s: inout DeskStats) {
+            s.turns += 1
+            s.fresh += fresh; s.cacheWrite += write; s.cacheRead += read; s.output += out
+            s.usd += usd
+            s.byModel[family(model), default: 0] += fresh + write + read + out
+            let sent = fresh + write + read
+            if sent > 0, s.floor == 0 || sent < s.floor { s.floor = sent }
+            // A rebuild: most of a big turn written to cache rather than
+            // read from it, an hour or more after the previous turn of
+            // the same conversation. A new conversation's first turn, a
+            // compaction and a big file read mid-flow all write a lot too,
+            // and used to be counted; none of them is a break.
+            if write >= Tokenomics.rebuildTokens, write > read,
+               let prev = lastTurn, when.timeIntervalSince(prev) >= Tokenomics.cacheLifetime {
+                s.rebuilds += 1
+                s.rebuildUsd += rebuildCost
+            }
+        }
+        add(&r.t.all)
+        if let name = desk, !name.isEmpty {
+            var s = r.t.byDesk[name] ?? DeskStats()
+            add(&s)
+            r.t.byDesk[name] = s
+        }
+        r.lastTurn = when
     }
 }
 

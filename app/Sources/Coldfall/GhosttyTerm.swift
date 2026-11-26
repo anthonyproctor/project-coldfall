@@ -581,6 +581,9 @@ final class GhosttyPaneTerminal: PaneTerminal {
     weak var exitDelegate: LocalProcessTerminalViewDelegate?
 
     private var tap: HolderTap?
+    // A session dropped without ending its holder would leave the tap's
+    // thread and socket behind.
+    deinit { tap?.stop() }
     private var scanner = OscScanner()
     private var standing: ProgramStatus.Report?
     /// Keys Coldfall typed itself (a launch line) come back through the tap

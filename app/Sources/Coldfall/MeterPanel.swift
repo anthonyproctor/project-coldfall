@@ -40,6 +40,8 @@ final class MeterPanel: NSWindowController {
     private var tokens = Tokenomics()
     private var servers: [String: Int] = [:]
     private var scanned = false
+    /// A pass is under way, so another reload doesn't start a second one.
+    private var scanning = false
     private var since = Usage.weekStart()
 
     convenience init() {
@@ -150,6 +152,8 @@ final class MeterPanel: NSWindowController {
         draw()
         guard !scanned else { return }
         stack.addArrangedSubview(caps("SCANNING…"))
+        guard !scanning else { return }
+        scanning = true
         let since = self.since
         DispatchQueue.global(qos: .userInitiated).async {
             let accounts = ClaudeAccount.known()
@@ -172,6 +176,7 @@ final class MeterPanel: NSWindowController {
                 self.servers = servers
                 self.budgetDesks = budgeted
                 self.scanned = true
+                self.scanning = false
                 self.scannedAt = Date()
                 self.scannedSince = since
                 self.draw()

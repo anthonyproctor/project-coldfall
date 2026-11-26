@@ -113,7 +113,20 @@ public enum Limits {
     }
 
     /// Codex writes quota into its own session log, so nothing needs installing.
+    /// The last answer, for a few seconds: the strip asks on every desk
+    /// switch, and the walk stats every session file Codex ever wrote.
+    nonisolated(unsafe) private static var codexCached: (at: Date, v: VendorLimits?)?
+    private static let codexLock = NSLock()
+
     private static func fromCodexRollouts() -> VendorLimits? {
+        codexLock.lock(); defer { codexLock.unlock() }
+        if let c = codexCached, Date().timeIntervalSince(c.at) < 15 { return c.v }
+        let v = readCodexRollouts()
+        codexCached = (Date(), v)
+        return v
+    }
+
+    private static func readCodexRollouts() -> VendorLimits? {
         let root = NSString(string: "~/.codex/sessions").expandingTildeInPath
         guard let e = FileManager.default.enumerator(atPath: root) else { return nil }
         var newest: (Date, String)? = nil
@@ -146,39 +159,40 @@ public enum Limits {
         return nil
     }
 
-    /// Pull the last rate_limits record out of one rollout.
-    ///
-    /// Scanned BACKWARDS: the newest record wins anyway, so stopping at the
-    /// first hit from the end avoids JSON-parsing an entire multi-megabyte
-    /// file to throw away all but its final match.
+    /// Where reading each rollout stopped, and the last quota record in it.
+    static let rolloutTail = LineTail<VendorLimits?>()
+    private static let quotaMark = Data("rate_limits".utf8)
+
+    /// The last rate_limits record in one rollout. Read forward once and then
+    /// only what the file gains, keeping the newest record: reading the whole
+    /// file each time ran on the main thread on every desk switch.
     private static func limits(fromRollout path: String) -> VendorLimits? {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        rolloutTail.read(path, tag: "", fresh: { nil }) { line, last in
+            guard line.range(of: quotaMark) != nil, let v = limits(fromLine: line) else { return }
+            last = v
+        } ?? nil
+    }
 
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
-            guard let d = line.data(using: .utf8),
-                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let p = o["payload"] as? [String: Any],
-                  let rl = p["rate_limits"] as? [String: Any] else { continue }
-
-            var v = VendorLimits(vendor: "codex")
-            v.planType = rl["plan_type"] as? String
-            // Classify by window length, not by which key it happened to be in.
-            for key in ["primary", "secondary"] {
-                guard let w = rl[key] as? [String: Any],
-                      let mins = (w["window_minutes"] as? NSNumber)?.intValue else { continue }
-                let pct = (w["used_percent"] as? NSNumber)?.doubleValue
-                let reset = (w["resets_at"] as? NSNumber)?.doubleValue
-                if mins >= 7 * 24 * 60 - 60 { v.weekPct = pct; v.weekResetsAt = reset }
-                else { v.fiveHourPct = pct; v.fiveHourResetsAt = reset }
-            }
-            if let ts = o["timestamp"] as? String {
-                let f = ISO8601DateFormatter()
-                f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                v.at = (f.date(from: ts) ?? ISO8601DateFormatter().date(from: ts) ?? Date()).timeIntervalSince1970
-            }
-            return v             // scanning from the end, so the first hit IS the newest
+    /// One rollout line's quota, when it carries one.
+    static func limits(fromLine line: Data) -> VendorLimits? {
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              let p = o["payload"] as? [String: Any],
+              let rl = p["rate_limits"] as? [String: Any] else { return nil }
+        var v = VendorLimits(vendor: "codex")
+        v.planType = rl["plan_type"] as? String
+        // Classify by window length, not by which key it happened to be in.
+        for key in ["primary", "secondary"] {
+            guard let w = rl[key] as? [String: Any],
+                  let mins = (w["window_minutes"] as? NSNumber)?.intValue else { continue }
+            let pct = (w["used_percent"] as? NSNumber)?.doubleValue
+            let reset = (w["resets_at"] as? NSNumber)?.doubleValue
+            if mins >= 7 * 24 * 60 - 60 { v.weekPct = pct; v.weekResetsAt = reset }
+            else { v.fiveHourPct = pct; v.fiveHourResetsAt = reset }
         }
-        return nil
+        if let ts = o["timestamp"] as? String {
+            v.at = (Usage.iso(ts) ?? Date()).timeIntervalSince1970
+        }
+        return v
     }
 
     // MARK: - the Claude recorder

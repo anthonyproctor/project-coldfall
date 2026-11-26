@@ -47,11 +47,18 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         build()
         // Edited elsewhere while this is open: with nothing changed here,
         // just show the new list.
-        NotificationCenter.default.addObserver(forName: .coldfallDesksReloaded, object: nil, queue: .main) { [weak self] _ in
+        reloadObserver = NotificationCenter.default.addObserver(forName: .coldfallDesksReloaded, object: nil, queue: .main) { [weak self] _ in
             guard let self, !self.dirty else { return }
             self.reloadFromDisk()
         }
         w.center()
+    }
+
+    /// Settings is made afresh each time it opens; each one takes its
+    /// observer with it rather than leaving it registered for good.
+    private var reloadObserver: NSObjectProtocol?
+    deinit {
+        if let o = reloadObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     private func caps(_ s: String) -> NSTextField {
@@ -301,7 +308,10 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                 l.textColor = .systemOrange
                 updLines.append(l)
             } else if let ip = Inbox.tailscaleAddresses().first, let t = Inbox.token() {
-                let link = "http://\(ip):\(Inbox.defaultPort)/?t=\(t)"
+                // Over Tailscale's HTTPS when that's set up: the link a phone
+                // can keep as an app.
+                let served = inboxServed()
+                let link = (served?.url ?? "http://\(ip):\(Inbox.defaultPort)") + "/?t=\(t)"
                 inboxLink = link
                 let field = NSTextField(labelWithString: link)
                 field.isSelectable = true
@@ -323,6 +333,58 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
                     iv.heightAnchor.constraint(equalToConstant: 132).isActive = true
                     updLines.append(iv)
                     updLines.append(note("Scan it with your phone's camera, on the same Tailscale account."))
+                }
+                if let served {
+                    if served.funnel {
+                        let l = note("Tailscale Funnel is on for this address, which puts it on the public internet. "
+                            + "Coldfall refuses what comes in that way, but turn it off: run \"tailscale funnel reset\" in Terminal.")
+                        l.textColor = .systemOrange
+                        updLines.append(l)
+                    }
+                    updLines.append(note("This is the inbox over Tailscale's HTTPS, so a phone can keep it as an app. On an iPhone: "
+                        + "open the link in Safari, tap Share, then Add to Home Screen. It opens from its icon from then on. "
+                        + "If it asks for its link the first time, press Copy Link here and paste it on the phone."))
+                } else {
+                    updLines.append(note("To keep the inbox on your phone's Home Screen like an app, and get notifications there, "
+                        + "it has to be served over HTTPS. Tailscale can do that. Run this once in Terminal, then press Check Again:"))
+                    let cmd = Tailnet.serveCommand(port: Inbox.defaultPort)
+                    serveCommand = cmd
+                    let cf = NSTextField(labelWithString: cmd)
+                    cf.isSelectable = true
+                    cf.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                    cf.lineBreakMode = .byTruncatingMiddle
+                    cf.widthAnchor.constraint(lessThanOrEqualToConstant: 520).isActive = true
+                    let copyCmd = NSButton(title: "Copy Command", target: self, action: #selector(copyServeCommand))
+                    copyCmd.bezelStyle = .rounded
+                    let again = NSButton(title: "Check Again", target: self, action: #selector(checkServed))
+                    again.bezelStyle = .rounded
+                    serveSay.font = .systemFont(ofSize: 11); serveSay.textColor = .secondaryLabelColor
+                    let cmdRow = NSStackView(views: [copyCmd, again, serveSay])
+                    cmdRow.spacing = 8
+                    updLines.append(cf)
+                    updLines.append(cmdRow)
+                    updLines.append(note("Still only your own devices can reach it. One thing changes: Tailscale's certificate "
+                        + "for this Mac is on public record, so the Mac's Tailscale name can be looked up by anyone. "
+                        + "The page itself can't. Coldfall never runs this command for you."))
+                }
+                let pushSwitch = NSButton(checkboxWithTitle: "Notify my phone when a desk needs me or finishes",
+                                          target: self, action: #selector(togglePush(_:)))
+                pushSwitch.state = UIState.load().pushOn ? .on : .off
+                updLines.append(pushSwitch)
+                updLines.append(note("For a phone that has the inbox on its Home Screen and turned notifications on there. "
+                    + "Sent once this Mac has gone untouched for two minutes, so not while you're sitting at it. "
+                    + "It goes through the phone maker's notification service (Apple's for an iPhone), sealed so only "
+                    + "the phone can read it, and it says only \"A desk needs you\" or \"A desk is done\": never which desk or why."))
+                let count = WebPush.devices().count
+                if count > 0 {
+                    let forget = NSButton(title: "Forget Devices", target: self, action: #selector(forgetPushDevices))
+                    forget.bezelStyle = .rounded
+                    forget.toolTip = "No device gets notifications until it turns them on again from the inbox."
+                    let said = NSTextField(labelWithString: count == 1 ? "1 device gets them." : "\(count) devices get them.")
+                    said.font = .systemFont(ofSize: 11); said.textColor = .secondaryLabelColor
+                    let row = NSStackView(views: [said, forget])
+                    row.spacing = 8
+                    updLines.append(row)
                 }
             } else {
                 let l = note("Tailscale isn't connected on this Mac, so the inbox has nowhere to listen. "
@@ -656,6 +718,51 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
     }
 
     private var inboxLink: String?
+    private var serveCommand: String?
+    private let serveSay = NSTextField(labelWithString: "")
+
+    /// This Mac's name on the tailnet and the inbox's https address, as the
+    /// app last heard them from Tailscale; and a way to ask again.
+    static var inboxFacts: (() -> (name: String?, served: Tailnet.Served?))?
+    static var refreshInboxFacts: (() -> Void)?
+
+    /// A picture never asks Tailscale (the real name would be in it):
+    /// `--inbox-https demo.example.ts.net` gives it a made-up address.
+    private func inboxServed() -> Tailnet.Served? {
+        let args = CommandLine.arguments
+        if let k = args.firstIndex(of: "--inbox-https"), k + 1 < args.count {
+            return Tailnet.Served(url: "https://" + args[k + 1], host: args[k + 1], funnel: args.contains("--inbox-funnel"))
+        }
+        return SettingsWindow.inboxFacts?().served
+    }
+
+    /// Whether Settings can be rebuilt without dropping unsaved desk edits.
+    var canRebuild: Bool { !dirty }
+
+    @objc private func copyServeCommand() {
+        guard let c = serveCommand else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(c, forType: .string)
+    }
+
+    /// Ask Tailscale again. If it now serves the inbox, the app says so and
+    /// this tab is rebuilt with the https link; if not, say that.
+    @objc private func checkServed() {
+        serveSay.stringValue = "Checking…"
+        SettingsWindow.refreshInboxFacts?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            self?.serveSay.stringValue = "Not yet: Tailscale isn't serving the inbox."
+        }
+    }
+
+    @objc private func togglePush(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .coldfallPushChanged, object: sender.state == .on)
+    }
+
+    @objc private func forgetPushDevices() {
+        WebPush.removeAll()
+        rebuildForInbox()
+    }
 
     /// Settings is built once; to show the link (or take it away), open it
     /// again on this tab. Not with unsaved desk edits, which that would drop.
@@ -675,8 +782,21 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func copyInboxLink() {
         guard let l = inboxLink else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(l, forType: .string)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        // Marked as a secret and as passing (clipboard managers that honour
+        // these don't keep it), and taken off again in a minute if it is
+        // still the last thing copied.
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+        pb.declareTypes([.string, concealed, transient], owner: nil)
+        pb.setString(l, forType: .string)
+        pb.setString(l, forType: concealed)
+        pb.setString("", forType: transient)
+        let copied = pb.changeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            if NSPasteboard.general.changeCount == copied { NSPasteboard.general.clearContents() }
+        }
     }
 
     @objc private func newInboxLink() {

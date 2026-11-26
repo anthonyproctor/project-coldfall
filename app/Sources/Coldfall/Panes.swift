@@ -782,6 +782,15 @@ final class DeskSession {
     /// Whether the done hook speaks for this desk.
     var isSignaled: Bool { activityState.signaled }
     var alertEvent: Date? { activityState.alertEvent }
+    var endedAsked: Bool { activityState.endedAsked }
+    /// When it said it needs you, while that still stands.
+    var askedAt: Date? { activityState.needsYou ? activityState.alertEvent : nil }
+    /// Its agent has gone on past the question asked at `since` (see MovedOn).
+    func agentMovedOn(since: Date) {
+        guard askedAt == since else { return }
+        activityState.noteResumed()
+        reason = nil
+    }
     var turnEndedAt: Date? { activityState.turnEndedAt }
 
     /// The agent pane as text, scrollback included, the last `lines` rows.
@@ -926,6 +935,11 @@ final class DeskSession {
         // and a relaunch: that's the name its hooks report.
         launchName = ((hold ?? self.hold) == .reattach ? Holder.launchName(desk: desk.name) : nil) ?? desk.name
         panes[0].start(desk: desk, command: command, hold: hold ?? self.hold)
+        // A new start, not a held desk picked up again: the agent it runs is
+        // whatever is installed now (see PromptCheck).
+        if (hold ?? self.hold) != .reattach, command != nil {
+            NotificationCenter.default.post(name: .coldfallDeskStarted, object: self)
+        }
         for p in panes.dropFirst() { p.start(desk: desk, command: nil) }
     }
 

@@ -37,8 +37,21 @@ enum ExitLog {
             try? text.split(separator: "\n").suffix(100).joined(separator: "\n").appending("\n")
                 .write(toFile: path, atomically: true, encoding: .utf8)
         }
+        // The last run stopping without a word is worth saying: macOS ending
+        // it for memory, or a crash, leaves nothing else behind.
+        let before = (try? String(contentsOfFile: path, encoding: .utf8)).flatMap { MemoryUse.unexplained(log: $0) }
         fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600)
+        if let b = before {
+            note("the run before this one stopped without saying why (macOS ending it, or a crash); its last line was: \(b)")
+        }
         note("started")
+
+        // Memory, once a minute: a line at 1GB and at each doubling after.
+        Timer.inEveryMode(withTimeInterval: 60, repeats: true) { _ in
+            guard let now = MemoryUse.footprint(), let m = MemoryUse.mark(now, noted: ExitLog.memoryNoted) else { return }
+            ExitLog.memoryNoted = m
+            note("memory: \(MemoryUse.text(now)), past \(MemoryUse.text(m))")
+        }
 
         // Signals that would stop the app: note who sent it, then stop the
         // way the signal meant. The handler only records; a timer on the
@@ -63,6 +76,9 @@ enum ExitLog {
         }
         atexit { if !ExitLog.normal { ExitLog.note("exit() with no reason recorded") } }
     }
+
+    /// The highest memory mark written down this run.
+    nonisolated(unsafe) static var memoryNoted: UInt64 = 0
 
     // Written by the handler, read by the timer.
     nonisolated(unsafe) static var gotSignal: Int32 = 0

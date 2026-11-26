@@ -123,6 +123,8 @@ final class SidebarView: NSView {
     var agentNews: [AgentVersions.Change] = [] {
         didSet { if agentNews != oldValue, let d = lastDesks { build(desks: d) } }
     }
+    /// The version each agent's choices were last read on, for the tooltip.
+    var choicesRead: [String: String] = [:]
     var onOpenNews: ((AgentVersions.Change) -> Void)?
     var onDismissNews: ((AgentVersions.Change) -> Void)?
     var onAddOffer: ((String) -> Void)?
@@ -236,7 +238,8 @@ final class SidebarView: NSView {
             let n = OfferStrip(frame: NSRect(x: 10, y: y, width: w - 20, height: 50))
             n.autoresizingMask = [.width]
             n.configure(text: change.line, primary: "What's New", secondary: "Dismiss",
-                        tip: change.detail + " What's New opens its own release notes.")
+                        tip: change.detail + " What's New opens its own release notes."
+                            + (PromptCheck.afterUpdate(change, read: choicesRead).map { " " + $0 } ?? ""))
             n.onAdd = { [weak self] in self?.onOpenNews?(change) }
             n.onDismiss = { [weak self] in self?.onDismissNews?(change) }
             addSubview(n)
@@ -906,7 +909,14 @@ final class GroupRow: NSView {
     }
     required init?(coder: NSCoder) { nil }
 
+    /// What it last drew from: called every activity tick, it skips the work
+    /// (and the redraw) when nothing it shows has changed.
+    private var drawnFrom: (String, Bool, [Mark], NSColor)?
+
     func configure(name n: String, desks: [DeskStatus], selected sel: Bool) {
+        let key = (n, sel, desks.map(Mark.init), Theme.ui.text)
+        if let d = drawnFrom, d.0 == key.0, d.1 == key.1, d.2 == key.2, d.3 == key.3 { return }
+        drawnFrom = key
         selected = sel
         name.stringValue = n
         name.textColor = Theme.ui.text

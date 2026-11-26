@@ -35,6 +35,13 @@ public struct UIState: Codable {
     public var agentVersions: [String: String] = [:]
     /// Updates not yet dismissed: runtime -> [from, to].
     public var agentUpdates: [String: [String]] = [:]
+    /// The agent each running desk was started on: launch name ->
+    /// [runtime, version] (see PromptCheck).
+    public var deskAgents: [String: [String]] = [:]
+    /// The version of each agent a desk's choices were last read from.
+    public var choicesRead: [String: String] = [:]
+    /// The tab row as you arranged it: order and groups (see TabLayout).
+    public var tabLayout = TabLayout()
     /// The desk on screen when the app last ran, to open again at launch.
     public var lastDesk: String?
     /// Picking a desk that isn't running shows its Start button first,
@@ -54,6 +61,9 @@ public struct UIState: Codable {
     public var notifyDesks: Bool = true
     /// The inbox page over Tailscale (see Inbox). Off until turned on.
     public var inboxOn: Bool = false
+    /// Notifications to phones that asked for them from the inbox (see
+    /// WebPush). Off until turned on: it is the one thing that calls out.
+    public var pushOn: Bool = false
     /// One line per desk in the rail (View, Compact Desk List).
     public var compactRail: Bool = true
     /// Drip, the character in the notch (see Companion). Beta.
@@ -89,6 +99,9 @@ public struct UIState: Codable {
         wrappedUp = try c.decodeIfPresent([String: Double].self, forKey: .wrappedUp) ?? [:]
         agentVersions = try c.decodeIfPresent([String: String].self, forKey: .agentVersions) ?? [:]
         agentUpdates = try c.decodeIfPresent([String: [String]].self, forKey: .agentUpdates) ?? [:]
+        deskAgents = try c.decodeIfPresent([String: [String]].self, forKey: .deskAgents) ?? [:]
+        choicesRead = try c.decodeIfPresent([String: String].self, forKey: .choicesRead) ?? [:]
+        tabLayout = (try? c.decodeIfPresent(TabLayout.self, forKey: .tabLayout)) ?? TabLayout()
         lastDesk = try c.decodeIfPresent(String.self, forKey: .lastDesk)
         confirmStart = try c.decodeIfPresent(Bool.self, forKey: .confirmStart) ?? true
         readyOnTop = try c.decodeIfPresent(Bool.self, forKey: .readyOnTop) ?? true
@@ -96,6 +109,7 @@ public struct UIState: Codable {
         runningDesks = try c.decodeIfPresent([String].self, forKey: .runningDesks) ?? []
         notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
         inboxOn = try c.decodeIfPresent(Bool.self, forKey: .inboxOn) ?? false
+        pushOn = try c.decodeIfPresent(Bool.self, forKey: .pushOn) ?? false
         compactRail = try c.decodeIfPresent(Bool.self, forKey: .compactRail) ?? true
         dripOn = try c.decodeIfPresent(Bool.self, forKey: .dripOn) ?? true
     }

@@ -41,15 +41,18 @@ public enum Usage {
 
     // Prices are in Pricing: one dated table, per-model cache rates.
 
-    private static func iso(_ s: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
-    }
+    // Made once: building a formatter per line was a large share of a scan's
+    // time (each one sets up an ICU locale). Formatters are safe to share
+    // across threads for reading and writing dates.
+    private static let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
+    private static let dayFormat: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }()
 
-    private static func dayKey(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d)
-    }
+    static func iso(_ s: String) -> Date? { isoFrac.date(from: s) ?? isoPlain.date(from: s) }
+
+    static func dayKey(_ d: Date) -> String { dayFormat.string(from: d) }
 
     /// Anthropic's weekly window resets Saturday. Codex has its own cadence, but
     /// one shared boundary keeps the comparison honest.
@@ -75,8 +78,16 @@ public enum Usage {
     /// `accounts`: Claude accounts besides the default one, each counted
     /// under its own name ("claude-second") so two plans can be compared.
     /// `claudeRoot` is overridable for tests.
+    private static let scanning = NSLock()
+
     public static func scan(since: Date, accounts: [ClaudeAccount] = [],
                             claudeRoot: String = NSString(string: "~/.claude/projects").expandingTildeInPath) -> Report {
+        // One pass at a time. The meter strip, the usage panel and the desk
+        // budgets each ask on their own queue; passes that overlapped stacked
+        // up (each one slower for the others) until a Mac ran out of memory.
+        // A caller that waits here gets a quick pass: the one before it has
+        // just cached everything.
+        scanning.lock(); defer { scanning.unlock() }
         var r = Report()
         var live = Set<String>()
         scanClaude(since: since, into: &r, live: &live, root: claudeRoot)
@@ -86,6 +97,7 @@ public enum Usage {
         scanCodex(since: since, into: &r, live: &live)
         scanCopilot(since: since, into: &r)
         UsageCache.flush(keeping: live)
+        ClaudeTail.keep(live)
         return r
     }
 
@@ -117,7 +129,6 @@ public enum Usage {
                 live.insert(path)
                 // A subagent's transcript has no title of its own; its spend
                 // belongs to the desk that ran it.
-                let hint = parent.flatMap { title(ofTranscript: $0, cache: &titles) }
 
                 // A file untouched since before the window opened cannot
                 // contribute to it. This gate was missing entirely, and on a
@@ -132,38 +143,11 @@ public enum Usage {
                     continue
                 }
 
-                guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
-                var mine: [String: UsageSlice] = [:]
-
-                var desk: String? = hint
-                var seen = Set<String>()        // per-file dedupe: that is where dupes come from
-                for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-                    guard let d = line.data(using: .utf8),
-                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
-
-                    if desk == nil, o["type"] as? String == "custom-title" {
-                        desk = o["customTitle"] as? String
-                    }
-                    guard let msg = o["message"] as? [String: Any],
-                          let u = msg["usage"] as? [String: Any] else { continue }
-                    if let id = msg["id"] as? String {
-                        if seen.contains(id) { continue }
-                        seen.insert(id)
-                    }
-                    guard let ts = o["timestamp"] as? String, let when = iso(ts), when >= since else { continue }
-
-                    let i = u["input_tokens"] as? Int ?? 0
-                    let cw = u["cache_creation_input_tokens"] as? Int ?? 0
-                    let cr = u["cache_read_input_tokens"] as? Int ?? 0
-                    let out = u["output_tokens"] as? Int ?? 0
-                    let model = msg["model"] as? String ?? ""
-                    let (w5, w1) = Pricing.writeSplit(u)
-                    let usd = Pricing.cost(model: model, fresh: i, read: cr, write: cw,
-                                           write5m: w5, write1h: w1, output: out)
-                    collect(&mine, vendor: vendor, desk: desk,
-                            tokens: i + cw + cr + out, usd: usd, when: when)
-                }
-                let slices = Array(mine.values)
+                // Read only what was added since the last pass (see ClaudeTail).
+                // The parent's title is looked up only when reading starts from
+                // the top; searching a big parent each pass was most of the work.
+                guard let slices = ClaudeTail.read(path, since: since, vendor: vendor,
+                                                   desk: parent.flatMap { title(ofTranscript: $0, cache: &titles) }) else { continue }
                 UsageCache.store(slices, for: path, key: fp.key, since: since)
                 for sl in slices { addSlice(&r, sl) }
             }
@@ -216,7 +200,7 @@ public enum Usage {
 
     /// Accumulate one message into a per-file bundle, keyed so a whole
     /// transcript collapses to a handful of rows before it is cached.
-    private static func collect(_ into: inout [String: UsageSlice], vendor: String,
+    static func collect(_ into: inout [String: UsageSlice], vendor: String,
                                 desk: String?, tokens: Int, usd: Double?, when: Date) {
         let day = dayKey(when)
         let k = "\(vendor)|\(desk ?? "")|\(day)"
@@ -245,26 +229,32 @@ public enum Usage {
         r.byDay[sl.day, default: [:]][sl.vendor, default: 0] += sl.tokens
     }
 
-    private static func scanCodex(since: Date, into r: inout Report, live: inout Set<String>) {
-        let root = NSString(string: "~/.codex/sessions").expandingTildeInPath
+    /// Where reading each Codex session stopped, between passes.
+    static let codexTail = LineTail<[String: UsageSlice]>()
+    private static let codexMark = Data("token_usage_record".utf8)
+
+    private static func scanCodex(since: Date, into r: inout Report, live: inout Set<String>,
+                                  root: String = NSString(string: "~/.codex/sessions").expandingTildeInPath) {
         guard let e = FileManager.default.enumerator(atPath: root) else { return }
+        var seen = Set<String>()
+        defer { codexTail.keep(seen) }
         for case let rel as String in e where rel.hasSuffix(".jsonl") {
             let path = (root as NSString).appendingPathComponent(rel)
-            live.insert(path)
+            live.insert(path); seen.insert(path)
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-                  let m = attrs[.modificationDate] as? Date, m >= since,
-                  let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
-            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-                guard let d = line.data(using: .utf8),
-                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  let m = attrs[.modificationDate] as? Date, m >= since else { continue }
+            // Only what the session gained since the last pass (see LineTail).
+            let got = codexTail.read(path, tag: "\(since.timeIntervalSince1970)", fresh: { [:] }) { line, mine in
+                guard line.range(of: codexMark) != nil,
+                      let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                       o["type"] as? String == "token_usage_record",
                       let p = o["payload"] as? [String: Any],
                       let u = p["usage"] as? [String: Any],
-                      let ts = o["timestamp"] as? String, let when = iso(ts), when >= since else { continue }
+                      let ts = o["timestamp"] as? String, let when = iso(ts), when >= since else { return }
                 // Pricing for these models is not something this tool should guess.
-                add(&r, vendor: "codex", desk: nil,
-                    tokens: u["total_tokens"] as? Int ?? 0, usd: nil, when: when)
+                collect(&mine, vendor: "codex", desk: nil, tokens: u["total_tokens"] as? Int ?? 0, usd: nil, when: when)
             }
+            for sl in (got ?? [:]).values { addSlice(&r, sl) }
         }
     }
 

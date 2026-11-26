@@ -246,3 +246,192 @@ public struct DeskCounts: Equatable {
         return out
     }
 }
+
+/// A set of tabs kept together under a coloured label, the way a browser
+/// groups tabs. It is about the tab row only: a desk's group in the desk
+/// list (desks.toml) is something else, and stays as it is.
+public struct TabGroup: Codable, Equatable {
+    public var name: String
+    /// A name from DeskColor.palette.
+    public var color: String
+    public var desks: [String]
+    /// Folded to its label: its tabs are put away until you click it.
+    public var collapsed: Bool
+    public init(name: String, color: String, desks: [String], collapsed: Bool = false) {
+        self.name = name; self.color = color; self.desks = desks; self.collapsed = collapsed
+    }
+}
+
+/// Your own arrangement of the tab row: the order you dragged tabs into, and
+/// the groups you made. Empty, the row is in the desk list's order, as it
+/// was before tabs could be moved.
+public struct TabLayout: Codable, Equatable {
+    public var order: [String] = []
+    public var groups: [TabGroup] = []
+    public init(order: [String] = [], groups: [TabGroup] = []) { self.order = order; self.groups = groups }
+
+    /// One thing in the row.
+    public enum Item: Equatable {
+        /// A tab, and the group it is in (an index into `groups`).
+        case tab(String, group: Int?)
+        /// A group's label, with how many of its tabs are put away.
+        case label(group: Int, hidden: Int)
+    }
+
+    public func group(of desk: String) -> Int? { groups.firstIndex { $0.desks.contains(desk) } }
+
+    /// `names` (the tabs there are, in the desk list's order) in your order.
+    /// A tab you never placed sits after the one before it in the desk
+    /// list, so a desk just started turns up where it always would have.
+    public func ordered(_ names: [String]) -> [String] {
+        var out = order.filter(names.contains)
+        for (i, n) in names.enumerated() where !out.contains(n) {
+            if let before = names[..<i].last(where: out.contains), let at = out.firstIndex(of: before) {
+                out.insert(n, at: at + 1)
+            } else {
+                out.insert(n, at: 0)
+            }
+        }
+        return out
+    }
+
+    /// The row as drawn: tabs in your order, each group's tabs together
+    /// behind its label, where the first of them stands. A collapsed group
+    /// shows only its label, plus any tab that can't be put away: the desk
+    /// on screen, and one that needs you.
+    public func arrange(_ names: [String], current: String?, asking: Set<String> = []) -> [Item] {
+        let sorted = ordered(names)
+        var out: [Item] = []
+        var done = Set<Int>()
+        for n in sorted {
+            guard let g = group(of: n) else { out.append(.tab(n, group: nil)); continue }
+            guard !done.contains(g) else { continue }
+            done.insert(g)
+            let members = sorted.filter { groups[g].desks.contains($0) }
+            let shown = groups[g].collapsed ? members.filter { $0 == current || asking.contains($0) } : members
+            out.append(.label(group: g, hidden: members.count - shown.count))
+            out += shown.map { .tab($0, group: g) }
+        }
+        return out
+    }
+
+    /// The tabs of an arrangement, in order.
+    public static func tabs(_ items: [Item]) -> [String] {
+        items.compactMap { if case .tab(let n, _) = $0 { return n } else { return nil } }
+    }
+
+    /// Drop `name` in front of `before` (nil: at the end). `shown` is the
+    /// row's tabs as drawn, and `into` the group the pointer was over when
+    /// it let go (its label and its tabs), if any. Between two tabs of one
+    /// group the tab joins that group, wherever the pointer was. At a
+    /// group's edge it joins when it was let go over the group, and
+    /// otherwise lands outside: that is how a tab is dragged out.
+    public mutating func move(_ name: String, before: String?, shown: [String], into: Int? = nil) {
+        guard shown.contains(name), before != name else { return }
+        var row = shown.filter { $0 != name }
+        let at = before.flatMap(row.firstIndex(of:)) ?? row.count
+        row.insert(name, at: at)
+        let left = at > 0 ? group(of: row[at - 1]) : nil
+        let right = at + 1 < row.count ? group(of: row[at + 1]) : nil
+        let own = group(of: name)
+        let target: Int?
+        if let l = left, l == right { target = l }
+        else if let g = into, g == left || g == right { target = g }
+        else { target = nil }
+        if target != own {
+            if let o = own { groups[o].desks.removeAll { $0 == name } }
+            if let t = target { groups[t].desks.append(name) }
+        }
+        remember(row)
+        dropEmpty()
+    }
+
+    /// Keep `row` as the order, with the tabs that aren't showing now left
+    /// where they stood: each after whatever came before it.
+    mutating func remember(_ row: [String]) {
+        var out = row
+        for (i, n) in order.enumerated() where !out.contains(n) {
+            if i > 0, let at = out.firstIndex(of: order[i - 1]) { out.insert(n, at: at + 1) }
+            else { out.insert(n, at: 0) }
+        }
+        order = out
+    }
+
+    mutating func dropEmpty() { groups.removeAll { $0.desks.isEmpty } }
+
+    /// The first palette colour no group is using, or the first of all.
+    public var nextColor: String {
+        let used = Set(groups.map(\.color))
+        return DeskColor.palette.map(\.name).first { !used.contains($0) } ?? DeskColor.palette[0].name
+    }
+
+    /// A new group holding `desk`, taken out of any group it was in. The
+    /// tab stays where it is; it gains a label.
+    public mutating func newGroup(named name: String, with desk: String) {
+        let color = nextColor
+        for i in groups.indices { groups[i].desks.removeAll { $0 == desk } }
+        groups.append(TabGroup(name: TabLayout.clean(name), color: color, desks: [desk]))
+        dropEmpty()
+    }
+
+    /// Put `desk` in the group at `index`, after its other tabs.
+    public mutating func add(_ desk: String, to index: Int, shown: [String]) {
+        guard groups.indices.contains(index), !groups[index].desks.contains(desk) else { return }
+        for i in groups.indices { groups[i].desks.removeAll { $0 == desk } }
+        // Stand it after the group's last tab in the row.
+        var row = ordered(shown).filter { $0 != desk }
+        if let last = row.last(where: { groups[index].desks.contains($0) }), let at = row.firstIndex(of: last) {
+            row.insert(desk, at: at + 1)
+            remember(row)
+        }
+        groups[index].desks.append(desk)
+        dropEmpty()
+    }
+
+    /// Take `desk` out of its group. Its tab stays where it is in the order,
+    /// which puts it just outside the group's tabs.
+    public mutating func ungroup(_ desk: String) {
+        for i in groups.indices { groups[i].desks.removeAll { $0 == desk } }
+        dropEmpty()
+    }
+
+    /// Dissolve the group at `index`: its tabs stay, the label goes.
+    public mutating func dissolve(_ index: Int) {
+        guard groups.indices.contains(index) else { return }
+        groups.remove(at: index)
+    }
+
+    public mutating func rename(_ index: Int, to name: String) {
+        guard groups.indices.contains(index) else { return }
+        groups[index].name = TabLayout.clean(name)
+    }
+
+    public mutating func recolor(_ index: Int, to color: String) {
+        guard groups.indices.contains(index), DeskColor.palette.contains(where: { $0.name == color }) else { return }
+        groups[index].color = color
+    }
+
+    public mutating func toggle(_ index: Int) {
+        guard groups.indices.contains(index) else { return }
+        groups[index].collapsed.toggle()
+    }
+
+    /// A desk was renamed: its place and its group follow it.
+    public mutating func renamed(from old: String, to new: String) {
+        order = order.map { $0 == old ? new : $0 }
+        for i in groups.indices { groups[i].desks = groups[i].desks.map { $0 == old ? new : $0 } }
+    }
+
+    /// Forget desks that no longer exist.
+    public mutating func prune(keeping names: Set<String>) {
+        order.removeAll { !names.contains($0) }
+        for i in groups.indices { groups[i].desks.removeAll { !names.contains($0) } }
+        dropEmpty()
+    }
+
+    /// A label's text: one line, not long, never empty.
+    public static func clean(_ name: String) -> String {
+        let one = name.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return one.isEmpty ? "Group" : String(one.prefix(24))
+    }
+}

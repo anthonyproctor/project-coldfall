@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import ColdfallCore
 
 // Regression tests for faults that actually shipped today, not invented cases.
@@ -20,6 +21,7 @@ DoneSignal.logPath = testSandbox + "/share/signals.log"
 ScreenChange.logPath = testSandbox + "/share/logs/green.log"
 RemoteOpen.root = testSandbox + "/share/remote"
 Wake.root = testSandbox + "/share/wake"
+WebPush.root = testSandbox + "/share/push"
 // Short: a unix socket path has to fit in 104 bytes.
 Holder.root = NSTemporaryDirectory() + "cfh\(getpid())"
 /// Whether a real usage cache existed before any test ran. Lets the final
@@ -542,6 +544,223 @@ do {
     // returning a key that would match every other missing file.
     check("fingerprinting a missing file returns nil",
           UsageCache.fingerprint("/nope/missing.jsonl") == nil)
+}
+
+// MARK: - reading a growing transcript (ClaudeTail)
+//
+// Each pass reads only what a file gained. Whatever it reads in pieces must
+// add up to what one read of the whole file gives.
+
+print("\nreading a growing transcript")
+do {
+    let dir = testSandbox + "/tail-\(UUID().uuidString)"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: dir); ClaudeTail.reset() }
+    let f = dir + "/s.jsonl"
+    let since = Date(timeIntervalSince1970: 1_790_000_000)   // 2026-09-21
+    func reply(_ id: String, _ tokens: Int, at: String = "2026-09-22T10:00:00.000Z") -> String {
+        "{\"type\":\"assistant\",\"timestamp\":\"\(at)\",\"message\":{\"id\":\"\(id)\",\"model\":\"claude-sonnet-4-5\",\"usage\":{\"input_tokens\":\(tokens),\"output_tokens\":0}}}\n"
+    }
+    let tool = "{\"type\":\"user\",\"message\":{\"content\":\"a long tool result that mentions usage in words\"}}\n"
+    func total(_ s: [UsageSlice]?) -> Int { (s ?? []).reduce(0) { $0 + $1.tokens } }
+    func calls(_ s: [UsageSlice]?) -> Int { (s ?? []).reduce(0) { $0 + $1.calls } }
+    func append(_ t: String) {
+        let h = FileHandle(forWritingAtPath: f)!; h.seekToEndOfFile(); h.write(Data(t.utf8)); h.closeFile()
+    }
+
+    try? (reply("a", 10) + tool + reply("a", 10) + reply("b", 20)).write(toFile: f, atomically: true, encoding: .utf8)
+    var s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("a reply written twice counts once", total(s), 30)
+    eq("and as one call each", calls(s), 2)
+
+    append(reply("c", 5) + reply("b", 20))
+    s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("lines added later are counted, a repeat of an earlier one isn't", total(s), 35)
+
+    // A line Claude is still writing (no newline yet) waits for the next pass.
+    append(String(reply("d", 7).dropLast(2)))
+    s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("a half-written line isn't read yet", total(s), 35)
+    append("}")
+    s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("and is once it ends, newline or not", total(s), 42)
+    append("\n")
+    s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("its newline arriving later doesn't count it twice", total(s), 42)
+
+    append(reply("old", 1000, at: "2026-09-01T10:00:00.000Z"))
+    s = ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)
+    eq("a reply from before the window isn't counted", total(s), 42)
+
+    // Read in pieces, the same as read whole.
+    ClaudeTail.reset()
+    eq("starting over gives the same total", total(ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)), 42)
+
+    // Rewritten shorter (or replaced): counted again from the start.
+    try? (reply("z", 3)).write(toFile: f, atomically: true, encoding: .utf8)
+    eq("a file rewritten shorter is read again from the start",
+       total(ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)), 3)
+
+    // Same length or longer but different from the first bytes: also a new file.
+    try? (reply("y", 4) + reply("x", 4)).write(toFile: f, atomically: true, encoding: .utf8)
+    eq("a file replaced by a longer one is read again too",
+       total(ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)), 8)
+
+    // Another window: counted again for that window.
+    eq("a different window starts over",
+       total(ClaudeTail.read(f, since: Date(timeIntervalSince1970: 1_800_000_000), vendor: "claude", desk: nil)), 0)
+
+    // The desk's name, from the title record, labels what follows it.
+    let g = dir + "/t.jsonl"
+    try? ("{\"type\":\"custom-title\",\"customTitle\":\"api\"}\n" + reply("t", 9)).write(toFile: g, atomically: true, encoding: .utf8)
+    eq("the title names the desk", ClaudeTail.read(g, since: since, vendor: "claude", desk: nil)?.first?.desk, "api")
+    ClaudeTail.reset()
+    eq("a desk given up front is used", ClaudeTail.read(f, since: since, vendor: "claude", desk: "docs")?.first?.desk, "docs")
+
+    ClaudeTail.keep([g])
+    eq("a file not seen in a pass is forgotten (read again in full next time)",
+       total(ClaudeTail.read(f, since: since, vendor: "claude", desk: nil)), 8)
+
+    eq("a missing file is nil", total(ClaudeTail.read(dir + "/none.jsonl", since: since, vendor: "claude", desk: nil)), 0)
+}
+
+print("\nreading only what a file gained (LineTail)")
+do {
+    let dir = testSandbox + "/linetail-\(UUID().uuidString)"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+    let f = dir + "/l.jsonl"
+    let tail = LineTail<Int>(chunk: 64)     // small chunks: lines straddle them
+    var handed = 0
+    func pass(_ tag: String = "w") -> Int? {
+        tail.read(f, tag: tag, fresh: { 0 }, line: { _, n in n += 1; handed += 1 })
+    }
+    let line = "{\"k\":\"" + String(repeating: "v", count: 50) + "\"}\n"
+    try? String(repeating: line, count: 1000).write(toFile: f, atomically: true, encoding: .utf8)
+    eq("the first pass reads every line", pass(), 1000)
+    handed = 0
+    eq("a pass with nothing new reads nothing", pass(), 1000)
+    eq("and hands no line over", handed, 0)
+    let h = FileHandle(forWritingAtPath: f)!; h.seekToEndOfFile(); h.write(Data(String(repeating: line, count: 3).utf8)); h.closeFile()
+    eq("a pass after three more lines counts them", pass(), 1003)
+    eq("having read only those three", handed, 3)
+    handed = 0
+    eq("another tag starts over", pass("x"), 1003)
+    eq("reading everything again for it", handed, 1003)
+    tail.keep([])
+    eq("forgotten files aren't kept", tail.count, 0)
+}
+
+print("\nmemory notes")
+do {
+    let g: UInt64 = 1 << 30
+    eq("under 1GB is nothing to note", MemoryUse.mark(800 << 20, noted: 0), nil)
+    eq("1.2GB is past the 1GB mark", MemoryUse.mark(g + g / 5, noted: 0), g)
+    eq("once noted, not again", MemoryUse.mark(g + g / 2, noted: g), nil)
+    eq("3GB is past 2GB", MemoryUse.mark(3 * g, noted: g), 2 * g)
+    eq("100GB is past 64GB", MemoryUse.mark(100 * g, noted: 2 * g), 64 * g)
+    check("this process's footprint can be read", (MemoryUse.footprint() ?? 0) > 0)
+    eq("as words", MemoryUse.text(g + g / 2), "1.5GB")
+    let quit = "2026-11-21T21:36:48-07:00 pid 1 v0.3.52 started\n2026-11-21T21:37:08-07:00 pid 1 v0.3.52 quit, no held desks to ask about\n"
+    eq("a run that said why it stopped", MemoryUse.unexplained(log: quit), nil)
+    let gone = quit + "2026-11-22T15:35:42-07:00 pid 2 v0.3.52 started\n"
+    eq("a run that just stopped", MemoryUse.unexplained(log: gone), "2026-11-22T15:35:42-07:00 pid 2 v0.3.52 started")
+    let big = gone + "2026-11-22T21:00:00-07:00 pid 2 v0.3.52 memory: 64.2GB, past 64.0GB\n"
+    check("its last memory note is the last line", MemoryUse.unexplained(log: big)?.contains("64.2GB") == true)
+    eq("an empty log", MemoryUse.unexplained(log: ""), nil)
+}
+
+print("\ninbox hardening")
+do {
+    let tok = String(repeating: "k", count: 43)
+    func req(_ target: String, host: String, cookie: String? = nil, extra: String = "") -> Inbox.Request {
+        var raw = "GET \(target) HTTP/1.1\r\nHost: \(host)\r\n" + extra
+        if let c = cookie { raw += "Cookie: cf_inbox=\(c)\r\n" }
+        raw += "\r\n"
+        guard case .request(let r) = Inbox.parse(Data(raw.utf8)) else { return Inbox.Request(method: "BAD", path: "") }
+        return r
+    }
+    let hosts = ["100.101.102.103", "127.0.0.1", "localhost", "demo-mac.example.ts.net"]
+    let good = Inbox.cookieValue(tok)
+    check("the cookie isn't the secret itself", good != tok && good.count >= 40)
+    eq("but is the same for the same secret", Inbox.cookieValue(tok), good)
+    check("and changes with a new one", Inbox.cookieValue(String(repeating: "j", count: 43)) != good)
+    eq("the derived cookie lets you in", Inbox.gate(req("/api/desks", host: "100.101.102.103", cookie: good), token: tok, allowedHosts: hosts), .allowed)
+    check("the secret itself as a cookie doesn't",
+          Inbox.gate(req("/api/desks", host: "100.101.102.103", cookie: tok), token: tok, allowedHosts: hosts) != .allowed)
+    check("the link still takes the secret",
+          Inbox.gate(req("/?t=" + tok, host: "100.101.102.103"), token: tok, allowedHosts: hosts) == .setCookie(redirectTo: "/"))
+    check("Set-Cookie carries the derived value",
+          Inbox.cookieHeader(tok).1.hasPrefix("cf_inbox=" + good + ";"))
+
+    // Funnel on: the https name answers nothing, with or without Tailscale's header.
+    let viaFunnel = Inbox.gate(req("/api/desks", host: "demo-mac.example.ts.net", cookie: good), token: tok,
+                               allowedHosts: hosts, funnelHost: "demo-mac.example.ts.net")
+    if case .denied(let r) = viaFunnel { eq("funnel on: the served name is refused", r.status, 403) } else { check("funnel on: the served name is refused", false) }
+    check("funnel on: the link isn't taken either",
+          Inbox.gate(req("/?t=" + tok, host: "demo-mac.example.ts.net"), token: tok, allowedHosts: hosts,
+                     funnelHost: "demo-mac.example.ts.net") != .setCookie(redirectTo: "/"))
+    eq("funnel on: the Tailscale address still answers",
+       Inbox.gate(req("/api/desks", host: "100.101.102.103", cookie: good), token: tok, allowedHosts: hosts,
+                  funnelHost: "demo-mac.example.ts.net"), .allowed)
+    let two = Data(#"{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:47100"}}},"demo-mac.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"47100"}}}},"AllowFunnel":{"demo-mac.example.ts.net:8443":true}}"#.utf8)
+    eq("funnel on any entry reaching the inbox counts", Tailnet.served(two, port: 47100)?.funnel, true)
+    eq("and the address is the first entry's", Tailnet.served(two, port: 47100)?.url, "https://demo-mac.example.ts.net")
+
+    // The page runs only its own scripts.
+    let csp = Inbox.pagePolicy.1
+    check("no inline script runs by default", !csp.contains("script-src 'unsafe-inline'"))
+    eq("each page script is allowed by its hash", Inbox.scriptHashes(Inbox.page).count + Inbox.scriptHashes(Inbox.askPage).count, 2)
+    check("and those hashes are in the policy", (Inbox.scriptHashes(Inbox.page) + Inbox.scriptHashes(Inbox.askPage)).allSatisfy { csp.contains("'\($0)'") })
+    eq("a hash is over the script's text exactly",
+       Inbox.scriptHashes("<p><script>a()</script></p>"), ["sha256-" + Data(SHA256.hash(data: Data("a()".utf8))).base64EncodedString()])
+
+    // Secret files: owner-only from the first byte, and set back if loosened.
+    let dir = testSandbox + "/secret-\(UUID().uuidString)"
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+    func mode(_ p: String) -> Int { ((try? FileManager.default.attributesOfItem(atPath: p))?[.posixPermissions] as? Int ?? 0) & 0o777 }
+    let tp = dir + "/conf/inbox-token"
+    let t1 = Inbox.token(path: tp)
+    check("a token is made", (t1?.count ?? 0) >= 32)
+    eq("its file is yours alone", mode(tp), 0o600)
+    eq("a folder it made is yours alone", mode(dir + "/conf"), 0o700)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: tp)
+    eq("a loosened token is read the same", Inbox.token(path: tp), t1)
+    eq("and made yours alone again", mode(tp), 0o600)
+    let shared = dir + "/shared"
+    try? FileManager.default.createDirectory(atPath: shared, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+    _ = Inbox.token(path: shared + "/inbox-token")
+    eq("a folder that was already there keeps its mode", mode(shared), 0o755)
+    check("a write lands whole", Secret.write(Data("abc".utf8), to: dir + "/f") && FileManager.default.contents(atPath: dir + "/f") == Data("abc".utf8))
+    eq("owner-only", mode(dir + "/f"), 0o600)
+    let left = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+    check("no temp file left behind", !left.contains { $0.contains(".tmp-") })
+    let wasPush = WebPush.root
+    WebPush.root = dir + "/push"
+    defer { WebPush.root = wasPush }
+    check("the sender's key is made", WebPush.signingKey() != nil)
+    eq("its folder is yours alone", mode(dir + "/push"), 0o700)
+    eq("the key is yours alone", mode(dir + "/push/sender.key"), 0o600)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir + "/push")
+    try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dir + "/push/sender.key")
+    _ = WebPush.signingKey()
+    eq("a loosened key folder is closed again", mode(dir + "/push"), 0o700)
+    eq("and the key", mode(dir + "/push/sender.key"), 0o600)
+}
+
+print("\nlog trimming")
+do {
+    let f = testSandbox + "/trim-\(UUID().uuidString).log"
+    let lines = (1...5000).map { "line \($0) " + String(repeating: "x", count: 300) }
+    try? (lines.joined(separator: "\n") + "\n").write(toFile: f, atomically: true, encoding: .utf8)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f)
+    check("a log over the size is trimmed", LogTrim.trim(f))
+    let kept = (try? String(contentsOfFile: f, encoding: .utf8))?.split(separator: "\n") ?? []
+    eq("to its newest lines", kept.count, 2000)
+    check("ending with the last one", kept.last?.hasPrefix("line 5000 ") == true)
+    eq("keeping its permissions", (try? FileManager.default.attributesOfItem(atPath: f))?[.posixPermissions] as? Int, 0o600)
+    check("a small log is left alone", !LogTrim.trim(f))
+    check("a missing log is nothing", !LogTrim.trim(f + ".none"))
 }
 
 // MARK: - dropping a file onto a desk
@@ -1432,6 +1651,176 @@ do {
         eq("prompt: an option still on screen is pressed by its key", Prompt.key(for: yes, on: screen), [49])
         eq("prompt: one that has gone is not", Prompt.key(for: yes, on: "Which file?\n1. a.txt\n2. b.txt\n"), nil)
         eq("prompt: button labels drop the key hint", Prompt.short("No, and tell Claude what to do (esc)"), "No, and tell Claude what to do")
+    }
+    do {
+        // The tab row as you arranged it (TabLayout).
+        typealias I = TabLayout.Item
+        let row = ["api", "docs", "review", "ship", "web"]
+        var t = TabLayout()
+        eq("tab layout: untouched, the row is the desk list's order", TabLayout.tabs(t.arrange(row, current: "api")), row)
+        t.move("web", before: "api", shown: row)
+        eq("tab layout: a tab dragged to the front stays there", t.ordered(row), ["web", "api", "docs", "review", "ship"])
+        t.move("api", before: nil, shown: t.ordered(row))
+        eq("tab layout: and one dropped past the end goes last", t.ordered(row), ["web", "docs", "review", "ship", "api"])
+        eq("tab layout: a desk started later stands after its neighbour in the desk list",
+           t.ordered(["api", "docs", "extra", "review", "ship", "web"]), ["web", "docs", "extra", "review", "ship", "api"])
+        eq("tab layout: one that comes first in the desk list goes to the front",
+           TabLayout(order: ["docs", "api"]).ordered(["aaa", "api", "docs"]), ["aaa", "docs", "api"])
+        eq("tab layout: a tab that has gone is skipped, not lost", t.ordered(["api", "web"]), ["web", "api"])
+        t.move("api", before: "web", shown: ["web", "docs", "api"])
+        eq("tab layout: tabs not showing keep their place through a move", t.order, ["api", "web", "docs", "review", "ship"])
+        t.move("api", before: "api", shown: row)
+        eq("tab layout: dropping a tab on itself changes nothing", t.order, ["api", "web", "docs", "review", "ship"])
+
+        var g = TabLayout()
+        g.newGroup(named: "  School\nwork ", with: "docs")
+        eq("tab layout: a new group has a tidy name and the first colour", [g.groups[0].name, g.groups[0].color], ["School work", "red"])
+        eq("tab layout: making a group moves nothing", TabLayout.tabs(g.arrange(row, current: "api")), row)
+        eq("tab layout: its label stands before its tab",
+           g.arrange(row, current: "api"),
+           [I.tab("api", group: nil), .label(group: 0, hidden: 0), .tab("docs", group: 0), .tab("review", group: nil), .tab("ship", group: nil), .tab("web", group: nil)])
+        g.add("web", to: 0, shown: row)
+        eq("tab layout: a tab added to a group stands with it", TabLayout.tabs(g.arrange(row, current: "api")), ["api", "docs", "web", "review", "ship"])
+        g.newGroup(named: "", with: "ship")
+        eq("tab layout: a second group takes the next colour and a stand-in name", [g.groups[1].name, g.groups[1].color], ["Group", "orange"])
+        g.move("review", before: "web", shown: TabLayout.tabs(g.arrange(row, current: "api")))
+        eq("tab layout: dropped between two tabs of a group, a tab joins it", g.groups[0].desks.sorted(), ["docs", "review", "web"])
+        g.move("review", before: "docs", shown: TabLayout.tabs(g.arrange(row, current: "api")), into: 0)
+        eq("tab layout: let go over the group at its front, it stays in it", g.group(of: "review"), 0)
+        eq("tab layout: and leads it", TabLayout.tabs(g.arrange(row, current: "api")), ["api", "review", "docs", "web", "ship"])
+        g.move("review", before: "docs", shown: TabLayout.tabs(g.arrange(row, current: "api")))
+        eq("tab layout: let go just outside the group, in the same place, it leaves it", g.group(of: "review"), nil)
+        eq("tab layout: and stands in front of the group's label",
+           g.arrange(row, current: "api").prefix(3), [I.tab("api", group: nil), .tab("review", group: nil), .label(group: 0, hidden: 0)])
+        g.move("review", before: "api", shown: TabLayout.tabs(g.arrange(row, current: "api")), into: 0)
+        eq("tab layout: a tab can't join a group it wasn't dropped beside", g.group(of: "review"), nil)
+        g.move("api", before: "ship", shown: TabLayout.tabs(g.arrange(row, current: "api")), into: 0)
+        eq("tab layout: let go over a group at its end, a tab joins it", g.group(of: "api"), 0)
+        g.move("api", before: "ship", shown: TabLayout.tabs(g.arrange(row, current: "api")))
+        eq("tab layout: let go past the group's end, it is out again", g.group(of: "api"), nil)
+        g.move("ship", before: "api", shown: TabLayout.tabs(g.arrange(row, current: "api")))
+        eq("tab layout: a group whose last tab left is gone", g.groups.map(\.name), ["School work"])
+
+        g.toggle(0)
+        eq("tab layout: a collapsed group shows its label and a count",
+           g.arrange(row, current: "api"),
+           [I.tab("review", group: nil), .label(group: 0, hidden: 2), .tab("ship", group: nil), .tab("api", group: nil)])
+        eq("tab layout: but not the desk on screen",
+           g.arrange(row, current: "web").prefix(3), [I.tab("review", group: nil), .label(group: 0, hidden: 1), .tab("web", group: 0)])
+        eq("tab layout: nor one that needs you",
+           g.arrange(row, current: "api", asking: ["docs"]).prefix(3), [I.tab("review", group: nil), .label(group: 0, hidden: 1), .tab("docs", group: 0)])
+        eq("tab layout: a group none of whose desks has a tab draws nothing", g.arrange(["api", "ship"], current: "api"),
+           [I.tab("ship", group: nil), .tab("api", group: nil)])
+        g.toggle(0)
+        g.rename(0, to: "Classes"); g.recolor(0, to: "teal"); g.recolor(0, to: "mauve")
+        eq("tab layout: a group can be renamed and recoloured, to a real colour", [g.groups[0].name, g.groups[0].color], ["Classes", "teal"])
+        g.renamed(from: "docs", to: "papers")
+        check("tab layout: a renamed desk keeps its group and its place", g.groups[0].desks.contains("papers") && g.order.contains("papers") && !g.order.contains("docs"))
+        g.ungroup("papers")
+        eq("tab layout: a tab taken out of its group stays in the row", g.group(of: "papers"), nil)
+        g.prune(keeping: ["api", "review", "ship"])
+        check("tab layout: desks that no longer exist are forgotten, and their empty group with them", g.groups.isEmpty && !g.order.contains("web"))
+        var d = TabLayout(order: ["a"], groups: [TabGroup(name: "x", color: "blue", desks: ["a", "b"])])
+        d.dissolve(0)
+        check("tab layout: dissolving a group keeps the order", d.groups.isEmpty && d.order == ["a"])
+        eq("tab layout: with every colour taken, the first comes round again",
+           TabLayout(groups: DeskColor.palette.map { TabGroup(name: $0.name, color: $0.name, desks: ["z"]) }).nextColor, "red")
+
+        var u = UIState()
+        u.tabLayout = TabLayout(order: ["web", "api"], groups: [TabGroup(name: "Classes", color: "teal", desks: ["web"], collapsed: true)])
+        let back = try? JSONDecoder().decode(UIState.self, from: JSONEncoder().encode(u))
+        eq("tab layout: it is saved with the rest of the window", back?.tabLayout, u.tabLayout)
+        let old = try? JSONDecoder().decode(UIState.self, from: Data("{\"tabLayout\":7}".utf8))
+        eq("tab layout: a damaged or missing one reads as none", old?.tabLayout, TabLayout())
+    }
+    do {
+        // A question answered where Coldfall didn't see it (MovedOn).
+        let asked = ISO8601DateFormatter().date(from: "2026-11-21T18:36:57Z")!
+        func line(_ type: String, _ at: String, side: Bool = false) -> String {
+            "{\"type\":\"\(type)\",\"isSidechain\":\(side),\"timestamp\":\"\(at)\",\"message\":{\"role\":\"\(type)\"}}"
+        }
+        let before = line("assistant", "2026-11-21T18:36:51.120Z")
+        check("moved on: the reply that led to the question isn't one", !MovedOn.claude(tail: before + "\n", since: asked))
+        check("moved on: your answer alone isn't the agent going on",
+              !MovedOn.claude(tail: [before, line("user", "2026-11-21T18:38:04.000Z")].joined(separator: "\n"), since: asked))
+        check("moved on: a reply after the question is",
+              MovedOn.claude(tail: [before, line("user", "2026-11-21T18:38:04.000Z"), line("assistant", "2026-11-21T18:38:09.500Z")].joined(separator: "\n"), since: asked))
+        check("moved on: a helper agent's reply is not the conversation's",
+              !MovedOn.claude(tail: [before, line("assistant", "2026-11-21T18:38:09.500Z", side: true)].joined(separator: "\n"), since: asked))
+        check("moved on: a reply within the margin is the same moment",
+              !MovedOn.claude(tail: line("assistant", "2026-11-21T18:36:57.600Z"), since: asked))
+        check("moved on: a time without fractions reads too", MovedOn.claude(tail: line("assistant", "2026-11-21T18:40:00Z"), since: asked))
+        check("moved on: a line cut in half is skipped", MovedOn.claude(tail: "ssistant\",\"x\":1}\n" + line("assistant", "2026-11-21T18:40:00Z"), since: asked))
+        check("moved on: nothing to read, nothing moved", !MovedOn.claude(tail: "", since: asked))
+        try? FileManager.default.createDirectory(atPath: testSandbox, withIntermediateDirectories: true)
+        let f = testSandbox + "/moved-on.jsonl"
+        try? (before + "\n" + line("assistant", "2026-11-21T18:38:09.500Z") + "\n").write(toFile: f, atomically: true, encoding: .utf8)
+        check("moved on: read from the file's end", MovedOn.claude(path: f, since: asked))
+        check("moved on: the end alone is enough", MovedOn.claude(path: f, since: asked, bytes: 150))
+        check("moved on: a file untouched since the question isn't read as news", !MovedOn.claude(path: f, since: Date().addingTimeInterval(60)))
+        check("moved on: no file, nothing moved", !MovedOn.claude(path: testSandbox + "/none.jsonl", since: asked))
+        check("moved on: choices still on screen keep the mark", !MovedOn.clears(wentOn: true, screen: "Do you want to proceed?\n❯ 1. Yes\n  2. No\n"))
+        check("moved on: a working screen lets it go", MovedOn.clears(wentOn: true, screen: "● Running tests\n  esc to interrupt\n"))
+        check("moved on: nothing went on, nothing clears", !MovedOn.clears(wentOn: false, screen: "● Running tests\n"))
+    }
+    do {
+        // Which version of an agent choices were last read on (PromptCheck).
+        typealias PC = PromptCheck
+        let plain = "Its choices couldn't be read from here. Open the desk to answer."
+        let on330 = PC.Stamp(runtime: "claude", version: "2.1.330")
+        eq("read check: a desk with no known version gets the plain line", PC.unread(nil, read: ["claude": "2.1.280"]), plain)
+        eq("read check: so does one on a version already read", PC.unread(on330, read: ["claude": "2.1.330"]), plain)
+        eq("read check: a version past the last one read is named",
+           PC.unread(on330, read: ["claude": "2.1.280"]),
+           "Its choices couldn't be read from here. Coldfall hasn't read choices from Claude Code 2.1.330 yet (it last did on 2.1.280). Open the desk to answer.")
+        eq("read check: an agent never read from says so",
+           PC.unread(PC.Stamp(runtime: "codex", version: "0.169.0"), read: ["claude": "2.1.330"]),
+           "Its choices couldn't be read from here. Coldfall hasn't read choices from Codex 0.169.0 on this Mac yet. Open the desk to answer.")
+        eq("read check: the sentence alone, for the phone", PC.note(on330, read: ["claude": "2.1.280"]),
+           "Coldfall hasn't read choices from Claude Code 2.1.330 yet (it last did on 2.1.280).")
+        eq("read check: nothing to add when it has been read", PC.note(on330, read: ["claude": "2.1.330"]), nil)
+        eq("read check: nothing to add without a version", PC.note(nil, read: [:]), nil)
+        eq("read check: an older desk than the last read is named too", PC.note(PC.Stamp(runtime: "claude", version: "2.1.200"), read: ["claude": "2.1.330"]),
+           "Coldfall hasn't read choices from Claude Code 2.1.200 yet (it last did on 2.1.330).")
+
+        eq("read check: a read is recorded", PC.noting(["codex": "0.1.0"], on330), ["codex": "0.1.0", "claude": "2.1.330"])
+        eq("read check: a second read on the same version changes nothing", PC.noting(["claude": "2.1.330"], on330), nil)
+        eq("read check: a read with no known version changes nothing", PC.noting(["claude": "2.1.280"], nil), nil)
+
+        eq("read check: a stamp round-trips", PC.Stamp(on330.pair), on330)
+        check("read check: a damaged stamp is no stamp", PC.Stamp(["claude"]) == nil && PC.Stamp(["claude", ""]) == nil && PC.Stamp(nil) == nil)
+        eq("read check: stamps of removed desks are dropped",
+           PC.pruned(["api": ["claude", "2.1.330"], "gone": ["codex", "0.1.0"], "bad": ["x"]], keeping: ["api", "bad", "docs"]),
+           ["api": ["claude", "2.1.330"]])
+
+        eq("read check: a Claude desk is asked through claude", PC.bin(for: Desk(name: "a", runtime: "claude")), "claude")
+        eq("read check: a shell has no agent", PC.bin(for: Desk(name: "a", runtime: "shell")), nil)
+        eq("read check: an unknown vendor has none", PC.bin(for: Desk(name: "a", runtime: "nobody")), nil)
+        var own = Desk(name: "a", runtime: "codex"); own.command = "desk api"
+        eq("read check: a desk with its own command still names its vendor", PC.bin(for: own), "codex")
+        own.command = "/usr/bin/ssh demo-box claude"
+        eq("read check: one that runs on another machine can't be asked here", PC.bin(for: own), nil)
+
+        let up = AgentVersions.Change(runtime: "claude", from: "2.1.280", to: "2.1.330")
+        eq("read check: an update says what was last read",
+           PC.afterUpdate(up, read: ["claude": "2.1.280"]),
+           "Coldfall last read a desk's choices on 2.1.280. If it can't read them on 2.1.330, Needs You will say so.")
+        eq("read check: an update already read from says nothing more", PC.afterUpdate(up, read: ["claude": "2.1.330"]), nil)
+        eq("read check: nor does one with no record", PC.afterUpdate(up, read: [:]), nil)
+
+        let rows = PC.rows(installed: ["claude": "2.1.330", "codex": "0.169.0"], read: ["claude": "2.1.280", "codex": "0.169.0"])
+        eq("read check: rows are by agent", rows.map { $0["agent"] as? String }, ["claude", "codex"])
+        eq("read check: a row past the last read isn't checked", rows[0]["checked"] as? Bool, false)
+        eq("read check: a row read on the installed version is", rows[1]["checked"] as? Bool, true)
+        eq("read check: a row shows both versions", [rows[0]["installed"] as? String, rows[0]["choicesReadOn"] as? String], ["2.1.330", "2.1.280"])
+
+        var u = UIState()
+        u.deskAgents = ["api": on330.pair]; u.choicesRead = ["claude": "2.1.330"]
+        let back = try? JSONDecoder().decode(UIState.self, from: JSONEncoder().encode(u))
+        eq("read check: stamps are kept", back?.deskAgents, ["api": ["claude", "2.1.330"]])
+        eq("read check: the record is kept", back?.choicesRead, ["claude": "2.1.330"])
+        let old = try? JSONDecoder().decode(UIState.self, from: Data("{}".utf8))
+        check("read check: a ui.json from before has neither", old?.deskAgents.isEmpty == true && old?.choicesRead.isEmpty == true)
     }
     do {
         let st = Changes.parseStatus(" M src/a.swift\0?? notes.txt\0R  new.swift\0old.swift\0D  gone.swift\0A  added.swift\0")
@@ -3685,7 +4074,16 @@ final class FakeInboxHost: InboxHost {
          Inbox.Row(name: "done", group: nil, runtime: "codex", running: true, activity: "ready", lastOutput: 20)]
     }
     func inboxDesk(_ name: String, lines: Int) -> Inbox.DeskView? {
-        name == "nope" ? nil : Inbox.DeskView(text: "<b>screen</b> of \(name)", running: true, activity: "quiet", runtime: "claude", agent: true)
+        if name == "unread" {
+            return Inbox.DeskView(text: "Which one?", running: true, activity: "blocked", runtime: "claude", agent: true,
+                                  unread: "Coldfall hasn't read choices from Claude Code 2.1.330 yet (it last did on 2.1.280).")
+        }
+        if name == "both" {
+            return Inbox.DeskView(text: "", running: true, activity: "blocked", runtime: "claude", agent: true,
+                                  prompt: Prompt(question: "Go?", context: [], options: [.init(key: "1", label: "Yes"), .init(key: "2", label: "No")]),
+                                  unread: "not said")
+        }
+        return name == "nope" ? nil : Inbox.DeskView(text: "<b>screen</b> of \(name)", running: true, activity: "quiet", runtime: "claude", agent: true)
     }
     func inboxSend(_ name: String, text: String) -> RemoteOpen.Answer { sent.append((name, text)); return .init(.sent, "Sent.") }
     func inboxPress(_ name: String, keys: [UInt8]) -> RemoteOpen.Answer {
@@ -3698,7 +4096,7 @@ final class FakeInboxHost: InboxHost {
 do {
     let tok = String(repeating: "k", count: 43)
     let hosts = ["100.101.102.103", "127.0.0.1", "localhost"]
-    func req(_ m: String, _ target: String, host: String = "100.101.102.103:47100", cookie: String? = "cf_inbox=" + String(repeating: "k", count: 43),
+    func req(_ m: String, _ target: String, host: String = "100.101.102.103:47100", cookie: String? = "cf_inbox=" + Inbox.cookieValue(String(repeating: "k", count: 43)),
              header: Bool = true, body: String = "") -> Inbox.Request {
         var raw = "\(m) \(target) HTTP/1.1\r\nHost: \(host)\r\n"
         if let c = cookie { raw += "Cookie: \(c)\r\n" }
@@ -3739,6 +4137,13 @@ do {
     let read = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/read?desk=x")).body) as? [String: Any])
     eq("inbox: a screen reads back as text", read?["text"] as? String, "<b>screen</b> of x")
     eq("inbox: no such desk", respond(req("GET", "/api/read?desk=nope")).status, 404)
+    let unread = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/read?desk=unread")).body) as? [String: Any])
+    eq("inbox: a question with no choices read says which version", unread?["unread"] as? String,
+       "Coldfall hasn't read choices from Claude Code 2.1.330 yet (it last did on 2.1.280).")
+    let both = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/read?desk=both")).body) as? [String: Any])
+    check("inbox: choices that were read are sent without that note", both?["unread"] == nil && (both?["options"] as? [[String: String]])?.count == 2)
+    check("inbox: a desk not asking carries no note", read?["unread"] == nil)
+    check("inbox page: it has a place for the note", Inbox.page.contains("id=\"unread\""))
     _ = respond(req("POST", "/api/send", body: #"{"desk":"idle","text":"go"}"#))
     check("inbox: a send reaches the desk", h.sent.first.map { $0 == ("idle", "go") } == true)
     eq("inbox: a key it doesn't press", respond(req("POST", "/api/keys", body: #"{"desk":"asks","key":"ctrl-c"}"#)).status, 400)
@@ -3934,6 +4339,282 @@ do {
     eq("wake: finished, it's gone", Wake.active()["money"], nil)
     check("wake: an expired run is dropped", Wake.begin("docs", Wake.Active(from: "hub", started: live - 900, until: live - 1)))
     eq("wake: and doesn't block the next", Wake.active()["docs"], nil)
+}
+
+// MARK: - the inbox as an app on a phone, and its notifications
+
+final class PhoneInboxHost: InboxHost {
+    var on = true
+    var tested: [String] = []
+    func inboxRows() -> [Inbox.Row] { [] }
+    func inboxDesk(_ name: String, lines: Int) -> Inbox.DeskView? { nil }
+    func inboxSend(_ name: String, text: String) -> RemoteOpen.Answer { .init(.sent, "Sent.") }
+    func inboxPress(_ name: String, keys: [UInt8]) -> RemoteOpen.Answer { .init(.pressed, "Pressed.") }
+    func inboxOpen(_ name: String) -> RemoteOpen.Answer { .init(.started, "Started.") }
+    func inboxIcon(_ size: Int) -> Data? { Data("png\(size)".utf8) }
+    func inboxPushOn() -> Bool { on }
+    func inboxPushTest(_ endpoint: String) -> String { tested.append(endpoint); return "Sent." }
+}
+
+do {
+    // The worked example in RFC 8291 (section 5 and appendix A), byte for byte.
+    let plain = Data("When I grow up, I want to be a watermelon".utf8)
+    let uaPublic = WebPush.unb64("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4")!
+    let authSecret = WebPush.unb64("BTBZMqHH6r4Tts7J_aSIgg")!
+    let salt = WebPush.unb64("DGv6ra1nlYgDCS1FRnbzlw")!
+    let asPrivate = try! P256.KeyAgreement.PrivateKey(rawRepresentation: WebPush.unb64("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw")!)
+    eq("push: the example's sender key reads", WebPush.b64(asPrivate.publicKey.x963Representation),
+       "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8")
+    let sealed = WebPush.encrypt(plain, p256dh: uaPublic, auth: authSecret, salt: salt, sender: asPrivate)
+    eq("push: encryption matches the standard's worked example", sealed.map(WebPush.b64),
+       "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPT"
+       + "pK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN")
+    // 86 of header, the 41 characters and their end mark, 16 of seal. (The
+    // example's own Content-Length line says 145; its bytes are these 144.)
+    eq("push: header, message, end mark and seal, nothing more", sealed?.count, 86 + 41 + 1 + 16)
+    eq("push: a salt of the wrong length is refused", WebPush.encrypt(plain, p256dh: uaPublic, auth: authSecret, salt: Data([1, 2]), sender: asPrivate), nil)
+    eq("push: a key that isn't a point is refused", WebPush.encrypt(plain, p256dh: Data(repeating: 4, count: 65), auth: authSecret, salt: salt, sender: asPrivate), nil)
+    eq("push: a message too long for one record is refused",
+       WebPush.encrypt(Data(repeating: 65, count: 4000), p256dh: uaPublic, auth: authSecret, salt: salt, sender: asPrivate), nil)
+
+    eq("push: base64url there and back", WebPush.unb64(WebPush.b64(Data([251, 255, 0, 1]))), Data([251, 255, 0, 1]))
+    eq("push: base64url has no padding or +/", WebPush.b64(Data([251, 255, 254])), "-__-")
+    eq("push: junk isn't base64url", WebPush.unb64("a"), nil)
+
+    // Where a device may ask to be reached.
+    check("push: Apple's service", WebPush.endpointAllowed("https://web.push.apple.com/QGk3abc"))
+    check("push: Google's", WebPush.endpointAllowed("https://fcm.googleapis.com/fcm/send/abc:def"))
+    check("push: Mozilla's", WebPush.endpointAllowed("https://updates.push.services.mozilla.com/wpush/v2/abc"))
+    check("push: Microsoft's", WebPush.endpointAllowed("https://wns2-by3p.notify.windows.com/w/?token=abc"))
+    check("push: not any other address", !WebPush.endpointAllowed("https://example.com/push"))
+    check("push: not this Mac", !WebPush.endpointAllowed("https://127.0.0.1/push"))
+    check("push: not a look-alike name", !WebPush.endpointAllowed("https://evilpush.apple.com.example.net/x"))
+    check("push: not a name that only ends the same", !WebPush.endpointAllowed("https://notpush.apple.com/x"))
+    check("push: not plain http", !WebPush.endpointAllowed("http://web.push.apple.com/abc"))
+    check("push: not another port", !WebPush.endpointAllowed("https://web.push.apple.com:8443/abc"))
+    check("push: not with a login in the address", !WebPush.endpointAllowed("https://user@web.push.apple.com/abc"))
+    eq("push: whose service it is", WebPush.service("https://web.push.apple.com/abc"), "Apple")
+    eq("push: who the signed note is for", WebPush.audience("https://web.push.apple.com/QGk3abc"), "https://web.push.apple.com")
+
+    let hosts = ["100.101.102.103", "127.0.0.1", "localhost", "demo.example.ts.net"]
+    check("push: the inbox's https address is its origin", WebPush.originAllowed("https://demo.example.ts.net", hosts: hosts))
+    check("push: plain http only on the Mac itself", WebPush.originAllowed("http://localhost:47100", hosts: hosts))
+    check("push: not plain http across the network", !WebPush.originAllowed("http://100.101.102.103:47100", hosts: hosts))
+    check("push: not someone else's site", !WebPush.originAllowed("https://example.com", hosts: hosts))
+    check("push: an origin, not a page", !WebPush.originAllowed("https://demo.example.ts.net/elsewhere", hosts: hosts))
+
+    // The sender's key and the note it signs.
+    let key = WebPush.signingKey()!
+    eq("push: the key is kept, not made each time", WebPush.signingKey()?.rawRepresentation, key.rawRepresentation)
+    eq("push: the public half is an uncompressed point", WebPush.publicKey().flatMap(WebPush.unb64)?.count, 65)
+    let mode = (try? FileManager.default.attributesOfItem(atPath: WebPush.root + "/sender.key"))?[.posixPermissions] as? Int
+    eq("push: the key file is this account's only", mode, 0o600)
+    let jwt = WebPush.jwt(audience: "https://web.push.apple.com", key: key, now: 1_000_000)!
+    let parts = jwt.split(separator: ".").map(String.init)
+    eq("push: the note has three parts", parts.count, 3)
+    let claims = (try? JSONSerialization.jsonObject(with: WebPush.unb64(parts[1])!)) as? [String: Any]
+    eq("push: it's for that service", claims?["aud"] as? String, "https://web.push.apple.com")
+    eq("push: good for twelve hours", claims?["exp"] as? Int, 1_000_000 + 43200)
+    eq("push: the contact is the project's site, nobody's own", claims?["sub"] as? String, "https://project-coldfall.vercel.app")
+    let sig = try? P256.Signing.ECDSASignature(rawRepresentation: WebPush.unb64(parts[2])!)
+    check("push: and the signature holds", sig.map { key.publicKey.isValidSignature($0, for: Data((parts[0] + "." + parts[1]).utf8)) } == true)
+    let a1 = WebPush.authorization(endpoint: "https://web.push.apple.com/abc", key: key, now: 2_000_000)
+    check("push: the header names the note and the key", a1?.hasPrefix("vapid t=") == true && a1?.hasSuffix(", k=" + WebPush.publicKey()!) == true)
+    eq("push: the note is reused for a while, not minted per message",
+       WebPush.authorization(endpoint: "https://web.push.apple.com/other", key: key, now: 2_000_000 + 3600), a1)
+    check("push: and made again once it's old",
+          WebPush.authorization(endpoint: "https://web.push.apple.com/abc", key: key, now: 2_000_000 + 7 * 3600) != a1)
+
+    // What it says.
+    let topic = WebPush.topic(desk: "money", publicKey: "K")
+    let body = WebPush.payload(.needs, desk: "my desk", origin: "https://demo.example.ts.net", waiting: 2, topic: topic)
+    let msg = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+    let note = msg?["notification"] as? [String: Any]
+    eq("push: the declarative mark", msg?["web_push"] as? Int, 8030)
+    eq("push: the title says a desk, never which", note?["title"] as? String, "A desk needs you")
+    check("push: no desk name in what shows", !(String(data: body, encoding: .utf8) ?? "").replacingOccurrences(of: "#desk=my%20desk", with: "").contains("my"))
+    eq("push: tapping it opens that desk", note?["navigate"] as? String, "https://demo.example.ts.net/#desk=my%20desk")
+    eq("push: the icon's count", note?["app_badge"] as? String, "2")
+    eq("push: a test has no count and opens the list",
+       ((try? JSONSerialization.jsonObject(with: WebPush.payload(.test, desk: nil, origin: "https://demo.example.ts.net", waiting: 0, topic: nil))) as? [String: Any])
+        .flatMap { $0["notification"] as? [String: Any] }?["navigate"] as? String, "https://demo.example.ts.net/")
+    check("push: the stand-in for a desk doesn't contain its name", !topic.contains("money") && topic.count == 24)
+    check("push: and differs from Mac to Mac", topic != WebPush.topic(desk: "money", publicKey: "L"))
+    check("push: it fits what the services allow (32 url-safe characters)",
+          topic.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" })
+
+    // Devices.
+    let dh = WebPush.b64(P256.KeyAgreement.PrivateKey().publicKey.x963Representation), au = WebPush.b64(Data(repeating: 7, count: 16))
+    WebPush.removeAll()
+    eq("push: a device is kept", WebPush.add(endpoint: "https://web.push.apple.com/one", p256dh: dh, auth: au, origin: "https://demo.example.ts.net", hosts: hosts, now: 5), nil)
+    eq("push: the same device again is still one", WebPush.add(endpoint: "https://web.push.apple.com/one", p256dh: dh, auth: au, origin: "https://demo.example.ts.net", hosts: hosts, now: 6), nil)
+    eq("push: one device", WebPush.devices().count, 1)
+    check("push: an address that isn't a service is refused",
+          WebPush.add(endpoint: "https://example.com/x", p256dh: dh, auth: au, origin: "https://demo.example.ts.net", hosts: hosts) != nil)
+    check("push: keys that don't read are refused",
+          WebPush.add(endpoint: "https://web.push.apple.com/two", p256dh: "AAAA", auth: au, origin: "https://demo.example.ts.net", hosts: hosts) != nil)
+    check("push: an inbox opened over plain http can't subscribe",
+          WebPush.add(endpoint: "https://web.push.apple.com/two", p256dh: dh, auth: au, origin: "http://100.101.102.103:47100", hosts: hosts) != nil)
+    eq("push: refusals kept nothing", WebPush.devices().count, 1)
+    let fmode = (try? FileManager.default.attributesOfItem(atPath: WebPush.root + "/devices.json"))?[.posixPermissions] as? Int
+    eq("push: the device list is this account's only", fmode, 0o600)
+
+    let out = WebPush.outgoing(to: WebPush.devices()[0], kind: .needs, desk: "money", waiting: 1, key: key, now: 3_000_000)
+    eq("push: it goes to the device's own address", out?.url, "https://web.push.apple.com/one")
+    eq("push: sealed, in the standard's encoding", out?.headers["Content-Encoding"], "aes128gcm")
+    eq("push: a question is urgent", out?.headers["Urgency"], "high")
+    eq("push: dropped after four hours unseen", out?.headers["TTL"], "14400")
+    check("push: the newer one about a desk replaces the older", (out?.headers["Topic"]?.count ?? 0) == 24)
+    check("push: the body is not the words", out.map { !(String(data: $0.body, encoding: .utf8) ?? "").contains("needs you") } == true)
+    eq("push: done is not urgent", WebPush.outgoing(to: WebPush.devices()[0], kind: .done, desk: "money", waiting: 1, key: key, now: 3_000_000)?.headers["Urgency"], "normal")
+
+    WebPush.note(endpoint: "https://web.push.apple.com/one", status: 201, at: 9)
+    eq("push: how the last send went is kept", WebPush.devices().first?.lastStatus, 201)
+    eq("push: and said plainly", WebPush.devices().first.flatMap(WebPush.lastWords), "Apple took the last one.")
+    WebPush.note(endpoint: "https://web.push.apple.com/one", status: 403, at: 9)
+    eq("push: a refusal says its number", WebPush.devices().first.flatMap(WebPush.lastWords), "Apple refused the last one (403).")
+    WebPush.note(endpoint: "https://web.push.apple.com/one", status: 403, reason: WebPush.reason(Data(#"{"reason":"BadJwtToken"}"#.utf8)), at: 9)
+    eq("push: and the service's word for it", WebPush.devices().first.flatMap(WebPush.lastWords), "Apple refused the last one (403, BadJwtToken).")
+    eq("push: only a plain word from the service reaches the page", WebPush.reason(Data(#"{"reason":"<b>x</b>"}"#.utf8)), nil)
+    eq("push: no answer, no word", WebPush.reason(nil), nil)
+    WebPush.note(endpoint: "https://web.push.apple.com/one", status: 0, at: 9)
+    check("push: not reaching the service says so", WebPush.devices().first.flatMap(WebPush.lastWords)?.contains("couldn't connect") == true)
+    WebPush.note(endpoint: "https://web.push.apple.com/one", status: 410, at: 10)
+    eq("push: a device its service says is gone is forgotten", WebPush.devices().count, 0)
+    for i in 0..<WebPush.maxDevices {
+        _ = WebPush.add(endpoint: "https://web.push.apple.com/d\(i)", p256dh: dh, auth: au, origin: "https://demo.example.ts.net", hosts: hosts)
+    }
+    check("push: no more than eight devices",
+          WebPush.add(endpoint: "https://web.push.apple.com/extra", p256dh: dh, auth: au, origin: "https://demo.example.ts.net", hosts: hosts) != nil)
+    WebPush.removeAll()
+    eq("push: forget every device", WebPush.devices().count, 0)
+
+    // When a phone hears.
+    let t0 = Date(timeIntervalSince1970: 1_000_000), e = t0.addingTimeInterval(-30)
+    func rule(_ a: DeskActivity, signaled: Bool = true, asked: Bool = true, event: Date? = e, alerted: Date? = nil, idle: TimeInterval = 300) -> WebPush.Kind? {
+        PhoneRule.decide(activity: a, signaled: signaled, endedAsked: asked, event: event, alerted: alerted, idle: idle, now: t0)
+    }
+    eq("phone: a question while you're away", rule(.blocked), .needs)
+    eq("phone: a finished desk while you're away", rule(.ready), .done)
+    eq("phone: nothing while you're at the Mac", rule(.blocked, idle: 20), nil)
+    eq("phone: nothing until two minutes untouched", rule(.blocked, idle: 119), nil)
+    eq("phone: the same report isn't sent twice", rule(.blocked, alerted: e), nil)
+    eq("phone: a new report from the same desk is", rule(.blocked, alerted: e.addingTimeInterval(-600)), .needs)
+    eq("phone: only on the agent's own word", rule(.ready, signaled: false), nil)
+    eq("phone: nothing for a desk at work", rule(.working), nil)
+    eq("phone: the desk left on screen, finished after you'd gone", rule(.quiet, idle: 300), .done)
+    eq("phone: but not one you saw finish before leaving", rule(.quiet, event: t0.addingTimeInterval(-400), idle: 300), nil)
+    eq("phone: nor a turn nobody asked for (a timer in the conversation)", rule(.quiet, asked: false), nil)
+    eq("phone: nothing to report, nothing sent", rule(.blocked, event: nil), nil)
+
+    var st = ActivityState()
+    st.setVisible(true, at: t0)
+    st.noteAsked()
+    st.noteSignal(.stop, at: t0)
+    check("phone: a turn you asked for and watched end is remembered as asked", st.endedAsked && !st.asked)
+    st.noteSignal(.stop, at: t0.addingTimeInterval(60))
+    check("phone: the next one, unasked, isn't", !st.endedAsked)
+
+    // The inbox's own side of it.
+    let tok = String(repeating: "k", count: 43)
+    let h = PhoneInboxHost()
+    func req(_ m: String, _ target: String, host: String = "demo.example.ts.net", cookie: Bool = true, extra: String = "", body: String = "") -> Inbox.Request {
+        var raw = "\(m) \(target) HTTP/1.1\r\nHost: \(host)\r\nX-Coldfall: 1\r\n" + extra
+        if cookie { raw += "Cookie: cf_inbox=\(Inbox.cookieValue(tok))\r\n" }
+        raw += "Content-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        guard case .request(let r) = Inbox.parse(Data(raw.utf8)) else { return Inbox.Request(method: "BAD", path: "") }
+        return r
+    }
+    func respond(_ r: Inbox.Request) -> Inbox.Response { Inbox.respond(r, token: tok, allowedHosts: hosts, host: h) }
+    func json(_ r: Inbox.Response) -> [String: Any] { ((try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any]) ?? [:] }
+
+    eq("app: the inbox answers to the Mac's Tailscale name", respond(req("GET", "/")).status, 200)
+    eq("app: but to no other name", respond(req("GET", "/", host: "other.example.ts.net")).status, 403)
+    eq("app: what came through Funnel is refused, secret or not",
+       respond(req("GET", "/", extra: "Tailscale-Funnel-Request: ?1\r\n")).status, 403)
+    eq("app: even the icon", respond(req("GET", "/icon-180.png", cookie: false, extra: "Tailscale-Funnel-Request: ?1\r\n")).status, 403)
+
+    let man = respond(req("GET", "/manifest.webmanifest", cookie: false))
+    eq("app: a phone gets the manifest without the cookie", man.status, 200)
+    let mj = json(man)
+    eq("app: it opens as an app", mj["display"] as? String, "standalone")
+    eq("app: at the inbox, with no secret in the address", mj["start_url"] as? String, "/")
+    check("app: the manifest holds no secret", !(String(data: man.body, encoding: .utf8) ?? "").contains(tok))
+    eq("app: and the icon", respond(req("GET", "/icon-180.png", cookie: false)).body, Data("png180".utf8))
+    eq("app: in the size asked for", respond(req("GET", "/icon-512.png", cookie: false)).body, Data("png512".utf8))
+    eq("app: nothing else without the cookie", respond(req("GET", "/sw.js", cookie: false)).status, 401)
+    eq("app: not the desks", respond(req("GET", "/api/desks", cookie: false)).status, 401)
+    eq("app: not the notification state", respond(req("POST", "/api/push/state", cookie: false, body: "{}")).status, 401)
+
+    let ask = respond(req("GET", "/", cookie: false))
+    eq("app: opened without the secret, it's still refused", ask.status, 401)
+    check("app: but with somewhere to paste the link", (String(data: ask.body, encoding: .utf8) ?? "").contains("Paste the link"))
+    check("app: and nothing of the inbox", !(String(data: ask.body, encoding: .utf8) ?? "").contains("/api/desks"))
+    let viaHTTPS = respond(req("GET", "/?t=" + tok, cookie: false, extra: "X-Forwarded-Proto: https\r\n"))
+    check("app: over https the cookie is https-only", viaHTTPS.header("Set-Cookie")?.hasSuffix("; Secure") == true)
+    check("app: over plain http it isn't, or the phone would drop it",
+          respond(req("GET", "/?t=" + tok, host: "100.101.102.103:47100", cookie: false)).header("Set-Cookie")?.contains("Secure") == false)
+
+    let sw = respond(req("GET", "/sw.js"))
+    eq("app: the worker is served as script", sw.header("Content-Type"), "text/javascript; charset=utf-8")
+    let swText = String(data: sw.body, encoding: .utf8) ?? ""
+    check("app: it shows a notification that arrives", swText.contains("showNotification") && swText.contains("8030"))
+    check("app: it keeps only the page's frame, never an answer from a desk", swText.contains(#"u.pathname !== "/""#) && !swText.contains("/api/"))
+    let pageText = String(data: respond(req("GET", "/")).body, encoding: .utf8) ?? ""
+    check("app: the page names its manifest and icon", pageText.contains(#"rel="manifest""#) && pageText.contains("apple-touch-icon"))
+    check("app: the page may load them", respond(req("GET", "/")).header("Content-Security-Policy")?.contains("manifest-src 'self'; worker-src 'self'") == true)
+
+    WebPush.removeAll()
+    let sub = #"{"endpoint":"https://web.push.apple.com/phone","p256dh":"\#(dh)","auth":"\#(au)","origin":"https://demo.example.ts.net"}"#
+    h.on = false
+    eq("app: with notifications off in Settings, the page is told", json(respond(req("POST", "/api/push/state", body: "{}")))["on"] as? Bool, false)
+    eq("app: and can't subscribe", json(respond(req("POST", "/api/push/subscribe", body: sub)))["ok"] as? Bool, false)
+    eq("app: nothing kept", WebPush.devices().count, 0)
+    h.on = true
+    let state = json(respond(req("POST", "/api/push/state", body: "{}")))
+    eq("app: the page gets the key to subscribe against", state["key"] as? String, WebPush.publicKey())
+    eq("app: a device subscribes", json(respond(req("POST", "/api/push/subscribe", body: sub)))["ok"] as? Bool, true)
+    eq("app: and is known next time", json(respond(req("POST", "/api/push/state", body: #"{"endpoint":"https://web.push.apple.com/phone"}"#)))["subscribed"] as? Bool, true)
+    eq("app: an address that isn't a service is turned down",
+       json(respond(req("POST", "/api/push/subscribe", body: sub.replacingOccurrences(of: "web.push.apple.com", with: "example.com"))))["ok"] as? Bool, false)
+    _ = respond(req("POST", "/api/push/test", body: #"{"endpoint":"https://web.push.apple.com/phone"}"#))
+    eq("app: a test goes to that device", h.tested, ["https://web.push.apple.com/phone"])
+    eq("app: no test for a device that never subscribed", respond(req("POST", "/api/push/test", body: #"{"endpoint":"https://web.push.apple.com/stranger"}"#)).status, 400)
+    _ = respond(req("POST", "/api/push/unsubscribe", body: #"{"endpoint":"https://web.push.apple.com/phone"}"#))
+    eq("app: turning it off forgets the device", WebPush.devices().count, 0)
+
+    var ui = UIState()
+    check("app: notifications to phones start off", !ui.pushOn)
+    ui.pushOn = true
+    let again = try? JSONDecoder().decode(UIState.self, from: JSONEncoder().encode(ui))
+    eq("app: and the choice is kept", again?.pushOn, true)
+    eq("app: an older ui.json reads as off", (try? JSONDecoder().decode(UIState.self, from: Data("{}".utf8)))?.pushOn, false)
+
+    // What Tailscale says about this Mac (made-up names).
+    let status = Data(#"{"Self":{"DNSName":"Demo-Mac.example.ts.net.","HostName":"Demo Mac"},"Peer":{}}"#.utf8)
+    eq("tailnet: this Mac's own name", Tailnet.selfName(status), "demo-mac.example.ts.net")
+    eq("tailnet: no name, none", Tailnet.selfName(Data(#"{"Self":{"DNSName":""}}"#.utf8)), nil)
+    eq("tailnet: a name that isn't a plain one is not used", Tailnet.selfName(Data(#"{"Self":{"DNSName":"-x;rm.example."}}"#.utf8)), nil)
+    let serving = Data(#"{"TCP":{"443":{"HTTPS":true}},"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:47100"}}}}}"#.utf8)
+    eq("tailnet: the inbox served over https", Tailnet.served(serving, port: 47100),
+       Tailnet.Served(url: "https://demo-mac.example.ts.net", host: "demo-mac.example.ts.net", funnel: false))
+    eq("tailnet: something else being served isn't the inbox", Tailnet.served(serving, port: 3000), nil)
+    eq("tailnet: a target kept as the port alone is the same thing",
+       Tailnet.served(Data(#"{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"47100"}}}}}"#.utf8), port: 47100)?.host, "demo-mac.example.ts.net")
+    eq("tailnet: a target on another machine isn't",
+       Tailnet.served(Data(#"{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://10.0.0.5:47100"}}}}}"#.utf8), port: 47100), nil)
+    eq("tailnet: nor one over https to somewhere",
+       Tailnet.served(Data(#"{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"https://127.0.0.1:47100"}}}}}"#.utf8), port: 47100), nil)
+    eq("tailnet: nothing served", Tailnet.served(Data("{}".utf8), port: 47100), nil)
+    let funnel = Data(#"{"Web":{"demo-mac.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://localhost:47100/"}}}},"AllowFunnel":{"demo-mac.example.ts.net:8443":true}}"#.utf8)
+    eq("tailnet: Funnel on it is noticed, and another port kept in the address", Tailnet.served(funnel, port: 47100),
+       Tailnet.Served(url: "https://demo-mac.example.ts.net:8443", host: "demo-mac.example.ts.net", funnel: true))
+    let foreground = Data(#"{"Foreground":{"abc":{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:47100"}}}}}}}"#.utf8)
+    eq("tailnet: one left running in a terminal counts", Tailnet.served(foreground, port: 47100)?.url, "https://demo-mac.example.ts.net")
+    let partOnly = Data(#"{"Web":{"demo-mac.example.ts.net:443":{"Handlers":{"/inbox":{"Proxy":"http://127.0.0.1:47100"}}}}}"#.utf8)
+    eq("tailnet: under a path isn't the inbox's own address", Tailnet.served(partOnly, port: 47100), nil)
+    eq("tailnet: the command to set it up, never run by Coldfall", Tailnet.serveCommand(port: 47100, cli: "/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
+       "/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 47100")
 }
 
 // MARK: - Drip, the character in the notch

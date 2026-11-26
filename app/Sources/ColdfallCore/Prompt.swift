@@ -25,6 +25,9 @@ public struct Prompt: Equatable {
     /// What the question is about: the command, the file. A few lines.
     public let context: [String]
     public let options: [Option]
+    public init(question: String, context: [String], options: [Option]) {
+        self.question = question; self.context = context; self.options = options
+    }
 
     public static let maxContext = 6
 

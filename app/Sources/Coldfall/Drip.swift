@@ -55,8 +55,8 @@ final class DripWindow {
     }
 
     func set(_ c: Companion) {
-        view.mood = c.mood
-        view.toolTip = c.tip
+        if view.mood != c.mood { view.mood = c.mood }
+        if view.toolTip != c.tip { view.toolTip = c.tip }     // set each tick otherwise
     }
 
     /// Over the notch and its wing, or nowhere on a Mac without one.
@@ -124,6 +124,8 @@ final class DripView: NSView {
 
     /// Asleep, it breathes slowly: no need for thirty frames a second.
     private func tick() {
+        // Nobody can see it (display asleep, screen locked, covered): no frames.
+        guard window?.occlusionState.contains(.visible) ?? false else { return }
         let now = CACurrentMediaTime()
         let every = mood == .asleep || reduceMotion ? 1.0 / 8 : 1.0 / 30
         if now - lastDraw >= every { lastDraw = now; needsDisplay = true }

@@ -19,6 +19,8 @@ final class FeedPanel: NSObject {
         let prompt: Prompt?
         /// The last lines of the screen, shown when no prompt could be read.
         let tail: String
+        /// What to say then (PromptCheck.unread).
+        var unread: String = PromptCheck.unread(nil, read: [:])
     }
 
     private let panel: NSPanel
@@ -52,6 +54,11 @@ final class FeedPanel: NSObject {
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false     // it opens again after the close button
+        // The close button closes the panel itself, not through close() here,
+        // which left the 0.7s timer reading desks for the rest of the day.
+        NotificationCenter.default.addObserver(self, selector: #selector(panelClosing),
+                                               name: NSWindow.willCloseNotification, object: panel)
 
         let ui = Theme.ui
         let root = NSView()
@@ -108,6 +115,8 @@ final class FeedPanel: NSObject {
         timer = Timer.inEveryMode(withTimeInterval: 0.7, repeats: true) { [weak self] _ in self?.refresh(force: false) }
     }
 
+    @objc private func panelClosing() { timer?.invalidate(); timer = nil }
+
     @objc func close() {
         timer?.invalidate(); timer = nil
         panel.parent?.removeChildWindow(panel)
@@ -137,8 +146,10 @@ final class FeedPanel: NSObject {
         heading.stringValue = total == 0 ? "Needs You" : "Needs You  ·  \(total)"
         for it in list {
             let card = FeedCard(it)
-            card.onAnswer = { [weak self] opt in
-                if let note = self?.onAnswer?(it.desk, opt) { card.say(note) }
+            // Weak: the card holds this closure, so a strong card here kept
+            // every card ever drawn alive.
+            card.onAnswer = { [weak self, weak card] opt in
+                if let note = self?.onAnswer?(it.desk, opt) { card?.say(note) }
                 // The desk moves on at once; the list catches up on the next tick.
             }
             card.onGo = { [weak self] in self?.close(); self?.onGo?(it.desk) }
@@ -164,9 +175,9 @@ final class FeedPanel: NSObject {
         for it in fam {
             let card = FamilyCard(it)
             card.onDraft = { [weak self] b in self?.onDraft?(it, b) }
-            card.onRelease = { [weak self] in
-                card.say("Asking Connector…")
-                self?.onRelease?(it) { note in card.say(note ?? "Connector's Send window is open. Read it there and press Send.") }
+            card.onRelease = { [weak self, weak card] in
+                card?.say("Asking Connector…")
+                self?.onRelease?(it) { [weak card] note in card?.say(note ?? "Connector's Send window is open. Read it there and press Send.") }
             }
             card.onSeen = { [weak self] in self?.onSeen?(it) }
             stack.addArrangedSubview(card)
@@ -353,10 +364,12 @@ private final class FeedCard: NSView {
             }
             col.addArrangedSubview(row)
         } else {
-            let hint = NSTextField(labelWithString: "Its choices couldn't be read from here. Open the desk to answer.")
+            let hint = NSTextField(wrappingLabelWithString: it.unread)
             hint.font = .systemFont(ofSize: 11.5)
             hint.textColor = ui.dimText
+            hint.isSelectable = false
             col.addArrangedSubview(hint)
+            hint.widthAnchor.constraint(equalTo: col.widthAnchor).isActive = true
         }
         note.font = .systemFont(ofSize: 11.5)
         note.textColor = ui.dimText

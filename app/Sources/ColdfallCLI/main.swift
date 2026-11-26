@@ -141,7 +141,12 @@ case "reopen":
 
 case "versions":
     // Each installed agent's version, as Coldfall reads it to notice updates.
-    out(AgentVersions.current())
+    // `--read`: beside the version a desk's choices were last read on.
+    if args.contains("--read") {
+        out(PromptCheck.rows(installed: AgentVersions.current(), read: UIState.load().choicesRead))
+    } else {
+        out(AgentVersions.current())
+    }
 
 case "limits":
     out(Limits.all().map { l -> [String: Any] in

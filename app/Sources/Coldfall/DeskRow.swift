@@ -29,6 +29,15 @@ struct DeskStatus: Equatable {
     var detail: String?
     /// Put to sleep by Coldfall: not running, and it resumes when opened.
     var asleep = false
+
+    /// Equal when it would draw the same. The time of the last output goes
+    /// by its label ("2m"): compared exactly, every desk printing anything
+    /// differed on every 0.35s tick and was restyled each time.
+    static func == (a: DeskStatus, b: DeskStatus) -> Bool {
+        a.activity == b.activity && a.running == b.running && a.memory == b.memory && a.news == b.news
+            && a.detail == b.detail && a.asleep == b.asleep
+            && a.lastOutput.map(DeskRow.ago) == b.lastOutput.map(DeskRow.ago)
+    }
 }
 
 final class DeskRow: NSView {

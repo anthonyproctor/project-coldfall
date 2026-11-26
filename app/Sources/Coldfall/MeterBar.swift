@@ -8,6 +8,8 @@ final class MeterBar: NSView {
     private let summary = NSTextField(labelWithString: "reading usage…")
     private let hint = NSTextField(labelWithString: "")
     private var lastScan = Date.distantPast
+    /// A pass is under way; the next one waits for it (they used to pile up).
+    private var scanning = false
     private var timer: Timer?
     var onClick: (() -> Void)?
     /// The "needs you" chip: go to the desk that has waited longest.
@@ -95,12 +97,13 @@ final class MeterBar: NSView {
     }
 
     func refresh() {
-        guard Date().timeIntervalSince(lastScan) > 30 else { return }
+        guard !scanning, Date().timeIntervalSince(lastScan) > 30 else { return }
         lastScan = Date()
+        scanning = true
         let since = Usage.weekStart()
         DispatchQueue.global(qos: .utility).async {
             let r = Usage.scan(since: since, accounts: ClaudeAccount.known())
-            DispatchQueue.main.async { self.render(r, since: since) }
+            DispatchQueue.main.async { self.scanning = false; self.render(r, since: since) }
         }
     }
 

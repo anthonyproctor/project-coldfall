@@ -248,6 +248,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.stopDesk(i)
         }
         tabs.plusMenu = { [weak self] in self?.tabPlusMenu() }
+        tabs.onMove = { [weak self] name, before, into in
+            self?.changeTabs { $0.move(name, before: before, shown: self?.tabRow ?? [], into: into) }
+        }
+        tabs.onToggleGroup = { [weak self] g in self?.changeTabs { $0.toggle(g) } }
+        tabs.onGroupMenu = { [weak self] g in self?.tabGroupMenu(g) }
         reader.onPopToggle = { [weak self] in self?.popOutOrDock() }
         palette.onPickDesk = { [weak self] i in self?.open(i) }
         palette.onPickFile = { [weak self] u in self?.openReader(u) }
@@ -284,6 +289,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             self.meter.setFamily(Connector.count(self.connector.items))
         }
         SettingsWindow.connectorSummary = { [weak self] in self?.connector.summary ?? "" }
+        SettingsWindow.inboxFacts = { [weak self] in (self?.inboxServer?.name, self?.inboxServer?.served) }
+        SettingsWindow.refreshInboxFacts = { [weak self] in self?.inboxServer?.refreshFacts() }
+        // Tailscale answered with something new: show it, if Settings is open
+        // on that tab and has nothing unsaved to lose.
+        NotificationCenter.default.addObserver(forName: .coldfallInboxFacts, object: nil, queue: .main) { [weak self] _ in
+            guard let w = self?.settings, w.window?.isVisible == true, w.canRebuild,
+                  (w.tabs?.selectedTabViewItem?.identifier as? String) == "General" else { return }
+            NotificationCenter.default.post(name: .coldfallReopenSettings, object: "General")
+        }
         if !CommandLine.arguments.contains("--snapshot") { connector.start() }
         drip.onClick = { [weak self] in self?.dripClicked() }
         applyDrip()
@@ -367,6 +381,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             [weak self] n in
             guard let self, let on = n.object as? Bool else { return }
             self.ui.notifyDesks = on
+            self.ui.save()
+        }
+        NotificationCenter.default.addObserver(forName: .coldfallDeskStarted, object: nil, queue: .main) { [weak self] n in
+            if let s = n.object as? DeskSession { self?.stampAgent(s) }
+        }
+        NotificationCenter.default.addObserver(forName: .coldfallPushChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let on = n.object as? Bool else { return }
+            self.ui.pushOn = on
             self.ui.save()
         }
         NotificationCenter.default.addObserver(forName: .coldfallDripChanged, object: nil, queue: .main) {
@@ -911,8 +934,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                                prompt: Prompt.parse(screen: screen),
                                                tail: screen.split(separator: "\n", omittingEmptySubsequences: true).suffix(10).joined(separator: "\n"))]
                     if let o = me.desks.first(where: { $0.name != d.name && $0.runtime != "shell" }) {
+                        // `--feed-unread`: as if that desk's agent had updated past
+                        // the last version choices were read on.
+                        let made = CommandLine.arguments.contains("--feed-unread")
+                            ? PromptCheck.Stamp(runtime: o.runtime, version: "9.9.2") : nil
                         list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: "asked a question",
-                                                   prompt: nil, tail: "Which of these should I keep?\n  the old parser, or the new one"))
+                                                   prompt: nil, tail: "Which of these should I keep?\n  the old parser, or the new one",
+                                                   unread: PromptCheck.unread(made, read: [o.runtime: "9.9.1"])))
                     }
                     // `--connector`: plus what the Connector at CONNECTOR_SOCKET has
                     // waiting (point it at connector-fixture, never a real one).
@@ -1055,6 +1083,23 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 guard self.visible?.started == true else { if tries == 2 { self.startWaiting() }; return }
                 t.invalidate()
                 for name in names { if let i = self.deskIndex(name) { self.openBeside(i) } }
+            }
+        }
+        // `--tabs-selftest a,b`: once a desk is up, start those beside it and
+        // move the tabs about by real drags (to the front, into a group, out
+        // of it), printing the row after each step. For a throwaway home; it
+        // quits when done.
+        if !CommandLine.arguments.contains("--snapshot"),
+           let g = CommandLine.arguments.firstIndex(of: "--tabs-selftest"), g + 1 < CommandLine.arguments.count {
+            let names = CommandLine.arguments[g + 1].split(separator: ",").map(String.init)
+            var tries = 0
+            Timer.inEveryMode(withTimeInterval: 1, repeats: true) { [weak self] t in
+                tries += 1
+                guard let self, tries < 30 else { t.invalidate(); return }
+                guard self.visible?.started == true else { if tries == 2 { self.startWaiting() }; return }
+                t.invalidate()
+                for name in names { if let i = self.deskIndex(name) { self.openBeside(i) } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.tabsSelfTest() }
             }
         }
         // `--grid-selftest a,b,c`: once a desk is up, put those beside it and
@@ -1731,7 +1776,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 + "about it, so removing it loses that configuration:\n\n    \(c)"
         }
         if running {
-            detail += "\n\nIts session is running and keeps running until Project Coldfall quits."
+            detail += "\n\nIts session is running, and removing the desk ends it."
         }
 
         let a = NSAlert()
@@ -1773,6 +1818,10 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
         guard let i = deskIndex(d.name) else { return }
         let before = desks
+        // Ended with it: a removed desk has no row and no Stop, and a held one
+        // would otherwise run on unseen, past quitting, until the Mac restarts.
+        endDesk(d)
+        forgetDeskState(d.name)
         desks.remove(at: i)
         persist()
         noteRemovedRuntimes(before: before, after: desks)
@@ -1811,6 +1860,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             s.desk.name = new; sessions[new] = s
             if Holder.rename(from: old, to: new) { s.followRename(to: new) }
         } else { Holder.rename(from: old, to: new) }
+        renameDeskState(from: old, to: new)
+        ui.save()
         persist()
         sidebar.build(desks: desks)
         installMenu()
@@ -2054,6 +2105,23 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     /// End a desk's session, already confirmed.
+    /// What the controller keeps per desk, carried over to a new name.
+    func renameDeskState(from old: String, to new: String) {
+        func move<V>(_ m: inout [String: V]) { if let v = m.removeValue(forKey: old) { m[new] = v } }
+        move(&inventoryNews); move(&lastVisited); move(&memory)
+        move(&lastActivity); move(&lastAlerted); move(&phoneAlerted)
+        movedOnPaths.removeValue(forKey: old)
+        ui.tabLayout.renamed(from: old, to: new)
+    }
+
+    /// And forgotten, for a desk that is gone.
+    func forgetDeskState(_ name: String) {
+        inventoryNews.removeValue(forKey: name); lastVisited.removeValue(forKey: name)
+        memory.removeValue(forKey: name); lastActivity.removeValue(forKey: name)
+        lastAlerted.removeValue(forKey: name); phoneAlerted.removeValue(forKey: name)
+        movedOnPaths.removeValue(forKey: name)
+    }
+
     func endDesk(_ d: Desk) {
         guard let s = sessions[d.name] else { return }
         // Out of the table first, so the exit callbacks find nothing to tidy.
@@ -2326,24 +2394,65 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func checkAgentVersions() {
         guard !CommandLine.arguments.contains("--snapshot") else { return }
         showAgentNews()
-        let before = ui.agentVersions
         DispatchQueue.global(qos: .utility).async {
             let now = AgentVersions.current()
+            DispatchQueue.main.async { [weak self] in self?.noteVersions(now) }
+        }
+    }
+
+    /// Versions just read: say which changed since the last reading.
+    func noteVersions(_ now: [String: String]) {
+        guard !now.isEmpty else { return }
+        for c in AgentVersions.changes(from: ui.agentVersions, to: now) {
+            // Keep where it started, if an earlier update is still unread.
+            let from = ui.agentUpdates[c.runtime]?.first ?? c.from
+            ui.agentUpdates[c.runtime] = [from, c.to]
+        }
+        ui.agentVersions.merge(now) { $1 }
+        ui.save()
+        showAgentNews()
+    }
+
+    /// A desk's agent has just been launched: note which version of it is
+    /// installed, so a question that can't be read later can say whether
+    /// Coldfall has ever read one from that version. An agent updates itself
+    /// while Coldfall stays open, so this is also when an update is noticed.
+    func stampAgent(_ s: DeskSession) {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        let d = s.desk
+        let key = s.launchName ?? d.name
+        ui.deskAgents[key] = nil
+        guard let bin = PromptCheck.bin(for: d) else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let path = DeskConfig.which(bin), let v = AgentVersions.version(of: path) else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let self, !now.isEmpty else { return }
-                for c in AgentVersions.changes(from: before, to: now) {
-                    // Keep where it started, if an earlier update is still unread.
-                    let from = self.ui.agentUpdates[c.runtime]?.first ?? c.from
-                    self.ui.agentUpdates[c.runtime] = [from, c.to]
-                }
-                self.ui.agentVersions.merge(now) { $1 }
-                self.ui.save()
-                self.showAgentNews()
+                guard let self else { return }
+                self.ui.deskAgents[key] = PromptCheck.Stamp(runtime: d.runtime, version: v).pair
+                self.ui.deskAgents = PromptCheck.pruned(self.ui.deskAgents, keeping:
+                    Set(self.desks.map(\.name)).union(self.sessions.values.compactMap(\.launchName)))
+                self.noteVersions([d.runtime: v])
             }
         }
     }
 
+    /// The agent a desk was started on, when that is known.
+    func stamp(of s: DeskSession) -> PromptCheck.Stamp? {
+        PromptCheck.Stamp(ui.deskAgents[s.launchName ?? s.desk.name])
+    }
+
+    /// The choices a waiting desk is showing. Reading them is also the
+    /// record that this agent's version can be read.
+    func choices(of s: DeskSession, on screen: String) -> Prompt? {
+        guard let p = Prompt.parse(screen: screen) else { return nil }
+        if let r = PromptCheck.noting(ui.choicesRead, stamp(of: s)) {
+            ui.choicesRead = r
+            ui.save()
+        }
+        return p
+    }
+
     func showAgentNews() {
+        sidebar.choicesRead = ui.choicesRead
         sidebar.agentNews = ui.agentUpdates.keys.sorted().compactMap { rt in
             guard let v = ui.agentUpdates[rt], v.count == 2 else { return nil }
             return AgentVersions.Change(runtime: rt, from: v[0], to: v[1])
@@ -2731,9 +2840,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 sessions[to] = s
                 if Holder.rename(from: from, to: to) { s.followRename(to: to) }
             } else { Holder.rename(from: from, to: to) }
-            if let v = inventoryNews.removeValue(forKey: from) { inventoryNews[to] = v }
-            if let v = lastVisited.removeValue(forKey: from) { lastVisited[to] = v }
-            if let v = memory.removeValue(forKey: from) { memory[to] = v }
+            renameDeskState(from: from, to: to)
         }
         for (name, s) in sessions { if let d = fresh.first(where: { $0.name == name }) { s.desk = d } }
         // A desk gone from the file is gone: its processes end, and nothing
@@ -2748,6 +2855,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 guard let self else { return }
                 for n in gone where self.deskIndex(n) == nil {
                     if let s = self.sessions[n] { self.endDesk(s.desk) }
+                    self.forgetDeskState(n)
                 }
             }
         }
@@ -2892,9 +3000,51 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// output STOPPING, and nothing fires an event when data does not arrive.
     /// A one-second tick against a handful of desks costs nothing.
     /// What desks' agents have said about being done (see DoneSignal).
-    let doneSignals: DoneSignal.Reader = { DoneSignal.trim(); return DoneSignal.Reader() }()
+    let doneSignals: DoneSignal.Reader = { DoneSignal.trim(); LogTrim.atLaunch(); return DoneSignal.Reader() }()
+
+    /// Claude desks that say they need you: has the conversation gone on
+    /// since (see MovedOn)? Checked every few seconds, only while one is
+    /// asking, off the main thread. The conversation file is looked up once
+    /// per question.
+    var movedOnTimer: Timer?
+    var movedOnBusy = false
+    var movedOnPaths: [String: (at: Date, path: String)] = [:]
+    func watchMovedOn() {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        movedOnTimer = Timer.inEveryMode(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            guard let self, !self.movedOnBusy else { return }
+            var asking: [(name: String, desk: Desk, at: Date, path: String?)] = []
+            for (name, s) in self.sessions {
+                guard let at = s.askedAt, let d = self.desks.first(where: { $0.name == name }),
+                      d.runtime == "claude", PromptCheck.bin(for: d) != nil else { continue }
+                let known = self.movedOnPaths[name]
+                asking.append((name, d, at, known?.at == at ? known?.path : nil))
+            }
+            self.movedOnPaths = self.movedOnPaths.filter { k, _ in asking.contains { $0.name == k } }
+            guard !asking.isEmpty else { return }
+            self.movedOnBusy = true
+            DispatchQueue.global(qos: .utility).async {
+                var found: [(name: String, at: Date, path: String, wentOn: Bool)] = []
+                for a in asking {
+                    guard let path = a.path ?? Reopen.claude(a.desk)?.path else { continue }
+                    found.append((a.name, a.at, path, MovedOn.claude(path: path, since: a.at)))
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.movedOnBusy = false
+                    for f in found {
+                        self.movedOnPaths[f.name] = (f.at, f.path)
+                        guard let s = self.sessions[f.name],
+                              MovedOn.clears(wentOn: f.wentOn, screen: s.screenText(lines: 60)) else { continue }
+                        s.agentMovedOn(since: f.at)
+                    }
+                }
+            }
+        }
+    }
 
     func watchDeskActivity() {
+        watchMovedOn()
         activityTimer = Timer.inEveryMode(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             guard let self else { return }
             let said = self.doneSignals.read()
@@ -2908,6 +3058,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             var map: [String: DeskStatus] = [:]
             var waiting = 0
             let front = NSApp.isActive
+            // Phones hear only once the Mac has gone untouched for a while.
+            let phones = self.ui.pushOn && self.ui.inboxOn && !CommandLine.arguments.contains("--snapshot")
+            // A hidden desk isn't in the inbox, so a phone has nowhere to go for it.
+            let hiddenDesks = phones ? Set(self.desks.filter(\.hidden).map(\.name)) : []
+            let idle = phones ? CGEventSource.secondsSinceLastEventType(.combinedSessionState,
+                                                                        eventType: CGEventType(rawValue: ~0)!) : 0
+            var forPhones: [(desk: String, kind: WebPush.Kind)] = []
             for (name, s) in self.sessions where self.desks.contains(where: { $0.name == name }) {
                 if s.onTurnStart == nil { s.onTurnStart = { [weak self, weak s] in if let s { self?.snapshotTurn(s) } } }
                 s.dropRepaint()
@@ -2919,6 +3076,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                                   event: s.alertEvent, alerted: self.lastAlerted[name])
                     if alert != .silent { self.lastAlerted[name] = s.alertEvent ?? .distantPast }
                     self.notifier.deliver(alert, desk: name, activity: a, reason: s.detailLine)
+                }
+                if phones, !hiddenDesks.contains(name), let kind = PhoneRule.decide(activity: a, signaled: s.isSignaled, endedAsked: s.endedAsked,
+                                                       event: s.alertEvent, alerted: self.phoneAlerted[name], idle: idle) {
+                    self.phoneAlerted[name] = s.alertEvent
+                    forPhones.append((name, kind))
                 }
                 self.lastActivity[name] = a
                 map[name] = DeskStatus(activity: a, lastOutput: s.lastOutput, running: s.started,
@@ -2943,6 +3105,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             for (name, s) in self.sessions { s.setMark(Mark(map[name] ?? DeskStatus())) }
             self.serveRemote(map)
             self.noteRunning()
+            for p in forPhones { self.phonePush.send(p.kind, desk: p.desk, waiting: max(waiting, 1)) }
             if self.ui.dripOn {
                 var acts: [String: DeskActivity] = [:]
                 for (n, st) in map where st.running { acts[n] = st.activity }
@@ -2952,7 +3115,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
 
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.
-            NSApp.dockTile.badgeLabel = waiting > 0 ? "\(waiting)" : nil
+            // Only when it changes: setting it each tick messages the Dock each time.
+            let badge = waiting > 0 ? "\(waiting)" : nil
+            if NSApp.dockTile.badgeLabel != badge { NSApp.dockTile.badgeLabel = badge }
         }
     }
     var activityTimer: Timer?
@@ -2962,6 +3127,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var lastAlerted: [String: Date] = [:]
     let notifier = Notifier()
     var inboxServer: InboxServer?
+    let phonePush = PhonePush()
+    /// The report each desk's phone notice last went out for (see PhoneRule).
+    var phoneAlerted: [String: Date] = [:]
     let peek = PeekPanel()
     let feed = FeedPanel()
     let changes = ChangesPanel()
@@ -3043,8 +3211,121 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             if m.items.count > 1, !m.items[1].isSeparatorItem { m.insertItem(.separator(), at: 1) }
         }
         while m.items.first?.isSeparatorItem == true { m.removeItem(at: 0) }
+        addTabGroupItems(to: m, for: name)
         return m
     }
+    // MARK: tab order and tab groups (TabLayout in the core)
+
+    /// The row's tabs as last drawn, folded ones left out.
+    var tabRow: [String] = []
+
+    /// Change the arrangement, keep it, and redraw the row.
+    func changeTabs(_ change: (inout TabLayout) -> Void) {
+        change(&ui.tabLayout)
+        ui.tabLayout.prune(keeping: Set(desks.map(\.name)))
+        ui.save()
+        refreshTabs(sidebar.status)
+    }
+
+    /// The tab-group lines at the end of a tab's right-click menu.
+    func addTabGroupItems(to m: NSMenu, for name: String) {
+        let own = ui.tabLayout.group(of: name)
+        m.addItem(.separator())
+        let new = NSMenuItem(title: "Add to New Tab Group…", action: #selector(newTabGroup(_:)), keyEquivalent: "")
+        new.target = self
+        new.representedObject = name
+        m.addItem(new)
+        for (i, g) in ui.tabLayout.groups.enumerated() where i != own {
+            let item = NSMenuItem(title: "Add to “\(g.name)”", action: #selector(addToTabGroup(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = [name, String(i)]
+            item.image = Controller.swatch(g.color)
+            m.addItem(item)
+        }
+        if own != nil {
+            let out = NSMenuItem(title: "Remove from Tab Group", action: #selector(leaveTabGroup(_:)), keyEquivalent: "")
+            out.target = self
+            out.representedObject = name
+            m.addItem(out)
+        }
+    }
+
+    /// A small round swatch of a palette colour, for a menu line.
+    static func swatch(_ color: String) -> NSImage? {
+        guard let c = DeskTint.color(color) else { return nil }
+        return NSImage(size: NSSize(width: 12, height: 12), flipped: false) { r in
+            c.setFill()
+            NSBezierPath(ovalIn: r.insetBy(dx: 1, dy: 1)).fill()
+            return true
+        }
+    }
+
+    /// Ask for a tab group's name. Nil when cancelled.
+    func askTabGroupName(title: String, was: String) -> String? {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = "Shown on a coloured label in front of its tabs. Click the label to fold them away."
+        a.addButton(withTitle: "OK"); a.addButton(withTitle: "Cancel")
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        f.stringValue = was
+        f.placeholderString = "Group name"
+        a.accessoryView = f
+        a.window.initialFirstResponder = f
+        return a.runModal() == .alertFirstButtonReturn ? f.stringValue : nil
+    }
+
+    @objc func newTabGroup(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String,
+              let title = askTabGroupName(title: "New tab group", was: "") else { return }
+        changeTabs { $0.newGroup(named: title, with: name) }
+    }
+    @objc func addToTabGroup(_ sender: NSMenuItem) {
+        guard let v = sender.representedObject as? [String], v.count == 2, let g = Int(v[1]) else { return }
+        changeTabs { $0.add(v[0], to: g, shown: self.tabRow) }
+    }
+    @objc func leaveTabGroup(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        changeTabs { $0.ungroup(name) }
+    }
+
+    /// A group label's right-click menu: rename, recolour, ungroup.
+    func tabGroupMenu(_ g: Int) -> NSMenu? {
+        guard ui.tabLayout.groups.indices.contains(g) else { return nil }
+        let group = ui.tabLayout.groups[g]
+        let m = NSMenu()
+        let rename = NSMenuItem(title: "Rename…", action: #selector(renameTabGroup(_:)), keyEquivalent: "")
+        rename.target = self; rename.tag = g
+        m.addItem(rename)
+        let fold = NSMenuItem(title: group.collapsed ? "Show Its Tabs" : "Fold Its Tabs Away", action: #selector(foldTabGroup(_:)), keyEquivalent: "")
+        fold.target = self; fold.tag = g
+        m.addItem(fold)
+        m.addItem(.separator())
+        for c in DeskColor.palette {
+            let item = NSMenuItem(title: c.name.capitalized, action: #selector(colorTabGroup(_:)), keyEquivalent: "")
+            item.target = self; item.tag = g
+            item.representedObject = c.name
+            item.image = Controller.swatch(c.name)
+            item.state = c.name == group.color ? .on : .off
+            m.addItem(item)
+        }
+        m.addItem(.separator())
+        let un = NSMenuItem(title: "Ungroup", action: #selector(dissolveTabGroup(_:)), keyEquivalent: "")
+        un.target = self; un.tag = g
+        m.addItem(un)
+        return m
+    }
+    @objc func renameTabGroup(_ sender: NSMenuItem) {
+        guard ui.tabLayout.groups.indices.contains(sender.tag),
+              let title = askTabGroupName(title: "Rename tab group", was: ui.tabLayout.groups[sender.tag].name) else { return }
+        changeTabs { $0.rename(sender.tag, to: title) }
+    }
+    @objc func foldTabGroup(_ sender: NSMenuItem) { changeTabs { $0.toggle(sender.tag) } }
+    @objc func colorTabGroup(_ sender: NSMenuItem) {
+        guard let c = sender.representedObject as? String else { return }
+        changeTabs { $0.recolor(sender.tag, to: c) }
+    }
+    @objc func dissolveTabGroup(_ sender: NSMenuItem) { changeTabs { $0.dissolve(sender.tag) } }
+
     @objc func takeOffFromMenu(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String,
               let k = slots.firstIndex(where: { $0.session?.desk.name == name }) else { return }
@@ -3190,6 +3471,66 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
     }
 
+    func tabsSelfTest() {
+        func say(_ what: String) {
+            let l = ui.tabLayout
+            let row = l.arrange(tabRowNames(), current: visible?.desk.name).map { item -> String in
+                switch item {
+                case .tab(let n, let g): return g.map { "\(n)(\(l.groups[$0].name))" } ?? n
+                case .label(let g, let hidden): return "[\(l.groups[g].name)\(hidden > 0 ? " +\(hidden)" : "")]"
+                }
+            }
+            print("tabs: \(what): \(row.joined(separator: " ")) drawn \(tabs.drawnRow)")
+            fflush(stdout)
+        }
+        ui.tabLayout = TabLayout()
+        refreshTabs(sidebar.status)
+        say("start")
+        var steps: [(String, () -> Void)] = []
+        steps.append(("drag the last tab to the front", { [self] in
+            guard let last = tabRow.last, let first = tabRow.first else { return }
+            tabs.dragForTest(last, before: first)
+        }))
+        steps.append(("group the first tab", { [self] in
+            guard let first = tabRow.first else { return }
+            changeTabs { $0.newGroup(named: "Classes", with: first) }
+        }))
+        steps.append(("add the last tab to the group from its menu", { [self] in
+            guard let last = tabRow.last else { return }
+            changeTabs { $0.add(last, to: 0, shown: self.tabRow) }
+        }))
+        steps.append(("drag the ungrouped tab between the group's two", { [self] in
+            guard tabRow.count >= 3 else { return }
+            tabs.dragForTest(tabRow[2], before: tabRow[1])
+        }))
+        steps.append(("drag that tab past the end, out of the group", { [self] in
+            guard tabRow.count >= 3 else { return }
+            tabs.dragForTest(tabRow[1], before: nil)
+        }))
+        steps.append(("fold the group", { [self] in changeTabs { $0.toggle(0) } }))
+        steps.append(("unfold it and drop a tab where it already stands", { [self] in
+            changeTabs { $0.toggle(0) }
+            guard tabRow.count >= 2 else { return }
+            tabs.dragForTest(tabRow[0], before: tabRow[1])
+        }))
+        steps.append(("drag the outside tab onto the group's front", { [self] in
+            guard let last = tabRow.last, let first = tabRow.first else { return }
+            tabs.dragForTest(last, before: first)
+        }))
+        var i = 0
+        Timer.inEveryMode(withTimeInterval: 0.8, repeats: true) { t in
+            guard i < steps.count else { t.invalidate(); print("tabs: done"); fflush(stdout); exit(0) }
+            steps[i].1(); say(steps[i].0); i += 1
+        }
+    }
+
+    /// The names the tab row is built from, in the desk list's order.
+    func tabRowNames() -> [String] {
+        let current = waitingName ?? visible?.desk.name ?? snapDesk
+        let running = Set(sidebar.status.filter { $0.value.running }.map(\.key))
+        return DeskTabs.list(desks, current: current, running: running, onScreen: onScreen.map(\.desk.name))
+    }
+
     /// The focus outline on whichever desk has the keys, when there are several.
     func syncPairFocus() {
         let many = slots.count > 1
@@ -3201,6 +3542,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func sleepIdleDesks() {
         guard ui.sleepIdleMinutes > 0, !CommandLine.arguments.contains("--snapshot") else { return }
         let now = Date(), after = TimeInterval(ui.sleepIdleMinutes * 60)
+        let was = ui.sleeping
         for d in desks {
             guard let s = sessions[d.name], slotIndex(of: s) == nil, !(peek.isOpen && peek.desk == d.name) else { continue }
             let f = Hibernate.Facts(runtime: d.runtime, resumes: d.resumesItself, running: s.started, visible: s.isVisible,
@@ -3215,7 +3557,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             s.terminateAll()
         }
         ui.sleeping.removeAll { n in !desks.contains { $0.name == n } }
-        ui.save()
+        if ui.sleeping != was { ui.save() }     // not every half minute regardless
     }
 
     /// Remember a desk's folder as it is now, at the start of a turn. Off
@@ -3383,7 +3725,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             let screen = s.screenText(lines: 60)
             let tail = screen.split(separator: "\n", omittingEmptySubsequences: true).suffix(10).joined(separator: "\n")
             return FeedPanel.Item(desk: name, runtime: d.runtime, icon: d.icon, reason: s.reason,
-                                  prompt: Prompt.parse(screen: screen), tail: tail)
+                                  prompt: choices(of: s, on: screen), tail: tail,
+                                  unread: PromptCheck.unread(stamp(of: s), read: ui.choicesRead))
         }
     }
 
@@ -3405,6 +3748,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// the heavy one" before you have to go looking in Activity Monitor.
     var memory: [String: String] = [:]
     var memoryTimer: Timer?
+    var memoryBusy = false
+    var memoryTick = 0
     func watchDeskMemory() {
         memoryTimer = Timer.inEveryMode(withTimeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -3413,6 +3758,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             let roots = self.sessions.mapValues(\.pids)
             // Nothing running: nothing to show, rather than the last numbers.
             guard !roots.isEmpty else { self.memory = [:]; return }
+            // One reading at a time; and in the background (nobody looking at
+            // the rail) every other tick is enough.
+            guard !self.memoryBusy else { return }
+            self.memoryTick &+= 1
+            if !NSApp.isActive, self.memoryTick % 2 == 1 { return }
+            self.memoryBusy = true
             DispatchQueue.global(qos: .utility).async {
                 let rows = ProcessTree.read()
                 var m: [String: String] = [:]
@@ -3421,6 +3772,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     if let l = ProcessTree.label(kb: kb) { m[name] = l }
                 }
                 DispatchQueue.main.async {
+                    self.memoryBusy = false
                     // Only desks still running the same processes: one stopped,
                     // renamed or restarted meanwhile keeps no stale number.
                     self.memory = m.filter { name, _ in self.sessions[name].map { $0.pids == roots[name] } ?? false }
@@ -3782,9 +4134,26 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         let current = waitingName ?? visible?.desk.name ?? snapDesk
         let running = Set(status.filter { $0.value.running }.map(\.key))
         let names = DeskTabs.list(desks, current: current, running: running, onScreen: onScreen.map(\.desk.name))
-        let list: [TabBar.Tab] = names.compactMap { n in
-            guard let d = desks.first(where: { $0.name == n }) else { return nil }
-            return TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus(), color: d.color)
+        var layout = ui.tabLayout
+        // `--tab-groups` (with --snapshot): a made-up arrangement, to look at.
+        if CommandLine.arguments.contains("--snapshot"), CommandLine.arguments.contains("--tab-groups") {
+            layout = TabLayout()
+            if names.count >= 2 { layout.groups.append(TabGroup(name: "Classes", color: "teal", desks: Array(names.prefix(2)))) }
+            if names.count >= 4 { layout.groups.append(TabGroup(name: "Clients", color: "purple", desks: Array(names.suffix(2)), collapsed: true)) }
+        }
+        let asking = Set(names.filter { Mark(status[$0] ?? DeskStatus()) == .needsYou })
+        let items = layout.arrange(names, current: current, asking: asking)
+        tabRow = TabLayout.tabs(items)
+        let list: [TabBar.Entry] = items.compactMap { item in
+            switch item {
+            case .tab(let n, let g):
+                guard let d = desks.first(where: { $0.name == n }) else { return nil }
+                return .tab(TabBar.Tab(name: n, runtime: d.runtime, icon: d.icon, status: status[n] ?? DeskStatus(), color: d.color,
+                                       group: g, groupColor: g.map { layout.groups[$0].color }))
+            case .label(let g, let hidden):
+                let group = layout.groups[g]
+                return .label(TabBar.Label(group: g, name: group.name, color: group.color, collapsed: group.collapsed, hidden: hidden))
+            }
         }
         tabs.set(list, current: current)
     }
@@ -3936,6 +4305,11 @@ extension Notification.Name {
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
     static let coldfallDripChanged = Notification.Name("coldfallDripChanged")
     static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
+    static let coldfallPushChanged = Notification.Name("coldfallPushChanged")
+    /// A desk's agent was launched afresh; the object is its DeskSession.
+    static let coldfallDeskStarted = Notification.Name("coldfallDeskStarted")
+    /// Tailscale answered: this Mac's name, or the inbox's https address, changed.
+    static let coldfallInboxFacts = Notification.Name("coldfallInboxFacts")
     static let coldfallReopenSettings = Notification.Name("coldfallReopenSettings")
     /// Settings asked for the Remove Files dialog, which the controller owns.
     static let coldfallOpenUninstall = Notification.Name("coldfallOpenUninstall")

@@ -71,7 +71,9 @@ reading the usage window shows; `--usage` snapshots that window.
 it was last used, and whether opening it would ask about starting fresh.
 
 `coldfall-cli versions` prints each agent's version as the update notice reads it;
-`--agent-news` snapshots the rail with a made-up update.
+`--agent-news` snapshots the rail with a made-up update. `versions --read` adds the version a
+desk's choices were last read on (see `PromptCheck` in the core), and `--terminal out.txt --feed
+--feed-unread` snapshots Needs You with a card saying a version hasn't been read from yet.
 
 `coldfall-cli wake <desk> --from <desk> "message"` starts a desk that is off, asks it and puts it back (see
 `Wake` in the core). Try it only in a throwaway home with stand-in agents (a desk whose `command` is a small
@@ -82,6 +84,12 @@ context menu cannot be captured in an offscreen snapshot, so its order,
 wording and tone are checked there and in the core's tests.
 
 `COLDFALL_SNAPSHOT_DEBUG=1` prints measured frames with a snapshot.
+
+`scripts/soak.py` runs the built app for a while in a throwaway home (stand-in desks opened through
+`coldfall-cli open`, a fake Claude conversation of about 150MB growing every second) and fails if memory
+grows after warm-up, the status file goes 5 seconds without a write, or CPU stays high. Run it (10 minutes
+is the default) before a release that touches anything periodic: timers, scans, watchers, the activity tick.
+It never touches a running Coldfall.
 
 The Family Connector (a separate app) is read over its socket as agent
 `coldfall`; see `Connector` in the core. Never point Coldfall at the real one
@@ -113,6 +121,11 @@ as a held desk drawn by Ghostty and prints its state as it changes (set
 `COLDFALL_HOLDER_DIR` to a short throwaway folder first); with
 `COLDFALL_GHOSTTY_SELFTEST=1` it answers the program's question and quits.
 
+`--live --tab-groups` snapshots the tab row with two made-up tab groups, one folded (see `TabLayout`
+in the core). `./.build/release/Coldfall --tabs-selftest api,docs` (same rules as the grid self-test
+below) starts those beside the desk on screen, then moves tabs by drags through the tab bar's own drag
+code (to the front, into a group, out of it), printing the row after each step, and quits.
+
 `./.build/release/Coldfall --grid-selftest api,docs` (never with `--snapshot`, and
 only in a throwaway home with stand-in agents) starts the desk on screen, opens
 those beside it, then goes to one, replaces one, drags one onto another and takes
@@ -138,6 +151,14 @@ The inbox (see `Inbox` in the core) can be tried the same way with `"inboxOn":tr
 in the throwaway ui.json: curl `http://127.0.0.1:47100/?t=<inbox-token>` for the
 cookie, then the `/api/*` routes with `X-Coldfall: 1` on POSTs. A Mac can't reach
 its own Tailscale address, so the tailnet side is only checkable from another device.
+The page is also an app for a phone's Home Screen (`/manifest.webmanifest`, `/sw.js`, `/icon-512.png`)
+and takes notification subscriptions (`/api/push/*`; see `WebPush` in the core). A headless Chrome
+with a throwaway `--user-data-dir` pointed at `http://localhost:47100/?t=<inbox-token>` runs the
+page's script for real (`--dump-dom`, `--screenshot`). Never subscribe a real device or send a
+notification from a test: that calls Apple's or Google's service. `COLDFALL_PUSH_DEBUG=1` prints how
+each send went (kind, whose service, its answer). `--settings General --settings-at "inbox for your
+phone" --inbox-https demo.example.ts.net` snapshots Settings as if Tailscale served the inbox over
+HTTPS (add `--inbox-funnel` for the warning); a snapshot never asks Tailscale.
 
 Snapshots take their theme from the real desks.toml, not from `--desks`. To see
 another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding
@@ -161,4 +182,9 @@ another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding
   home directory. Test fixtures use neutral paths such as `/srv/demo`.
 - Tests must not write to the real `~/.local/share/coldfall` or
   `~/.config/coldfall`. Point the overridable roots at a temp directory.
+- **Nothing periodic reads a whole file or overlaps itself.** Coldfall runs for days next to
+  conversations that reach hundreds of megabytes. Work on a timer reads only what a file gained
+  (`LineTail` in the core), and background work started by a timer doesn't start again while the
+  last run is going. A pass that outlasted its interval once piled up until Coldfall reached about
+  100GB and macOS ended it.
 - Record user-visible changes under **Unreleased** in `CHANGELOG.md`.

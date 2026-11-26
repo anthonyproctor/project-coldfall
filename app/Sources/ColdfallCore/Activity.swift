@@ -96,6 +96,7 @@ public struct ActivityState {
         case .stop:
             needsYou = false
             turnEndedAt = now
+            endedAsked = asked
             if visible { asked = false }           // you watched it finish
             else if asked { unseen = true }
         }
@@ -108,6 +109,9 @@ public struct ActivityState {
     private var needsYouAt: Date?
     /// When the agent last said its turn was over.
     public private(set) var turnEndedAt: Date?
+    /// Whether that turn was one you asked for (not a timer inside the
+    /// conversation). Kept past the look that settles `asked`, for PhoneRule.
+    public private(set) var endedAsked = false
     /// The report a "done" or "needs you" rests on: one alert per report,
     /// however many times the mark comes and goes after it (see NotifyRule).
     public var alertEvent: Date? { needsYou ? needsYouAt : turnEndedAt }

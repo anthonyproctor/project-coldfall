@@ -19,7 +19,8 @@ guess, so a reaction genuinely moves things.
 Project Coldfall launches shells, reads local files, and hands a working directory to
 agents from other companies. A bug in the meter shows a wrong number; a bug in
 that surface does not. Report anything touching process execution, file access
-or the cross-vendor bridge privately.
+the phone inbox or the cross-vendor bridge privately. [SECURITY.md](SECURITY.md)
+says how, and what counts.
 
 ## Building
 
