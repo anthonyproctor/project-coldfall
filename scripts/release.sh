@@ -183,8 +183,11 @@ V="$(mktemp -d)"
   gh release download "$TAG" -R anthonyproctor/project-coldfall -p "Project-Coldfall.app.zip"
   unzip -q Project-Coldfall.app.zip
   codesign --verify --deep --strict "Project Coldfall.app"
-  if grep -rlF "$HOME" "Project Coldfall.app" >/dev/null || grep -rlF "$USER" "Project Coldfall.app" >/dev/null; then
-    echo "the download contains $HOME or $USER"; exit 1
+  # A home path, not the bare user name: the project's own public GitHub
+  # address (github.com/<owner>/project-coldfall) is in the app on purpose,
+  # for update links, and the owner may share the builder's user name.
+  if grep -rlaF "$HOME" "Project Coldfall.app" >/dev/null || grep -rlaF "/Users/$USER" "Project Coldfall.app" >/dev/null; then
+    echo "the download contains $HOME or /Users/$USER"; exit 1
   fi
   dv="$(defaults read "$V/Project Coldfall.app/Contents/Info.plist" CFBundleShortVersionString)"
   [ "$dv" = "$TAG" ] || { echo "the download says $dv"; exit 1; }
