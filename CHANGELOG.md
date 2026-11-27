@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.55] - 2026-11-26
+
+A desk can ask for you when it needs something only you can do.
+
 ### Added
 
 - `coldfall-cli notify --from <desk> "…"`: a desk can ask for you in its own words when it needs something only you can do, such as an Allow dialog, a permission prompt or a sign-in. It shows in Needs You with a Dismiss button and at the top of the phone page, the Dock badge counts it, and the Mac shows a banner. A phone that gets notifications hears only "A desk needs you", once you have walked away, as for a desk's own question. `--clear` takes it down; `--list` prints what is up. One notice per desk, gone after a day.
@@ -1405,7 +1409,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.54...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.55...HEAD
+[0.3.55]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.54...v0.3.55
 [0.3.54]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.53...v0.3.54
 [0.3.53]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.52...v0.3.53
 [0.3.52]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.51...v0.3.52
