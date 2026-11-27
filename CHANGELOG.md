@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.56] - 2026-11-26
+
+Your phone as a chat with each desk, themes you pick by looking, attach from any terminal, and Shortcuts
+
 ### Changed
 
 - Themes, chosen by looking: Settings ▸ Appearance shows each as a small picture and applies it as you click, to the window, every terminal and the phone page at once. New: *Graphite* (near-black graphite, no colour accent; after the Carbone theme for Claude by Julien Design Craft, MIT) and *Carbon* (IBM's Carbon Design System, Gray 100 and Gray 10, Apache 2.0; drawn in IBM Plex Mono when installed), each light and dark. Light, dark or follow the Mac sits beside them, and the terminal font applies on Return.
@@ -1422,7 +1426,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.55...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.56...HEAD
+[0.3.56]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.55...v0.3.56
 [0.3.55]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.54...v0.3.55
 [0.3.54]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.53...v0.3.54
 [0.3.53]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.52...v0.3.53
