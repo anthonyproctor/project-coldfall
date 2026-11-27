@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.60] - 2026-11-27
+
+Phone: a send can't turn into a stop, and dictated text sends
+
 ### Fixed
 
 - **Sending from the phone no longer stops the agent by mistake.** The send
@@ -1471,7 +1475,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.59...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.60...HEAD
+[0.3.60]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.59...v0.3.60
 [0.3.59]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.58...v0.3.59
 [0.3.58]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.57...v0.3.58
 [0.3.57]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.56...v0.3.57
