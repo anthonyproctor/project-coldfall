@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.62] - 2026-11-27
+
+The simple window: the desk list and the desk, nothing else
+
 ### Added
 
 - **The simple window** (View ▸ Simple Window). Just your desks and the one
@@ -1507,7 +1511,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.61...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.62...HEAD
+[0.3.62]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.61...v0.3.62
 [0.3.61]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.60...v0.3.61
 [0.3.60]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.59...v0.3.60
 [0.3.59]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.58...v0.3.59
