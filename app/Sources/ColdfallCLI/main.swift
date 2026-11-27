@@ -248,6 +248,25 @@ case "chat":
     }
     exit(0)
 
+case "checkup":
+    // How this Mac uses AI, before setting anything up: what's installed and
+    // what's used, what's been built on top, and a suggested start. Counts and
+    // dates only (see Checkup). `--share` is the version without names, copied.
+    let r = Checkup.run()
+    if args.contains("--share") {
+        let text = Checkup.share(r, version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+        print(text)
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+        let pipe = Pipe(); p.standardInput = pipe
+        if (try? p.run()) != nil {
+            pipe.fileHandleForWriting.write(Data(text.utf8)); pipe.fileHandleForWriting.closeFile(); p.waitUntilExit()
+            if p.terminationStatus == 0 { print("Copied. Paste it wherever you're sending it.") }
+        }
+    } else {
+        print(Checkup.describe(r), terminator: "")
+    }
+    exit(0)
+
 case "phone-log":
     // What the phone page saw go wrong (its errors, failed or slow requests,
     // stalls, reloads) and the problem reports written on it. See PhoneLog.
@@ -570,6 +589,7 @@ default:
                          (exit 0 done, 2 needs you, 3 still working, 4 not allowed; see wake_from)
       notify --from <desk> "message"  ask for you: in Needs You and on the phone page (--clear, --list)
       holders [end <desk>]  desks kept running outside the app; end one
+      checkup [--share]  how this Mac uses AI and a suggested start; --share: counts only, copied to send
       phone-log [--last N] [--reports] [--trouble]  what went wrong on the phone page, and reports sent from it
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed

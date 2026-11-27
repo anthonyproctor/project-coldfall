@@ -5148,6 +5148,91 @@ do {
     check("phone log: a screenshot is allowed past the small-body limit", req("/api/report", body: big).method == "POST")
 }
 
+// MARK: - the AI check-up (coldfall-cli checkup)
+do {
+    let fm = FileManager.default
+    let home = testSandbox + "/checkup-\(UUID().uuidString.prefix(6))"
+    // The suite itself runs under /var/folders, which the check-up skips as passing.
+    let roots = Checkup.passingRoots
+    Checkup.passingRoots = ["/private/tmp/", "/tmp/"]
+    defer { try? fm.removeItem(atPath: home); Checkup.passingRoots = roots }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func put(_ rel: String, _ text: String = "{}", daysAgo: Double = 0) {
+        let p = home + "/" + rel
+        try? fm.createDirectory(atPath: (p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        fm.createFile(atPath: p, contents: Data(text.utf8))
+        try? fm.setAttributes([.modificationDate: now.addingTimeInterval(-daysAgo * 86400)], ofItemAtPath: p)
+    }
+    let none: (String) -> String? = { _ in nil }
+
+    // Someone with nothing.
+    var r = Checkup.run(home: home, which: none, appRoots: [home + "/Apps"], now: now)
+    eq("checkup: nothing installed is a newcomer", r.profile, .newcomer)
+    check("checkup: and starts simple, with no desks to make", r.simple && r.suggestions.isEmpty)
+
+    // Only a chat app.
+    try? fm.createDirectory(atPath: home + "/Apps/ChatGPT.app", withIntermediateDirectories: true)
+    r = Checkup.run(home: home, which: none, appRoots: [home + "/Apps"], now: now)
+    eq("checkup: a chat app alone", r.profile, .chatOnly)
+    check("checkup: points a ChatGPT person at Codex", Checkup.describe(r).contains("ChatGPT is Codex"))
+
+    // One tool, used in two project folders, plus a run in a passing folder.
+    let proj = home + "/src/api", site = home + "/src/site"
+    try? fm.createDirectory(atPath: proj, withIntermediateDirectories: true)
+    try? fm.createDirectory(atPath: site, withIntermediateDirectories: true)
+    for i in 0..<3 { put(".claude/projects/a/\(i).jsonl", #"{"type":"summary"}"# + "\n" + #"{"cwd":"\#(proj)","message":{"content":"never read"}}"#, daysAgo: Double(i)) }
+    put(".claude/projects/b/0.jsonl", #"{"cwd":"\#(site)"}"#, daysAgo: 10)
+    put(".claude/projects/c/0.jsonl", #"{"cwd":"/private/tmp/ask-vendor.x1"}"#, daysAgo: 1)
+    put(".claude/projects/old/0.jsonl", #"{"cwd":"\#(proj)"}"#, daysAgo: 90)
+    put(".claude.json", #"{"oauthAccount":{"x":1},"mcpServers":{"a":{},"b":{}}}"#)
+    let claudeOnly: (String) -> String? = { $0 == "claude" ? "/bin/claude" : nil }
+    r = Checkup.run(home: home, which: claudeOnly, appRoots: [home + "/Apps"], now: now)
+    let c = r.tools.first { $0.id == "claude" }
+    eq("checkup: one tool in use", r.profile, .oneTool)
+    eq("checkup: this month's conversations, not the passing run", c?.last30, 4)
+    eq("checkup: this week's", c?.last7, 3)
+    eq("checkup: all of them", c?.conversations, 5)
+    eq("checkup: in two folders", c?.foldersLast30, 2)
+    eq("checkup: signed in, seen from its settings", c?.signedIn, true)
+    eq("checkup: folders newest first", r.folders.map(\.path), [Checkup.canonical(proj), Checkup.canonical(site)])
+    check("checkup: a passing folder isn't a place you work", !r.folders.contains { Checkup.passing($0.path) })
+    eq("checkup: a desk per recent folder", r.suggestions.map(\.name), ["api", "site"])
+    eq("checkup: MCP servers counted", r.built.mcp, 2)
+
+    // Moved and linked from its old place: one folder.
+    try? fm.createSymbolicLink(atPath: home + "/old-api", withDestinationPath: proj)
+    put(".claude/projects/d/0.jsonl", #"{"cwd":"\#(home)/old-api"}"#, daysAgo: 2)
+    r = Checkup.run(home: home, which: claudeOnly, appRoots: [home + "/Apps"], now: now)
+    eq("checkup: a linked folder counts once", r.folders.count, 2)
+
+    // Agents built on top, a second tool, and one that's gone quiet.
+    for a in ["research", "taxes", "deals"] { put("src/api/.claude/agents/\(a).md", "---\nname: \(a)\n---") }
+    put("src/api/.claude/skills/pdf/SKILL.md")
+    put(".codex/sessions/2026/11/rollout-1.jsonl", #"{"type":"session_meta","payload":{"cwd":"\#(site)"}}"#, daysAgo: 3)
+    put(".codex/auth.json")
+    put(".codex/config.toml", "[mcp_servers.files]\ncommand = \"x\"\n[mcp_servers.files.env]\nA = \"1\"\n")
+    put(".copilot/session-state/s1.jsonl", "{}", daysAgo: 80)
+    put(".gemini/antigravity-cli/brain/conv1/logs/a.jsonl", "{}", daysAgo: 2)
+    put(".gemini/antigravity-cli/brain/conv1/logs/b.jsonl", "{}", daysAgo: 1)
+    put(".gemini/antigravity-cli/brain/conv1/logs/c.jsonl", "{}", daysAgo: 1)
+    let many: (String) -> String? = { ["claude", "codex", "copilot", "agy"].contains($0) ? "/bin/" + $0 : nil }
+    r = Checkup.run(home: home, which: many, appRoots: [home + "/Apps"], now: now)
+    eq("checkup: agents and skills make an agent builder", r.profile, .agentBuilder)
+    check("checkup: which starts in the full window", !r.simple)
+    eq("checkup: agents counted", r.built.agents, 3)
+    eq("checkup: a Codex MCP table counted once, not its env", r.built.mcp, 3)
+    eq("checkup: a conversation kept as a folder of files is one", r.tools.first { $0.id == "antigravity" }?.conversations, 1)
+    check("checkup: a tool unused for 60 days is quiet", r.dormant.map(\.id) == ["copilot"])
+    check("checkup: and gets no desk", Checkup.describe(r).contains("No desks for GitHub Copilot CLI"))
+    eq("checkup: the folder with agents is where to choose them", r.suggestions.first?.name, "api")
+
+    let shared = Checkup.share(r, version: "0.3.61", macOS: "Version 26.1")
+    check("checkup: the shared summary has the counts", shared.contains("Built: 3 agents, 1 skills") && shared.contains("Works in 2 folders"))
+    check("checkup: but no folder, agent or desk names", !shared.contains("api") && !shared.contains("site") && !shared.contains("research") && !shared.contains(home))
+    check("checkup: and never what a conversation said", !Checkup.describe(r).contains("never read") && !shared.contains("never read"))
+    check("checkup: says its versions", shared.contains("Coldfall 0.3.61, macOS 26.1"))
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

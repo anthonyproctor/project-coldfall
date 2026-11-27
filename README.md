@@ -169,6 +169,8 @@ If the two strings differ, do not open it, and please [open an issue](../../issu
 
 First launch writes a working config from whichever CLIs it finds and shows a welcome screen explaining what it found. There is nothing to set up by hand. If you have no agent CLI yet, the welcome screen lists how to install each one (Claude Code, Codex, Antigravity CLI, Copilot CLI, Ollama), with a copy button, and **Check again** picks it up without a relaunch.
 
+`coldfall-cli checkup` looks at how this Mac already uses AI and suggests where to start: which agent tools are installed and which you actually use (how often, in how many folders), what you've built on top (custom agents, skills, commands, MCP servers, instruction files), chat apps, editor add-ons and local models. It only counts and dates things. It never opens a conversation, a prompt, a file's contents, browser history or anything holding a key, and folders that agents only pass through (second opinions, scripts in temporary folders) don't count. `--share` prints a version with counts and the profile only, no folder, agent or desk names, and copies it so you can send it.
+
 `coldfall-cli` ships inside the bundle at `Project Coldfall.app/Contents/MacOS/coldfall-cli` — the core, headless, JSON on stdout. See [docs/FORMATS.md](docs/FORMATS.md).
 
 To run it as a plain binary during development: `cd app && swift build -c release && .build/release/Coldfall`.

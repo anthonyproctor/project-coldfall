@@ -70,6 +70,9 @@ script strips all of it and refuses to finish if any home path is left.
 `--usage [tab]` snapshots the usage window on a tab (Plans, This week,
 Where it went), to shot-usage.png.
 
+`coldfall-cli checkup` prints how this Mac uses AI and a suggested start (see `Checkup` in the core: counts, dates and the `cwd`
+field only, never a conversation's text); `--share` is the version without names. Its tests build a made-up home.
+
 `coldfall-cli tokenomics` prints where the week's tokens went, the same
 reading the usage window shows; `--usage` snapshots that window.
 

@@ -8,6 +8,18 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`coldfall-cli checkup`: how you use AI, before setting anything up.** It
+  looks at which agent tools are installed and which you actually use (how
+  often, in how many folders), what you've built on top (custom agents,
+  skills, commands, MCP servers, instruction files), chat apps, editor add-ons
+  and local models. From that it gives a profile and a suggested start: a few
+  desks, never one per installed tool, and none for tools you haven't used in
+  two months. It only counts and dates things, and never opens a
+  conversation's text. `--share` makes a version with counts only, no folder,
+  agent or desk names, and copies it to send.
+
 ## [0.3.60] - 2026-11-27
 
 Phone: a send can't turn into a stop, and dictated text sends
