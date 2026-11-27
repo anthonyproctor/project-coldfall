@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Links work on the phone.** A web address an agent writes out in full, or one on
+  the Screen tab, is now a link you can tap, not just text. Only http and https
+  addresses become links.
+
 ## [0.3.57] - 2026-11-26
 
 The phone page updates itself after Coldfall does

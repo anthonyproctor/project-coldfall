@@ -126,7 +126,7 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .m table{border-collapse:collapse;font-size:14px;margin:.4em 0 .9em;display:block;overflow-x:auto}
 .m th,.m td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
 .m th{background:var(--raised)}
-.m a{color:var(--accent)}
+.m a,#screen a{color:var(--accent);overflow-wrap:anywhere}
 .toolrow{margin:10px 0;color:var(--dim);font-size:14px}
 .toolrow summary{list-style:none;display:inline-flex;align-items:center;gap:7px;cursor:pointer;padding:4px 10px 4px 8px;border:1px solid var(--line);border-radius:999px}
 .toolrow summary::-webkit-details-marker{display:none}
@@ -563,18 +563,52 @@ function ring(pct) {
 
 // --- a desk: chat --------------------------------------------------------------
 // Markdown from the agent, built as elements: nothing it wrote is ever markup.
+// Only http and https become links; a bare address loses the punctuation after it.
+function link(url, label) {
+  let u; try { u = new URL(url); } catch (_) { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const a = el("a"); a.href = u.href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  if (typeof label === "string") a.textContent = label; else a.append(label);
+  return a;
+}
+function bare(t) {
+  for (;;) {
+    const c = t[t.length - 1];
+    if (".,;:!?'\"*_".includes(c)) t = t.slice(0, -1);
+    else if (c === ")" && (t.match(/\(/g) || []).length < (t.match(/\)/g) || []).length) t = t.slice(0, -1);
+    else if (c === "]" && (t.match(/\[/g) || []).length < (t.match(/\]/g) || []).length) t = t.slice(0, -1);
+    else if (c === ">") t = t.slice(0, -1);
+    else return t;
+  }
+}
+const urlRe = /https?:\/\/[^\s<>"'`]+/g;
+function linkify(parent, text) {
+  let at = 0, m; urlRe.lastIndex = 0;
+  while ((m = urlRe.exec(text))) {
+    const u = bare(m[0]);
+    const a = u.length > 8 ? link(u, u) : null;
+    if (!a) continue;
+    if (m.index > at) parent.append(document.createTextNode(text.slice(at, m.index)));
+    parent.append(a);
+    at = m.index + u.length; urlRe.lastIndex = at;
+  }
+  if (at < text.length) parent.append(document.createTextNode(text.slice(at)));
+}
 function inline(parent, text) {
   const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
   let at = 0, m;
   while ((m = re.exec(text))) {
-    if (m.index > at) parent.append(document.createTextNode(text.slice(at, m.index)));
+    if (m.index > at) linkify(parent, text.slice(at, m.index));
     const t = m[0];
-    if (t[0] === "`") parent.append(el("code", "", t.slice(1, -1)));
-    else if (t[0] === "*") parent.append(el("strong", "", t.slice(2, -2)));
-    else { const i = t.indexOf("]("); const a = el("a", "", t.slice(1, i)); a.href = t.slice(i + 2, -1); a.target = "_blank"; a.rel = "noopener noreferrer"; parent.append(a); }
+    if (t[0] === "`") {
+      const c = el("code", "", t.slice(1, -1));
+      parent.append(/^https?:\/\/\S+$/.test(c.textContent) ? (link(c.textContent, c) || c) : c);
+    }
+    else if (t[0] === "*") { const b = el("strong"); inline(b, t.slice(2, -2)); parent.append(b); }
+    else { const i = t.indexOf("]("); const label = t.slice(1, i); parent.append(link(t.slice(i + 2, -1), label) || document.createTextNode(label)); }
     at = m.index + t.length;
   }
-  if (at < text.length) parent.append(document.createTextNode(text.slice(at)));
+  if (at < text.length) linkify(parent, text.slice(at));
 }
 function markdown(text) {
   const out = document.createDocumentFragment();
@@ -736,7 +770,7 @@ function refreshDesk() {
     if (tab === "screen" && typeof r.text === "string") {
       const sc = $("screenbody");
       const fromBottom = sc.scrollHeight - sc.scrollTop, top = sc.scrollTop, atBottom = fromBottom - sc.clientHeight < 40;
-      $("screentext").textContent = r.running ? r.text : "";
+      const st = $("screentext"); st.textContent = ""; if (r.running) linkify(st, r.text);
       have = r.hash || ""; lines = r.lines || 0;
       sc.scrollTop = atBottom ? sc.scrollHeight : growing ? sc.scrollHeight - fromBottom : top;
       growing = false;
