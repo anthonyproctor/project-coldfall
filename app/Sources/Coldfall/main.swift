@@ -51,7 +51,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// allows. The Mac can still sleep.
     var noNap: NSObjectProtocol?
 
+    /// For Shortcuts and Siri (see Intents.swift), which run inside the app.
+    static weak var shared: Controller?
+
     func applicationDidFinishLaunching(_ n: Notification) {
+        Controller.shared = self
         // `--pair-phone`: open Face ID pairing at launch, as Settings' Set Up a
         // Phone does (for trying it with a browser's virtual authenticator).
         if CommandLine.arguments.contains("--pair-phone") { PhoneKey.openPairing() }
@@ -294,6 +298,17 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         feed.onGo = { [weak self] n in self?.showDesk(named: n) }
         feed.onAnswer = { [weak self] n, o in self?.answer(desk: n, with: o) }
         feed.onDismiss = { [weak self] n in Notice.clear(desk: n); self?.notifier.clearNotice(desk: n) }
+        feed.onDismissPR = { [weak self] a in
+            guard let self else { return }
+            self.ui.prDismissed[a.desk] = a.key
+            self.ui.save()
+            self.notifier.clear(id: "pr." + a.desk)
+        }
+        feed.onSend = { [weak self] name, text in
+            guard let self else { return "Nothing to send to." }
+            let a = self.inboxSend(name, text: text)
+            return a.outcome == .sent ? "Sent the failing checks to \(name)." : a.message
+        }
         feed.family = { [weak self] in self?.connector.items ?? [] }
         feed.onDraft = { [weak self] it, b in self?.draftMenu(for: it, at: b) }
         feed.onRelease = { [weak self] it, done in
@@ -401,6 +416,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             guard let self, let on = n.object as? Bool else { return }
             self.ui.notifyDesks = on
             self.ui.save()
+        }
+        NotificationCenter.default.addObserver(forName: .coldfallWatchPRsChanged, object: nil, queue: .main) {
+            [weak self] n in
+            guard let self, let on = n.object as? Bool else { return }
+            self.ui.watchPRs = on
+            if !on { self.prAlerts = []; self.prBannered = [:]; self.ui.prDismissed = [:] }
+            self.ui.save()
+            // Turned on: look now rather than in five minutes.
+            if on { self.checkPullRequests(force: true) }
         }
         NotificationCenter.default.addObserver(forName: .coldfallDeskStarted, object: nil, queue: .main) { [weak self] n in
             if let s = n.object as? DeskSession { self?.stampAgent(s) }
@@ -967,6 +991,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                                    prompt: nil, tail: "Chrome is asking to allow remote debugging. Click Allow in the "
                                                    + "Chrome window on the Mac, then I'll carry on with the price check.",
                                                    unread: "The desk asked for this itself. Dismiss it once it's done.", notice: true))
+                    }
+                    // `--feed-pr`: plus a made-up pull request with a failing check, from the first agent desk.
+                    if CommandLine.arguments.contains("--feed-pr"), let o = me.desks.first(where: { $0.runtime != "shell" }),
+                       let p = PullRequest.parse(#"{"number":12,"title":"Cart totals round once, at the end","state":"OPEN","isDraft":false,"url":"https://example.com/pr/12","reviewDecision":"CHANGES_REQUESTED","headRefOid":"abc123","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"test (macOS)","status":"COMPLETED","conclusion":"FAILURE"}]}"#),
+                       let a = PRWatch.alert(desk: o.name, pr: p) {
+                        list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: a.headline,
+                                                   prompt: nil, tail: a.detail, unread: "", pr: a))
                     }
                     // `--connector`: plus what the Connector at CONNECTOR_SOCKET has
                     // waiting (point it at connector-fixture, never a real one).
@@ -2136,6 +2167,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         func move<V>(_ m: inout [String: V]) { if let v = m.removeValue(forKey: old) { m[new] = v } }
         move(&inventoryNews); move(&lastVisited); move(&memory)
         move(&lastActivity); move(&lastAlerted); move(&phoneAlerted); move(&noticePhoned)
+        move(&prBannered); move(&ui.prDismissed)
+        prAlerts.removeAll { $0.desk == old }
         movedOnPaths.removeValue(forKey: old)
         Notice.clear(desk: old)
         ui.tabLayout.renamed(from: old, to: new)
@@ -2149,6 +2182,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         noticePhoned.removeValue(forKey: name)
         movedOnPaths.removeValue(forKey: name)
         Notice.clear(desk: name)
+        prBannered.removeValue(forKey: name); ui.prDismissed.removeValue(forKey: name)
+        prAlerts.removeAll { $0.desk == name }
     }
 
     func endDesk(_ d: Desk) {
@@ -3138,7 +3173,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                 self.ui.save()
             }
             for n in self.ui.sleeping where map[n] == nil { map[n] = DeskStatus(asleep: true) }
-            if self.sidebar.tick % 85 == 0 { self.sleepIdleDesks(); self.runSchedules() }
+            if self.sidebar.tick % 85 == 0 { self.sleepIdleDesks(); self.runSchedules(); self.checkPullRequests() }
             self.sidebar.tick &+= 1
             // Context and branch move slowly: every five seconds or so.
             if self.sidebar.tick % 14 == 0 { self.visible?.refreshHeaders() }
@@ -3167,7 +3202,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.
             // Only when it changes: setting it each tick messages the Dock each time.
-            let asking = waiting + notices.count
+            let asking = waiting + notices.count + self.prShown.count
             let badge = asking > 0 ? "\(asking)" : nil
             if NSApp.dockTile.badgeLabel != badge { NSApp.dockTile.badgeLabel = badge }
         }
@@ -3786,6 +3821,53 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             return FeedPanel.Item(desk: n.desk, runtime: d.runtime, icon: d.icon, reason: "needs you to do something",
                                   prompt: nil, tail: n.text,
                                   unread: "The desk asked for this itself. Dismiss it once it's done.", notice: true)
+        } + prShown.compactMap { a in
+            guard let d = desks.first(where: { $0.name == a.desk }), !d.hidden else { return nil }
+            return FeedPanel.Item(desk: a.desk, runtime: d.runtime, icon: d.icon, reason: a.headline,
+                                  prompt: nil, tail: a.detail, unread: "", pr: a)
+        }
+    }
+
+    // MARK: - pull requests (PRWatch)
+
+    /// The last answer for each folder asked about, as alerts.
+    var prAlerts: [PRWatch.Alert] = []
+    /// The state each desk's banner was last posted for, so one state is one banner.
+    var prBannered: [String: String] = [:]
+    var prBusy = false
+    var prLast = Date.distantPast
+    /// What Needs You shows: alerts for desks still listed, not dismissed.
+    var prShown: [PRWatch.Alert] {
+        guard ui.watchPRs else { return [] }
+        return PRWatch.shown(prAlerts, dismissed: ui.prDismissed).filter { a in desks.contains { $0.name == a.desk && !$0.hidden } }
+    }
+
+    /// One pass over running desks' folders, in the background, never two at once.
+    func checkPullRequests(force: Bool = false) {
+        guard ui.watchPRs, !prBusy, force || Date().timeIntervalSince(prLast) >= PRWatch.every else { return }
+        let running = Set(sessions.filter { $0.value.started }.keys)
+        let targets = PRWatch.targets(desks.filter { !$0.hidden }
+                                          .map { ($0.name, $0.resolvedCwd) }, running: running)
+        prLast = Date()
+        guard !targets.isEmpty else { prAlerts = []; return }
+        prBusy = true
+        DispatchQueue.global(qos: .utility).async {
+            var found: [PRWatch.Alert] = []
+            for t in targets {
+                if let p = PullRequest.fetch(folder: t.folder), let a = PRWatch.alert(desk: t.desk, pr: p) { found.append(a) }
+            }
+            DispatchQueue.main.async {
+                self.prBusy = false
+                guard self.ui.watchPRs else { self.prAlerts = []; return }
+                self.prAlerts = found
+                let kept = PRWatch.prune(self.ui.prDismissed, alerts: found)
+                if kept != self.ui.prDismissed { self.ui.prDismissed = kept; self.ui.save() }
+                for a in self.prShown where self.prBannered[a.desk] != a.key {
+                    self.prBannered[a.desk] = a.key
+                    if self.ui.notifyDesks { self.notifier.notice(id: "pr." + a.desk, title: "\(a.desk): \(a.headline)", body: a.pr.title) }
+                }
+                self.prBannered = self.prBannered.filter { b in found.contains { $0.desk == b.key } }
+            }
         }
     }
 
@@ -4362,6 +4444,7 @@ extension Notification.Name {
     static let coldfallSleepChanged = Notification.Name("coldfallSleepChanged")
     static let coldfallTerminalChanged = Notification.Name("coldfallTerminalChanged")
     static let coldfallNotifyChanged = Notification.Name("coldfallNotifyChanged")
+    static let coldfallWatchPRsChanged = Notification.Name("coldfallWatchPRsChanged")
     static let coldfallDripChanged = Notification.Name("coldfallDripChanged")
     static let coldfallInboxChanged = Notification.Name("coldfallInboxChanged")
     static let coldfallPushChanged = Notification.Name("coldfallPushChanged")

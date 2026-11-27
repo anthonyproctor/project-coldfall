@@ -46,8 +46,11 @@ Fixes go into the newest release only.
   that is a limit, not a hole. So is the responder reading the folder you gave
   it (see "Read-only is not private" in the README).
 - **Held desks.** A desk kept running while Coldfall is closed is reached
-  through a socket in a folder only your account can open. Another account on
-  the Mac reaching it is a hole.
+  through a socket in a folder only your account can open, by Coldfall and by
+  `coldfall-cli attach`. Another account on the Mac reaching it is a hole.
+- **Shortcuts.** Coldfall's actions follow the CLI's rules for sending. One
+  that types into a desk stopped on a question, or offers a hidden desk, is a
+  hole.
 - **What leaves the Mac.** The README's "What Coldfall sends" is the whole
   list. Anything else going out is a hole, and so is a notification that
   carries more than that section says, or that its push service can read.

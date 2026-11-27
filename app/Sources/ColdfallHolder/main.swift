@@ -255,10 +255,16 @@ func serve() -> Never {
     /// Coldfall attached to it.
     struct Conn {
         var fd: Int32; var dec = Holder.Decoder(); var attached = false; var tap = false; var out: [UInt8] = []
+        /// A second terminal (coldfall-cli attach): sees and types, takes nothing over.
+        var joined = false
+        var id = 0
         /// Who connected, noted while they were still there to ask about.
         var from = "a process that had already gone"
     }
     var conns: [Conn] = []
+    var nextID = 0
+    /// Which terminal the program is sized for.
+    var driver = Holder.Driver()
     /// A terminal this far behind isn't reading; it's let go rather than
     /// holding the program's output in memory.
     let maxBehind = 8 << 20
@@ -299,7 +305,7 @@ func serve() -> Never {
         // stopped reading: half a second, then it's dropped.
         let bye = Holder.Wire.encode(.exit, Holder.Wire.status(code))
         let until = Date().addingTimeInterval(0.5)
-        for i in conns.indices where conns[i].attached && conns[i].fd >= 0 {
+        for i in conns.indices where (conns[i].attached || conns[i].joined) && conns[i].fd >= 0 {
             var q = conns[i].out + bye
             while !q.isEmpty, Date() < until, flush(conns[i].fd, &q) { if !q.isEmpty { usleep(10_000) } }
         }
@@ -315,6 +321,13 @@ func serve() -> Never {
     func setSize(_ cols: UInt16, _ rows: UInt16) {
         var w = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         _ = ioctl(master, TIOCSWINSZ, &w)
+    }
+    /// Size the program for another terminal. The nudge (a row less, then
+    /// the real size) makes it redraw its whole screen even when the size
+    /// happens to match.
+    func resizeFor(_ s: (cols: UInt16, rows: UInt16), nudge: Bool) {
+        if nudge { setSize(s.cols, max(1, s.rows - 1)) }
+        setSize(s.cols, s.rows)
     }
     /// Write what fits without waiting; keep the rest. False if the fd is gone.
     func flush(_ fd: Int32, _ q: inout [UInt8]) -> Bool {
@@ -384,7 +397,7 @@ func serve() -> Never {
                 let b = Array(buf[0..<n])
                 replay.append(b)
                 let frame = Holder.Wire.encode(.output, b)
-                for i in conns.indices where conns[i].attached || conns[i].tap { queue(i, frame) }
+                for i in conns.indices where conns[i].attached || conns[i].joined || conns[i].tap { queue(i, frame) }
             } else if n == 0 || (errno != EAGAIN && errno != EINTR) {
                 // The program's side closed: collect it and pass the status on.
                 for _ in 0..<20 { if let c = reap() { done(c) }; usleep(50_000) }
@@ -408,14 +421,21 @@ func serve() -> Never {
                           (UInt32(payload[0]) << 24 | UInt32(payload[1]) << 16 | UInt32(payload[2]) << 8 | UInt32(payload[3])) == Holder.protocolVersion
                     else { close(conns[i].fd); conns[i].fd = -1; break }
                     // This one is Coldfall's terminal now; an older one is let go.
-                    for j in conns.indices where j != i && conns[j].attached { close(conns[j].fd); conns[j].fd = -1 }
+                    // A connection is one kind of thing: a joined terminal or a
+                    // tap saying hello is let go before it can displace anyone.
+                    guard !conns[i].joined, !conns[i].tap else { close(conns[i].fd); conns[i].fd = -1; break }
+                    // A terminal that joined stays: only Coldfall's own is replaced.
+                    for j in conns.indices where j != i && conns[j].attached {
+                        close(conns[j].fd); conns[j].fd = -1; _ = driver.remove(id: conns[j].id)
+                    }
                     conns[i].attached = true
                     attaches += 1
-                    if let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 {
+                    nextID += 1; conns[i].id = nextID
+                    if let s = Holder.Wire.readSize(payload),
+                       let size = driver.add(id: nextID, cols: s.cols, rows: s.rows, coldfall: true) {
                         // On a reattach, nudge the size so the program redraws
                         // its whole screen for the new terminal.
-                        if attaches > 1 { setSize(s.cols, max(1, s.rows - 1)) }
-                        setSize(s.cols, s.rows)
+                        resizeFor(size, nudge: attaches > 1)
                     }
                     let snap = replay.snapshot
                     var off = 0
@@ -424,10 +444,35 @@ func serve() -> Never {
                         queue(i, Holder.Wire.encode(.output, Array(snap[off..<end])))
                         off = end
                     }
+                case .join:
+                    // Same version or nothing; a connection is one kind of thing.
+                    guard payload.count >= 8, Holder.Wire.readVersion(payload) == Holder.protocolVersion,
+                          !conns[i].attached, !conns[i].tap, !conns[i].joined
+                    else { close(conns[i].fd); conns[i].fd = -1; break }
+                    conns[i].joined = true
+                    nextID += 1; conns[i].id = nextID
+                    record("joined by a second terminal, \(conns[i].from)")
+                    let snap = replay.snapshot
+                    var off = 0
+                    while off < snap.count, conns[i].fd >= 0 {
+                        let end = min(snap.count, off + 256 * 1024)
+                        queue(i, Holder.Wire.encode(.output, Array(snap[off..<end])))
+                        off = end
+                    }
+                    // Then sized for it, so the program redraws for this
+                    // terminal after the replay rather than under it.
+                    if let s = Holder.Wire.readSize(payload),
+                       let size = driver.add(id: nextID, cols: s.cols, rows: s.rows, coldfall: false) {
+                        resizeFor(size, nudge: true)
+                    }
                 case .input:
                     // Queued, never blocking: a big paste while the program is
                     // busy writing can't wedge the two against each other.
-                    if conns[i].attached {
+                    if conns[i].attached || conns[i].joined {
+                        // Typing in another terminal moves the program to it;
+                        // a reply from the one it isn't sized for is dropped.
+                        guard case .pass(let size) = driver.input(id: conns[i].id, payload) else { break }
+                        if let size { resizeFor(size, nudge: true) }
                         toProgram += payload
                         if !flush(master, &toProgram) { toProgram = [] }
                         // Taps see the keys too, so Coldfall can tell typing
@@ -451,7 +496,8 @@ func serve() -> Never {
                     queue(i, Holder.Wire.encode(.tap, []))
                     if conns[i].fd >= 0 { conns[i].tap = true }
                 case .resize:
-                    if conns[i].attached, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0 { setSize(s.cols, s.rows) }
+                    if conns[i].attached || conns[i].joined, let s = Holder.Wire.readSize(payload), s.cols > 0, s.rows > 0,
+                       let size = driver.resize(id: conns[i].id, cols: s.cols, rows: s.rows) { setSize(size.cols, size.rows) }
                 case .end:
                     // Who asked, for the record: a desk that vanishes
                     // should be explainable afterwards.
@@ -462,6 +508,11 @@ func serve() -> Never {
                 if conns[i].fd < 0 { break }
             }
             if conns[i].fd >= 0, conns[i].dec.broken { close(conns[i].fd); conns[i].fd = -1 }
+        }
+        // A terminal that left hands the program back (Coldfall's first).
+        for c in conns where c.fd < 0 && (c.attached || c.joined) {
+            if let size = driver.remove(id: c.id) { resizeFor(size, nudge: true) }
+            if c.joined { record("its second terminal left") }
         }
         conns.removeAll { $0.fd < 0 }
     }

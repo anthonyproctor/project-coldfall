@@ -227,6 +227,27 @@ public enum Holder {
         return desks
     }
 
+    // MARK: - a second terminal
+
+    /// The key that leaves `coldfall-cli attach` without touching the desk:
+    /// Ctrl-\, as in dtach. Agents don't use it, and in a raw terminal it
+    /// is one byte.
+    public static let detachKey: UInt8 = 0x1C
+
+    /// Split what was typed at the key that leaves: the bytes before it go
+    /// to the desk, and nothing after it does.
+    public static func detach(_ bytes: [UInt8]) -> (send: [UInt8], leave: Bool) {
+        guard let k = bytes.firstIndex(of: detachKey) else { return (bytes, false) }
+        return (Array(bytes[..<k]), true)
+    }
+
+    /// Put a terminal back the way a shell expects it after a program that
+    /// may have changed it is left mid-run: main screen, cursor shown, no
+    /// mouse or focus reports, no bracketed paste, no keyboard protocol,
+    /// plain colours.
+    public static let terminalReset = "\u{1B}[?1049l\u{1B}[?25h\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1006l"
+        + "\u{1B}[?1004l\u{1B}[?2004l\u{1B}[<u\u{1B}[0m"
+
     // MARK: - the wire
 
     /// Frames: one type byte, a 4-byte big-endian length, the payload.
@@ -256,6 +277,83 @@ public enum Holder {
         /// Holders older than the tap don't know this kind and close the
         /// connection: the desk works, its state marks stay dark.
         case tap = 0x54         // T
+        /// Client to holder, first: join as a second terminal (version u32,
+        /// cols u16, rows u16), from `coldfall-cli attach` in another
+        /// terminal app or an SSH session. Unlike a hello it lets go of
+        /// nobody: Coldfall's terminal stays attached, both see the output,
+        /// and both can type. The program is sized for whichever typed last
+        /// (see `Holder.Driver`), and only that one's replies to the
+        /// program's terminal queries go through. Holders older than this
+        /// close the connection, and `attach` falls back to watching.
+        case join = 0x4A        // J
+    }
+
+    /// Which of several terminals the program is sized for: the one that
+    /// typed last, as tmux does. A terminal's automatic replies (cursor
+    /// reports, focus in and out) never count as typing, or two terminals
+    /// answering the same query would pass the program back and forth.
+    public struct Driver: Equatable {
+        public struct Term: Equatable {
+            public let id: Int
+            public var cols: UInt16, rows: UInt16
+            /// Coldfall's own terminal, rather than one that joined.
+            public let coldfall: Bool
+        }
+        public private(set) var terms: [Term] = []
+        public private(set) var current: Int?
+        public init() {}
+
+        /// What to do with some bytes a terminal sent.
+        public enum Input: Equatable {
+            /// Pass them to the program; if `resize` is set, size the program
+            /// for this terminal first.
+            case pass(resize: (cols: UInt16, rows: UInt16)?)
+            /// A reply from a terminal the program isn't sized for: drop it.
+            case drop
+            public static func == (a: Input, b: Input) -> Bool {
+                switch (a, b) {
+                case (.drop, .drop): return true
+                case let (.pass(x), .pass(y)): return x?.cols == y?.cols && x?.rows == y?.rows
+                default: return false
+                }
+            }
+        }
+
+        /// A terminal arrived. Coldfall's takes over at once (it is what is on
+        /// the Mac's screen); one that joined does too, since it was opened
+        /// to be looked at. Returns the size to give the program.
+        public mutating func add(id: Int, cols: UInt16, rows: UInt16, coldfall: Bool) -> (cols: UInt16, rows: UInt16)? {
+            terms.removeAll { $0.id == id }
+            terms.append(Term(id: id, cols: cols, rows: rows, coldfall: coldfall))
+            current = id
+            return cols > 0 && rows > 0 ? (cols, rows) : nil
+        }
+
+        /// A terminal changed size. Returns the size to give the program, if
+        /// it is the one the program is sized for.
+        public mutating func resize(id: Int, cols: UInt16, rows: UInt16) -> (cols: UInt16, rows: UInt16)? {
+            guard let i = terms.firstIndex(where: { $0.id == id }) else { return nil }
+            terms[i].cols = cols; terms[i].rows = rows
+            return current == id && cols > 0 && rows > 0 ? (cols, rows) : nil
+        }
+
+        public mutating func input(id: Int, _ bytes: [UInt8]) -> Input {
+            guard let t = terms.first(where: { $0.id == id }) else { return .drop }
+            if current == id { return .pass(resize: nil) }
+            if ActivityState.isReport(bytes) { return .drop }
+            current = id
+            return .pass(resize: t.cols > 0 && t.rows > 0 ? (t.cols, t.rows) : nil)
+        }
+
+        /// A terminal left. If it was the one in charge, Coldfall's terminal
+        /// takes over again (else the last to join); returns the size then.
+        public mutating func remove(id: Int) -> (cols: UInt16, rows: UInt16)? {
+            terms.removeAll { $0.id == id }
+            guard current == id else { return nil }
+            guard let next = terms.last(where: { $0.coldfall }) ?? terms.last else { current = nil; return nil }
+            current = next.id
+            return next.cols > 0 && next.rows > 0 ? (next.cols, next.rows) : nil
+        }
     }
 
     public enum Wire {
@@ -280,6 +378,10 @@ public enum Holder {
             guard p.count >= 4 else { return nil }
             let s = p.suffix(4).map { UInt16($0) }
             return (s[s.startIndex] << 8 | s[s.startIndex + 1], s[s.startIndex + 2] << 8 | s[s.startIndex + 3])
+        }
+
+        public static func join(cols: UInt16, rows: UInt16, version: UInt32 = Holder.protocolVersion) -> [UInt8] {
+            hello(cols: cols, rows: rows, version: version)
         }
 
         public static func tap(version: UInt32 = Holder.protocolVersion) -> [UInt8] {

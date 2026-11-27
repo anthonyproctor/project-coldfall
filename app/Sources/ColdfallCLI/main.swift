@@ -228,6 +228,14 @@ case "open":
     print(a.message)
     exit(a.outcome == .started || a.outcome == .alreadyRunning ? 0 : 1)
 
+case "attach":
+    // A held desk in this terminal: another terminal app, or an SSH session
+    // from another machine. See Attach.swift.
+    guard let name = args.dropFirst().first(where: { !$0.hasPrefix("--") }) else {
+        print("usage: coldfall-cli attach <desk>    (Ctrl-\\ leaves; the desk keeps running)"); exit(2)
+    }
+    attachDesk(name)
+
 case "notify":
     // A desk asking for you in its own words, for what an agent can't do:
     // a permission prompt, an Allow dialog, a sign-in. Needs You and the

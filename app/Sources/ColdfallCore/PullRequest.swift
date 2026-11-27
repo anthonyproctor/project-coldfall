@@ -23,6 +23,9 @@ public struct PullRequest: Equatable {
     /// APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or none.
     public let review: String?
     public let checks: [Check]
+    /// The commit the pull request is at, so a fix pushed and failing
+    /// again is news even when the same check fails.
+    public var head: String? = nil
 
     public var failed: [Check] { checks.filter { $0.outcome == .failed } }
     public var pending: [Check] { checks.filter { $0.outcome == .pending } }
@@ -50,7 +53,8 @@ public struct PullRequest: Equatable {
         }
         let review = (o["reviewDecision"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return PullRequest(number: n, title: (o["title"] as? String) ?? "", state: ((o["state"] as? String) ?? "OPEN").uppercased(),
-                           isDraft: (o["isDraft"] as? Bool) ?? false, url: (o["url"] as? String) ?? "", review: review, checks: checks)
+                           isDraft: (o["isDraft"] as? Bool) ?? false, url: (o["url"] as? String) ?? "", review: review, checks: checks,
+                           head: (o["headRefOid"] as? String).flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// One line for the top of Changes: "PR #12 · 2 checks failing".
@@ -86,7 +90,7 @@ public struct PullRequest: Equatable {
         guard let gh else { return nil }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: gh)
-        p.arguments = ["pr", "view", "--json", "number,title,state,isDraft,url,reviewDecision,statusCheckRollup"]
+        p.arguments = ["pr", "view", "--json", "number,title,state,isDraft,url,reviewDecision,statusCheckRollup,headRefOid"]
         p.currentDirectoryURL = URL(fileURLWithPath: folder)
         var env = ProcessInfo.processInfo.environment
         env["GH_PROMPT_DISABLED"] = "1"

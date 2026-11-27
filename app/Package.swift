@@ -15,6 +15,14 @@ let ghosttyKit = Context.packageDirectory + "/Vendor/GhosttyKit.xcframework"
 let hasGhostty = ProcessInfo.processInfo.environment["COLDFALL_GHOSTTY"] == "1"
     && FileManager.default.fileExists(atPath: ghosttyKit)
 
+// Shortcuts and Siri find an app's actions (Intents.swift) in a
+// Metadata.appintents folder inside the bundle. Xcode makes it from constants
+// the compiler writes out on the side; these flags ask for them, and
+// scripts/build-app.sh hands them to Xcode's tool. They change nothing in the
+// binary, and a build without Xcode just has no actions to offer.
+let intentFlags: [SwiftSetting] = [.unsafeFlags(["-emit-const-values", "-Xfrontend", "-const-gather-protocols-file",
+                                                 "-Xfrontend", Context.packageDirectory + "/Support/appintents-protocols.json"])]
+
 // Two targets on purpose. ColdfallCore must not import AppKit — that boundary
 // is what keeps a future Linux or Windows front end a UI project rather than a
 // rewrite. Roughly a third of the code lives below the line and is already
@@ -51,7 +59,7 @@ let package = Package(
         // The macOS front end.
         .executableTarget(name: "Coldfall",
                           dependencies: ["ColdfallCore", "SwiftTerm"] + (hasGhostty ? ["GhosttyKit"] : []),
-                          swiftSettings: hasGhostty ? [.define("COLDFALL_GHOSTTY")] : [],
+                          swiftSettings: (hasGhostty ? [.define("COLDFALL_GHOSTTY")] : []) + intentFlags,
                           linkerSettings: hasGhostty ? [
                               .linkedFramework("Carbon"), .linkedFramework("Metal"), .linkedFramework("QuartzCore"),
                               .linkedFramework("CoreText"), .linkedFramework("IOSurface"), .linkedLibrary("c++"),

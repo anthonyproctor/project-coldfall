@@ -53,6 +53,35 @@ cp .build/release/coldfall-cli "$APP/Contents/MacOS/coldfall-cli"
 # Keeps desks running when the app quits (see Holder in ColdfallCore).
 cp .build/release/coldfall-holder "$APP/Contents/MacOS/coldfall-holder"
 
+# Shortcuts and Siri: the actions in Intents.swift, described in
+# Metadata.appintents, made by Xcode's tool from the constants the compiler
+# wrote beside the build (see Package.swift). Without Xcode the app is the
+# same, with nothing offered to Shortcuts.
+if AIP="$(xcrun --find appintentsmetadataprocessor 2>/dev/null)"; then
+  # The app target's only (Swift Build names its folder Coldfall-p.build;
+  # the older build system, Coldfall.build).
+  CONSTS="$(find "$PWD/.build" -name '*.swiftconstvalues' \( -path '*/Coldfall-p.build/*' -o -path '*/Coldfall.build/*' \) 2>/dev/null)"
+  if [ -n "$CONSTS" ]; then
+    printf '%s\n' "$CONSTS" > "$STAGE/consts.txt"
+    ls "$PWD"/Sources/Coldfall/*.swift > "$STAGE/sources.txt"
+    if "$AIP" --output "$APP/Contents/Resources" \
+         --toolchain-dir "$(dirname "$(dirname "$(dirname "$AIP")")")" --module-name Coldfall \
+         --sdk-root "$(xcrun --show-sdk-path)" --xcode-version "$(xcodebuild -version | awk '/Build version/{print $3}')" \
+         --platform-family macOS --deployment-target 13.0 --target-triple "$(uname -m)-apple-macos13.0" \
+         --source-file-list "$STAGE/sources.txt" --swift-const-vals-list "$STAGE/consts.txt" \
+         --binary-file "$APP/Contents/MacOS/Coldfall" --force >"$STAGE/intents.log" 2>&1 \
+       && [ -f "$APP/Contents/Resources/Metadata.appintents/extract.actionsdata" ]; then
+      echo "  Shortcuts actions included"
+    else
+      tail -5 "$STAGE/intents.log"; echo "  (no Shortcuts actions: Xcode's tool failed; the app is otherwise the same)"
+    fi
+  else
+    echo "  (no Shortcuts actions: the build left no constants to read)"
+  fi
+else
+  echo "  (no Shortcuts actions: they need Xcode installed to build)"
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

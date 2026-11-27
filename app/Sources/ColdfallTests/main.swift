@@ -2128,6 +2128,34 @@ do {
         eq("pr: merged says so", PullRequest.parse(#"{"number":4,"state":"MERGED"}"#)?.summary, "PR #4 · merged")
         eq("pr: not JSON, no pull request", PullRequest.parse("no pull requests found"), nil)
         eq("pr: no gh, no answer", PullRequest.fetch(folder: "/srv/demo", gh: nil), nil)
+        // Watching it: a card while something is wrong, once per state.
+        func mk(_ j: String) -> PullRequest { PullRequest.parse(j)! }
+        let failing = mk(#"{"number":7,"title":"Totals","state":"OPEN","headRefOid":"aaa","reviewDecision":"","statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"},{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}"#)
+        eq("prwatch: the commit is read", failing.head, "aaa")
+        let a = PRWatch.alert(desk: "api", pr: failing)
+        eq("prwatch: a failing check is a card", a?.headline, "PR #7: a check is failing")
+        eq("prwatch: naming the pull request and the check", a?.detail, "Totals\n• test")
+        eq("prwatch: passing is nothing", PRWatch.alert(desk: "api", pr: mk(#"{"number":7,"state":"OPEN","statusCheckRollup":[{"name":"t","status":"COMPLETED","conclusion":"SUCCESS"}]}"#)), nil)
+        eq("prwatch: still running is nothing yet", PRWatch.alert(desk: "api", pr: mk(#"{"number":7,"state":"OPEN","statusCheckRollup":[{"name":"t","status":"IN_PROGRESS"}]}"#)), nil)
+        eq("prwatch: merged is nothing", PRWatch.alert(desk: "api", pr: mk(#"{"number":7,"state":"MERGED","statusCheckRollup":[{"name":"t","status":"COMPLETED","conclusion":"FAILURE"}]}"#)), nil)
+        eq("prwatch: a review asking for changes is a card",
+           PRWatch.alert(desk: "api", pr: mk(#"{"number":8,"state":"OPEN","reviewDecision":"CHANGES_REQUESTED"}"#))?.headline,
+           "PR #8: a review asks for changes")
+        let dismissed = ["api": a!.key]
+        check("prwatch: dismissed stays dismissed", PRWatch.shown([a!], dismissed: dismissed).isEmpty)
+        let again = PRWatch.alert(desk: "api", pr: mk(#"{"number":7,"title":"Totals","state":"OPEN","headRefOid":"bbb","statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}"#))!
+        eq("prwatch: a new commit failing the same check is news", PRWatch.shown([again], dismissed: dismissed).count, 1)
+        check("prwatch: a dismissal of a state that's gone is dropped", PRWatch.prune(dismissed, alerts: [again]).isEmpty)
+        eq("prwatch: and one still there is kept", PRWatch.prune(dismissed, alerts: [a!]), dismissed)
+        let ts = PRWatch.targets([("api", "/srv/demo/api"), ("api-shell", "/srv/demo/api/"), ("docs", "/srv/demo/docs"), ("off", "/srv/demo/off")],
+                                 running: ["api", "api-shell", "docs"])
+        eq("needs: nothing waiting says so", NeedsSummary.text([]), "Nothing is waiting on you.")
+        eq("needs: one thing, by desk and what about", NeedsSummary.text([.init(desk: "api", why: "wants to use Bash")]),
+           "One thing is waiting on you.\napi: wants to use Bash")
+        let many = (1...7).map { NeedsSummary.Item(desk: "d\($0)", why: "asked a question") }
+        check("needs: a long list is cut, saying how many more", NeedsSummary.text(many).hasSuffix("And 2 more in Needs You.")
+              && NeedsSummary.text(many).hasPrefix("7 things are waiting on you."))
+        eq("prwatch: one ask per folder, named for the first desk, running only", ts.map(\.desk), ["api", "docs"])
     }
     do {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
@@ -3774,6 +3802,30 @@ do {
     check("holder: an oversized length is refused, not waited for", big.broken)
 
     // Replay keeps the tail and starts on a clean line once trimmed.
+    // A second terminal (coldfall-cli attach): whoever typed last sets the size.
+    do {
+        var d = Holder.Driver()
+        check("driver: Coldfall's terminal sizes the program", d.add(id: 1, cols: 120, rows: 40, coldfall: true).map { $0 == (120, 40) } == true)
+        check("driver: a terminal that joins does too", d.add(id: 2, cols: 50, rows: 20, coldfall: false).map { $0 == (50, 20) } == true)
+        eq("driver: typing in the one in charge changes nothing", d.input(id: 2, Array("hi".utf8)), .pass(resize: nil))
+        eq("driver: a cursor report from the other is dropped", d.input(id: 1, Array("\u{1B}[5;7R".utf8)), .drop)
+        eq("driver: so is a focus report", d.input(id: 1, [27, 91, 73]), .drop)
+        eq("driver: typing on the Mac takes it back", d.input(id: 1, Array("x".utf8)), .pass(resize: (120, 40)))
+        eq("driver: an arrow key counts as typing", d.input(id: 2, [27, 91, 65]), .pass(resize: (50, 20)))
+        check("driver: a resize of the one in charge goes through", d.resize(id: 2, cols: 60, rows: 30).map { $0 == (60, 30) } == true)
+        check("driver: a resize of the other waits", d.resize(id: 1, cols: 100, rows: 30) == nil)
+        check("driver: the joiner leaving hands back to Coldfall at its new size", d.remove(id: 2).map { $0 == (100, 30) } == true)
+        eq("driver: Coldfall in charge again", d.current, 1)
+        check("driver: the last one leaving leaves nobody", d.remove(id: 1) == nil && d.current == nil)
+        eq("driver: a stranger's bytes go nowhere", d.input(id: 9, Array("x".utf8)), .drop)
+        check("detach: Ctrl-\\ leaves, keeping what came before", Holder.detach([104, 105, 0x1C, 106]) == ([104, 105], true))
+        check("detach: other keys don't", Holder.detach([3, 4]) == ([3, 4], false))
+        var j = Holder.Decoder()
+        let jf = j.push(Holder.Wire.encode(.join, Holder.Wire.join(cols: 50, rows: 20)))
+        check("join: a frame of its own, carrying version and size",
+              jf.first?.0 == .join && jf.first.flatMap { Holder.Wire.readVersion($0.1) } == Holder.protocolVersion
+              && jf.first.flatMap { Holder.Wire.readSize($0.1) }.map { $0 == (50, 20) } == true)
+    }
     var r = Holder.Replay(capacity: 10)
     r.append(Array("abc".utf8))
     eq("holder: replay before any trim is everything", String(decoding: r.snapshot, as: UTF8.self), "abc")
@@ -3861,6 +3913,24 @@ do {
         for _ in 0..<60 where !held { usleep(50_000); held = Holder.held(root: root).contains("suite") }
         check("holder: attach starts a holder for the desk", held)
         usleep(600_000)    // let the first output arrive before the terminal goes
+        // A second terminal joins: it gets the screen so far, and Coldfall's stays.
+        if let j = Holder.connect(Holder.socketPath(desk: "suite", root: root)) {
+            let f = Holder.Wire.encode(.join, Holder.Wire.join(cols: 50, rows: 20))
+            _ = f.withUnsafeBytes { write(j, $0.baseAddress, f.count) }
+            var tv = timeval(tv_sec: 2, tv_usec: 0)
+            setsockopt(j, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            var dec = Holder.Decoder(), seen = ""
+            var buf = [UInt8](repeating: 0, count: 4096)
+            while !seen.contains("HELD") {
+                let n = read(j, &buf, buf.count)
+                guard n > 0 else { break }
+                for (k, p) in dec.push(Array(buf[0..<n])) where k == .output { seen += String(decoding: p, as: UTF8.self) }
+            }
+            check("holder: a joining terminal gets the screen so far", seen.contains("HELD"), seen)
+            usleep(200_000)
+            check("holder: and Coldfall's terminal stays attached", attach.isRunning)
+            close(j)
+        } else { check("holder: a second terminal can connect", false) }
         // Coldfall's terminal goes away: the attach exits, the holder doesn't.
         try? input.fileHandleForWriting.close()
         attach.waitUntilExit()

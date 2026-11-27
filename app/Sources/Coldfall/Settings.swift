@@ -231,6 +231,13 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
             + "you aren't looking at. A notification when Coldfall is in the background; a sound when it's "
             + "in front. Click the notification to go to the desk. A desk stopped on a question shows "
             + "orange in the list until you answer it."))
+        let prSwitch = NSButton(checkboxWithTitle: "Tell me when a desk's pull request fails a check",
+                                target: self, action: #selector(toggleWatchPRs(_:)))
+        prSwitch.state = UIState.load().watchPRs ? .on : .off
+        rtLines.append(prSwitch)
+        rtLines.append(note("Or when a review asks for changes. Every five minutes Coldfall runs your own gh "
+            + "(gh pr view) in each running desk's folder and puts a card in Needs You, with the failing checks "
+            + "to send to the desk. Nothing else is sent, and nothing runs while it's off."))
         let dripSwitch = NSButton(checkboxWithTitle: "Show Drip in the notch (beta)",
                                   target: self, action: #selector(toggleDrip(_:)))
         dripSwitch.state = UIState.load().dripOn ? .on : .off
@@ -862,6 +869,9 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
 
     @objc private func toggleDrip(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallDripChanged, object: sender.state == .on)
+    }
+    @objc private func toggleWatchPRs(_ b: NSButton) {
+        NotificationCenter.default.post(name: .coldfallWatchPRsChanged, object: b.state == .on)
     }
     @objc private func toggleNotify(_ sender: NSButton) {
         NotificationCenter.default.post(name: .coldfallNotifyChanged, object: sender.state == .on)

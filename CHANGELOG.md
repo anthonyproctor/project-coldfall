@@ -8,6 +8,12 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- `coldfall-cli attach <desk>`: a desk kept running by Coldfall, in any terminal you're in, including an SSH session from another machine. Coldfall's window keeps showing it; type in either, and the agent draws for whichever you typed in last. `Ctrl-\` leaves and the desk carries on. A desk kept running from an earlier version can be watched this way, and typed into once it's restarted.
+- Shortcuts and Siri: *Ask a Desk* (and get its answer back), *Send to a Desk*, *Open a Desk*, *Start a Desk* and *What Needs Me*. "What needs me in Project Coldfall" works with Siri.
+- *Tell me when a desk's pull request fails a check* (Settings, Agents), off by default: every five minutes Coldfall asks your own `gh` about each running desk's branch, and a failing check or a review asking for changes becomes a card in Needs You and a banner, with *Send Failing Checks* and *Open Pull Request*. Dismissed, a card stays away until a new commit fails or a review asks again.
+
 ## [0.3.55] - 2026-11-26
 
 A desk can ask for you when it needs something only you can do.

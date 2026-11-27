@@ -85,6 +85,17 @@ desk's choices were last read on (see `PromptCheck` in the core), and `--termina
 the phone page and a Mac banner, and a phone notification in fixed words. `--terminal out.txt --feed --feed-notice`
 snapshots Needs You with a made-up one. Try it only in a throwaway home.
 
+`coldfall-cli attach <desk>` shows a held desk in the terminal it runs in, beside Coldfall's own (see `Holder.Driver`
+in the core: the agent draws for whichever terminal typed last; `Ctrl-\` leaves). It needs a real terminal: try it with a short
+throwaway `COLDFALL_HOLDER_DIR`, `coldfall-holder attach` and the CLI each in a pty from a script, never against a real desk.
+
+Pull request cards (see `PRWatch` in the core) come from your own `gh` every five minutes while Settings has them on;
+`--terminal out.txt --feed --feed-pr` snapshots Needs You with a made-up one.
+
+Shortcuts actions live in `Coldfall/Intents.swift`. Shortcuts finds them through `Metadata.appintents`, which
+`scripts/build-app.sh` makes with Xcode's `appintentsmetadataprocessor` from the constants the compiler writes
+(`-emit-const-values` in Package.swift); without Xcode the bundle just has none. Logic for them goes in the core.
+
 `coldfall-cli wake <desk> --from <desk> "message"` starts a desk that is off, asks it and puts it back (see
 `Wake` in the core). Try it only in a throwaway home with stand-in agents (a desk whose `command` is a small
 script that reads a line and prints a reply), never against real desks.

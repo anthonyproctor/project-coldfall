@@ -23,6 +23,8 @@ final class FeedPanel: NSObject {
         var unread: String = PromptCheck.unread(nil, read: [:])
         /// The desk's own notice (coldfall-cli notify), not a question on its screen.
         var notice: Bool = false
+        /// A pull request with a failing check or a review asking for changes (PRWatch).
+        var pr: PRWatch.Alert? = nil
     }
 
     private let panel: NSPanel
@@ -39,6 +41,10 @@ final class FeedPanel: NSObject {
     var onGo: ((String) -> Void)?
     /// Take a desk's notice down.
     var onDismiss: ((String) -> Void)?
+    /// Hide a pull request's card until its state changes.
+    var onDismissPR: ((PRWatch.Alert) -> Void)?
+    /// Send this to the desk (the failing checks). Returns a line to show.
+    var onSend: ((String, String) -> String)?
     /// What's waiting in the Family Connector, if it runs and let Coldfall in.
     var family: (() -> [Connector.Item])?
     /// Pick a desk to draft a reply to this question; the button is where to show the menu.
@@ -157,7 +163,13 @@ final class FeedPanel: NSObject {
                 // The desk moves on at once; the list catches up on the next tick.
             }
             card.onGo = { [weak self] in self?.close(); self?.onGo?(it.desk) }
-            card.onDismiss = { [weak self] in self?.onDismiss?(it.desk); self?.refresh(force: true) }
+            card.onDismiss = { [weak self] in
+                if let a = it.pr { self?.onDismissPR?(a) } else { self?.onDismiss?(it.desk) }
+                self?.refresh(force: true)
+            }
+            card.onSend = { [weak self, weak card] text in
+                if let note = self?.onSend?(it.desk, text) { card?.say(note) }
+            }
             stack.addArrangedSubview(card)
             card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
@@ -309,8 +321,10 @@ private final class FeedCard: NSView {
     var onAnswer: ((Prompt.Option) -> Void)?
     var onGo: (() -> Void)?
     var onDismiss: (() -> Void)?
+    var onSend: ((String) -> Void)?
     private let note = NSTextField(labelWithString: "")
     private var options: [Prompt.Option] = []
+    private var pr: PRWatch.Alert?
 
     init(_ it: FeedPanel.Item) {
         super.init(frame: .zero)
@@ -337,7 +351,7 @@ private final class FeedCard: NSView {
         go.font = .systemFont(ofSize: 11.5)
         go.contentTintColor = ui.dimText
         var tail: [NSView] = [go]
-        if it.notice {
+        if it.notice || it.pr != nil {
             let dismiss = NSButton(title: "Dismiss", target: self, action: #selector(dismissIt))
             dismiss.bezelStyle = .inline
             dismiss.isBordered = false
@@ -355,7 +369,7 @@ private final class FeedCard: NSView {
         let about = it.prompt.map { $0.context.joined(separator: "\n") } ?? it.tail
         let body = NSTextField(wrappingLabelWithString: about)
         // A notice is the agent's sentence to you, not a screen: ordinary type.
-        body.font = it.notice ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        body.font = it.notice || it.pr != nil ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 11.5, weight: .regular)
         body.textColor = ui.text.withAlphaComponent(0.85)
         body.maximumNumberOfLines = it.prompt == nil ? 10 : Prompt.maxContext
         body.isSelectable = true
@@ -378,6 +392,23 @@ private final class FeedCard: NSView {
                 b.toolTip = o.label
                 row.addArrangedSubview(b)
             }
+            col.addArrangedSubview(row)
+        } else if let a = it.pr {
+            pr = a
+            var buttons: [NSButton] = []
+            if a.pr.fixChecksMessage != nil {
+                let fix = NSButton(title: a.pr.failed.count == 1 ? "Send Failing Check to \(it.desk)" : "Send Failing Checks to \(it.desk)",
+                                   target: self, action: #selector(sendFix))
+                fix.bezelStyle = .rounded
+                fix.bezelColor = .controlAccentColor
+                buttons.append(fix)
+            }
+            let open = NSButton(title: "Open Pull Request", target: self, action: #selector(openPR))
+            open.bezelStyle = .rounded
+            buttons.append(open)
+            let row = NSStackView(views: buttons)
+            row.orientation = .horizontal
+            row.spacing = 8
             col.addArrangedSubview(row)
         } else {
             let hint = NSTextField(wrappingLabelWithString: it.unread)
@@ -413,4 +444,6 @@ private final class FeedCard: NSView {
     }
     @objc private func goTo() { onGo?() }
     @objc private func dismissIt() { onDismiss?() }
+    @objc private func sendFix() { if let m = pr?.pr.fixChecksMessage { onSend?(m) } }
+    @objc private func openPR() { if let u = pr.flatMap({ URL(string: $0.pr.url) }), u.scheme == "https" { NSWorkspace.shared.open(u) } }
 }

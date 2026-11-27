@@ -64,6 +64,11 @@ public struct UIState: Codable {
     /// Notifications to phones that asked for them from the inbox (see
     /// WebPush). Off until turned on: it is the one thing that calls out.
     public var pushOn: Bool = false
+    /// Ask GitHub about running desks' pull requests every few minutes (see
+    /// PRWatch). Off until turned on.
+    public var watchPRs: Bool = false
+    /// Desk to the pull-request state whose card was dismissed.
+    public var prDismissed: [String: String] = [:]
     /// One line per desk in the rail (View, Compact Desk List).
     public var compactRail: Bool = true
     /// Drip, the character in the notch (see Companion). Beta.
@@ -110,6 +115,8 @@ public struct UIState: Codable {
         notifyDesks = try c.decodeIfPresent(Bool.self, forKey: .notifyDesks) ?? true
         inboxOn = try c.decodeIfPresent(Bool.self, forKey: .inboxOn) ?? false
         pushOn = try c.decodeIfPresent(Bool.self, forKey: .pushOn) ?? false
+        watchPRs = try c.decodeIfPresent(Bool.self, forKey: .watchPRs) ?? false
+        prDismissed = try c.decodeIfPresent([String: String].self, forKey: .prDismissed) ?? [:]
         compactRail = try c.decodeIfPresent(Bool.self, forKey: .compactRail) ?? true
         dripOn = try c.decodeIfPresent(Bool.self, forKey: .dripOn) ?? true
     }
