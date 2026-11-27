@@ -199,7 +199,9 @@ echo "download: signature ok, no home path or user name, version $TAG, marked la
 
 # ---------------------------------------------------------------- 8. site
 say "8. site"
-site_ok() { curl -fsS "$SITE" | grep -q "\"softwareVersion\":\"$VERSION\""; }
+# Read the whole page first: `grep -q` stops at the match, curl then fails
+# writing the rest, and pipefail called a good site bad (0.3.55).
+site_ok() { local page; page="$(curl -fsS "$SITE")" || return 1; grep -qF "\"softwareVersion\":\"$VERSION\"" <<<"$page"; }
 ( cd server && vercel deploy --prod --yes >/dev/null )
 ok=0
 for _ in $(seq 1 6); do site_ok && { ok=1; break; }; sleep 10; done
