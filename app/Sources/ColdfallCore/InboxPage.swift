@@ -160,7 +160,7 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .model .ef{color:var(--dim)}
 .send{width:38px;height:38px;border-radius:50%;border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;flex:none;padding:0}
 .send svg{width:18px;height:18px;stroke:var(--onaccent);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
-.send:disabled{opacity:.35}
+.send.idle{opacity:.35}
 .send.stop{background:var(--text)}.send.stop i{width:12px;height:12px;border-radius:2px;background:var(--bg)}
 .add{width:36px;height:36px;border:1px solid var(--line);background:none}
 .photos{display:flex;gap:10px;overflow-x:auto;padding:8px 8px 6px 0}
@@ -933,25 +933,43 @@ for (const [label, key] of [["1","1"],["2","2"],["3","3"],["↑","up"],["↓","d
 // --- sending ------------------------------------------------------------------
 function grow() { const t = $("msg"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, window.innerHeight * .34) + "px"; sendState(); }
 // Send when there's something to send; stop (Esc) when the agent is working
-// and the box is empty, as in Claude.
+// and the box is empty, as in Claude. Stop waits a few seconds after a send,
+// so a second tap on the same spot can't end the turn it just started, and a
+// tap goes by what's in the box then: dictation can fill it without telling
+// the page, and words in the box are never thrown away by a stop.
 const arrow = $("send").querySelector("svg").cloneNode(true);
+let sentAt = 0, stopShown = 0, stopWake = 0;
+const stopHold = 4000;
 function sendState() {
   const empty = !$("msg").value.trim() && !photos.length;
   const working = deskState && deskState.running && deskState.activity === "working";
-  const stop = empty && working;
+  const held = Date.now() - sentAt < stopHold;
+  if (held && !stopWake) stopWake = setTimeout(() => { stopWake = 0; sendState(); }, stopHold - (Date.now() - sentAt) + 50);
+  const stop = empty && working && !held;
+  if (stop && !$("send").classList.contains("stop")) stopShown = Date.now();
   const b = $("send");
   b.classList.toggle("stop", stop);
   b.textContent = "";
   if (stop) { b.append(el("i")); b.setAttribute("aria-label", "Stop this turn"); }
   else { b.append(arrow.cloneNode(true)); b.setAttribute("aria-label", "Send"); }
-  b.disabled = empty && !stop;
+  // Dimmed, never disabled: a disabled button ignores the tap, and the box
+  // may hold dictated words the page hasn't been told about yet.
+  b.classList.toggle("idle", empty && !stop);
 }
 $("msg").addEventListener("input", grow);
+for (const ev of ["change", "keyup", "compositionend", "blur", "focus"]) $("msg").addEventListener(ev, sendState);
 $("send").onclick = () => {
   const desk = current;
   if (!desk) return;
-  if ($("send").classList.contains("stop")) {
-    act("/api/interrupt", {desk}).then(r => { say(r.message); setTimeout(refreshDesk, 600); });
+  const typed = $("msg").value.trim() !== "" || photos.length > 0;
+  if (!typed) {
+    sendState();
+    // Only a stop button that has been on screen a moment stops: never the
+    // tap that lands as the send arrow turns into it.
+    if ($("send").classList.contains("stop") && Date.now() - stopShown > 700) {
+      trouble("stop", "stop pressed while it was working");
+      act("/api/interrupt", {desk}).then(r => { say(r.message); setTimeout(refreshDesk, 600); });
+    }
     return;
   }
   if (photos.some(p => !p.path)) { say("Wait for the photos to finish uploading."); return; }
@@ -959,6 +977,8 @@ $("send").onclick = () => {
   if (photos.length) text = (text || "Have a look at " + (photos.length === 1 ? "this photo" : "these photos") + ".") + "\n\n" + photos.map(p => p.path).join("\n");
   if (!text) return;
   pending = {desk, text, at: Date.now() / 1000, label: "Sending…"};
+  sentAt = Date.now();
+  trouble("send", text.length + " characters" + (photos.length ? ", " + photos.length + " photos" : ""));
   renderChat(false); $("chatbody").scrollTop = $("chatbody").scrollHeight;
   $("msg").value = ""; const sentPhotos = photos; photos = []; renderPhotos(); grow();
   act("/api/send", {desk, text}).then(r => {

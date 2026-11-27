@@ -21,7 +21,8 @@ public enum PhoneLog {
 
     /// What the page may say happened. Anything else is dropped.
     public static let kinds: Set<String> = ["load", "error", "rejection", "net", "timeout", "http", "slow",
-                                             "stall", "reload", "visible", "hidden", "online", "offline", "report"]
+                                             "stall", "reload", "visible", "hidden", "online", "offline", "report",
+                                             "send", "stop"]
 
     public struct Entry: Equatable {
         public var at: Date          // when the Mac got it

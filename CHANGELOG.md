@@ -8,6 +8,19 @@ opens this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sending from the phone no longer stops the agent by mistake.** The send
+  button turns into a stop button while an agent works, and a quick second tap
+  could land on it and end the turn you had just started. Stop now waits a few
+  seconds after a send, and ignores a tap in the moment it appears.
+- **Dictated messages send.** Voice to text can fill the message box without
+  telling the page, so the button stayed a stop button, or did nothing. A tap
+  now goes by what's in the box, so words there are sent, never thrown away by
+  a stop.
+- The phone log notes each send and stop (how long, never the words), so a
+  repeat like this shows up there.
+
 ## [0.3.59] - 2026-11-27
 
 Phone page reports its own trouble; Report a problem
