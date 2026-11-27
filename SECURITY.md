@@ -39,7 +39,9 @@ Fixes go into the newest release only.
   the phone landing anywhere but its desk's `.coldfall-photos` folder, under a
   name the phone chose, or as anything but a picture. The page reads a listed
   desk's own transcript to show its conversation; reaching a hidden desk's, or
-  any other file, through it is a hole.
+  any other file, through it is a hole. The page sends its own trouble and
+  problem reports to the Mac; one landing anywhere but Coldfall's `phone` folder,
+  or a screenshot kept as anything but a picture, is a hole.
 - **One desk reaching another.** `coldfall-cli send`, `ask` and `wake` let an
   agent in one desk reach another. Getting past the limits on them (a desk's
   `wake_from` list, the refusal to type into a desk that is asking a question)

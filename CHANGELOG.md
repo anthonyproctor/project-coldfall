@@ -8,6 +8,16 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Report a problem from the phone.** The phone page now keeps a short note of
+  what goes wrong on it: its own errors, requests that failed or were slow,
+  moments it stopped running, and reloads. It sends that to the Mac on its own.
+  **Report a problem** (in a desk's ••• or at the foot of the desk list) sends
+  what you write, and a screenshot if you add one, along with it.
+  `coldfall-cli phone-log` reads it all on the Mac. Only the page's own words go,
+  never what a desk said, and they stay on the Mac.
+
 ## [0.3.58] - 2026-11-27
 
 Links work on the phone

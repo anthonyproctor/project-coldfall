@@ -248,6 +248,19 @@ case "chat":
     }
     exit(0)
 
+case "phone-log":
+    // What the phone page saw go wrong (its errors, failed or slow requests,
+    // stalls, reloads) and the problem reports written on it. See PhoneLog.
+    let rest = Array(args.dropFirst())
+    var last = 60
+    if let k = rest.firstIndex(of: "--last"), k + 1 < rest.count, let n = Int(rest[k + 1]) { last = n }
+    var list = PhoneLog.read()
+    if rest.contains("--reports") { list = list.filter { $0.kind == "report" } }
+    if rest.contains("--trouble") { list = list.filter { !["load", "visible", "hidden", "online", "offline"].contains($0.kind) } }
+    if list.isEmpty { print("Nothing from the phone yet. The page sends what goes wrong on its own, and ••• ▸ Report a problem sends a note."); exit(0) }
+    for e in list.suffix(last) { print(PhoneLog.describe(e)) }
+    exit(0)
+
 case "attach":
     // A held desk in this terminal: another terminal app, or an SSH session
     // from another machine. See Attach.swift.
@@ -536,6 +549,7 @@ case "formats":
         "mail":     Mailbox.load().dir + "/thread-<a>-<b>.md",
         "uiState":  UIState.path,
         "inventorySeen": InventorySeen.root + "/<desk>.json",
+        "phoneLog": PhoneLog.dir + "/phone.log",
     ])
 
 default:
@@ -556,6 +570,7 @@ default:
                          (exit 0 done, 2 needs you, 3 still working, 4 not allowed; see wake_from)
       notify --from <desk> "message"  ask for you: in Needs You and on the phone page (--clear, --list)
       holders [end <desk>]  desks kept running outside the app; end one
+      phone-log [--last N] [--reports] [--trouble]  what went wrong on the phone page, and reports sent from it
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed
       limits             remaining quota per vendor, stale entries dropped

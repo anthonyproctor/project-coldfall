@@ -164,7 +164,7 @@ public enum Inbox {
             headers[l[..<c].lowercased()] = l[l.index(after: c)...].trimmingCharacters(in: .whitespaces)
         }
         let length = Int(headers["content-length"] ?? "0") ?? -1
-        let limit = first[0] == "POST" && first[1] == "/api/upload" ? maxUploadBody : maxBody
+        let limit = first[0] == "POST" && (first[1] == "/api/upload" || first[1] == "/api/report") ? maxUploadBody : maxBody
         guard length >= 0, length <= limit else { return .bad }
         let bodyStart = end.upperBound
         guard data.count - bodyStart >= length else { return .incomplete }
@@ -697,6 +697,12 @@ extension Inbox {
                 return .json(["ok": false, "message": "Couldn't save the photo in \(name)'s folder."], status: 500)
             }
             return .json(["ok": true, "path": path, "message": "Attached."])
+        case ("POST", "/api/report"):
+            // What the page saw go wrong, and problem reports: kept on the Mac
+            // for `coldfall-cli phone-log`. It acts on no desk: no Face ID.
+            let shot = fields(r.body)["shot"].flatMap { Data(base64Encoded: $0) }
+            let n = PhoneLog.record(r.body, shot: shot)
+            return .json(["ok": n > 0, "kept": n, "message": n > 0 ? "Sent to your Mac." : "Nothing to send."])
         case ("POST", "/api/faceid/state"):
             let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r))
             return .json(["required": PhoneKey.required, "pairing": PhoneKey.pairing(), "here": e != nil,
@@ -731,7 +737,7 @@ extension Inbox {
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
              (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
              (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"), (_, "/api/stop"), (_, "/api/pin"),
-             (_, "/api/upload"), (_, "/api/chat"), (_, "/api/interrupt"), (_, "/api/look"):
+             (_, "/api/upload"), (_, "/api/chat"), (_, "/api/interrupt"), (_, "/api/look"), (_, "/api/report"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)

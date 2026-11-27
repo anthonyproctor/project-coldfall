@@ -175,7 +175,9 @@ cookie, then the `/api/*` routes with `X-Coldfall: 1` on POSTs. A Mac can't reac
 its own Tailscale address, so the tailnet side is only checkable from another device.
 The page is also an app for a phone's Home Screen (`/manifest.webmanifest`, `/sw.js`, `/icon-512.png`)
 and takes notification subscriptions (`/api/push/*`; see `WebPush` in the core). The phone's chat view reads each desk's transcript (see `Chat` in the core; `coldfall-cli chat <desk> --roles` checks
-the reader on a real desk without printing the conversation). `COLDFALL_INBOX_TEST_PORT=47199` makes a
+the reader on a real desk without printing the conversation). What goes wrong on the phone page (errors, failed or slow requests, stalls, reloads) and problem reports written on it
+land in `~/.local/share/coldfall/phone/` (see `PhoneLog` in the core): `coldfall-cli phone-log` reads them, `--trouble` without
+the page's comings and goings, `--reports` only what the person wrote. Read it first when someone says the phone app is misbehaving. `COLDFALL_INBOX_TEST_PORT=47199` makes a
 throwaway Coldfall's inbox listen on 127.0.0.1 at that port only, so it can run beside a real one. A headless Chrome
 with a throwaway `--user-data-dir` pointed at `http://localhost:47101/?t=<inbox-token>` runs the
 page's script for real (`--dump-dom`, `--screenshot`). Never subscribe a real device or send a

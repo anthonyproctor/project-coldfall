@@ -81,6 +81,7 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .ask .act{display:flex;gap:8px;margin-top:10px}
 .ask .act button{background:var(--raised);border:0;border-radius:999px;padding:7px 14px;font-size:14px}
 #phone{margin:28px 4px 0}
+#help{margin:16px 4px 28px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;font-size:14px;color:var(--dim);margin-top:8px}
 .card .keys{margin:10px 0 0}
 .card .keys button{background:var(--raised);border:0;border-radius:999px;padding:8px 14px}
@@ -181,6 +182,11 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 #sheet .acts button.on{font-weight:600}
 #sheet .acts button.on::after{content:"✓";color:var(--accent)}
 #sheet .acts button.cancel{font-weight:600;background:none}
+#sheet .acts button.primary{background:var(--accent);color:var(--onaccent);font-weight:600}
+#sheet .acts button:disabled{opacity:.6}
+#sheet textarea.report{display:block;width:100%;min-height:96px;resize:none;background:var(--raised);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font:inherit;font-size:16px;outline:none}
+#sheet .diag{max-height:24vh;overflow:auto;margin:6px 0;padding:8px 10px;border-radius:12px;background:var(--raised);color:var(--dim);font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
+#sheet .panel{max-height:calc(var(--vh, 100vh) - 24px);overflow:auto}
 @media (min-width:820px){
   #side{flex:0 0 340px;border-right:1px solid var(--line);background:var(--side)}
   #menu{display:none}
@@ -223,6 +229,11 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
       <div class="card" id="face">
         <div id="facesay"></div>
         <div class="keys hidden" id="facekeys"><button class="go" id="faceset">Set up Face ID</button></div>
+      </div>
+    </section>
+    <section id="help">
+      <div class="card">Something not working right? Your Mac keeps what this page notices going wrong.
+        <div class="keys"><button id="reportbtn">Report a problem</button></div>
       </div>
     </section>
   </div>
@@ -285,6 +296,84 @@ const store = {get(k) { try { return localStorage.getItem(k); } catch (e) { retu
 const wide = () => window.matchMedia("(min-width: 820px)").matches;
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
+// --- trouble: what this page sees go wrong, kept on the phone (so it lasts
+// through a reload) and sent to the Mac, where `coldfall-cli phone-log` reads
+// it. Only the page's own words go: an error, a route, a status, never what a
+// desk said.
+const PAGE = "__PAGE_VERSION__";
+const loud = new Set(["error", "rejection", "net", "timeout", "http", "stall", "reload"]);
+const diag = (() => { try { const a = JSON.parse(localStorage.getItem("cf.diag") || "[]"); return Array.isArray(a) ? a.slice(-80) : []; } catch (e) { return []; } })();
+let diagSent = +(store.get("cf.diagSent") || 0), diagTimer = 0, diagLast = 0;
+function where() { try { return {desk: current || "", tab: typeof tab === "string" ? tab : ""}; } catch (e) { return {desk: "", tab: ""}; } }
+function trouble(kind, msg) {
+  const w = where(), now = Date.now();
+  const m = String(msg || "").replace(/([?&#]t=)[^&#\s]*/g, "$1…").slice(0, 400);
+  const last = diag[diag.length - 1];
+  if (last && last.kind === kind && last.msg === m && last.t > diagSent && now - last.t < 120000) { last.n = (last.n || 1) + 1; }
+  else { diag.push({t: now, kind, msg: m, desk: w.desk, tab: w.tab, page: PAGE}); if (diag.length > 80) diag.splice(0, diag.length - 80); }
+  store.set("cf.diag", JSON.stringify(diag));
+  if (loud.has(kind)) sendTroubleSoon();
+}
+function device() {
+  let app = false; try { app = !!navigator.standalone || matchMedia("(display-mode: standalone)").matches; } catch (e) {}
+  return {device: String(navigator.userAgent || "").slice(0, 200), size: innerWidth + "x" + innerHeight + (app ? " Home Screen app" : " browser")};
+}
+// At most every 20 seconds, so a page that keeps failing doesn't flood the Mac.
+function sendTroubleSoon() {
+  if (diagTimer) return;
+  diagTimer = setTimeout(() => { diagTimer = 0; sendTrouble(); }, Math.max(3000, 20000 - (Date.now() - diagLast)));
+}
+function sendTrouble(extra) {
+  const fresh = diag.filter(e => e.t > diagSent);
+  if (!extra && !fresh.some(e => loud.has(e.kind))) return Promise.resolve({ok: true});
+  diagLast = Date.now();
+  const upTo = fresh.length ? fresh[fresh.length - 1].t : diagSent;
+  const events = fresh.map(e => Object.assign({}, e, {msg: e.n > 1 ? e.msg + " (" + e.n + " times)" : e.msg}));
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
+  return fetch("/api/report", {method: "POST", signal: ctl.signal, headers: {"Content-Type": "application/json", "X-Coldfall": "1"},
+      body: JSON.stringify(Object.assign({events}, device(), extra || {}))})
+    .then(r => r.json())
+    .then(r => { clearTimeout(t); diagSent = Math.max(diagSent, upTo); store.set("cf.diagSent", String(diagSent)); return r; })
+    .catch(() => { clearTimeout(t); return {ok: false, message: "Couldn't reach your Mac. Try again when it's awake and Tailscale is on."}; });
+}
+window.addEventListener("error", e => trouble("error", (e.message || "Script error") + (e.lineno ? " (line " + e.lineno + ":" + (e.colno || 0) + ")" : "")));
+window.addEventListener("unhandledrejection", e => { const r = e.reason; trouble("rejection", (r && (r.stack || r.message)) || String(r)); });
+window.addEventListener("online", () => trouble("online", ""));
+window.addEventListener("offline", () => trouble("offline", ""));
+// A page that stops running (a long render, a stuck loop) shows up as a gap
+// in a once-a-second beat while it's on screen.
+let beat = 0;
+setInterval(() => { const now = Date.now(); if (beat && !document.hidden && now - beat > 4000) trouble("stall", "The page didn't run for " + ((now - beat) / 1000).toFixed(1) + "s"); beat = document.hidden ? 0 : now; }, 1000);
+document.addEventListener("visibilitychange", () => { beat = 0; if (!document.hidden) trouble("visible", ""); });
+trouble("load", PAGE + " " + device().size);
+if (diag.some(e => e.t > diagSent && loud.has(e.kind))) sendTroubleSoon();
+
+function reportSheet() {
+  let shot = null;
+  sheet("Report a problem", "Your Mac gets what you write, a screenshot if you add one, and what the page noticed itself (below). Nothing a desk said is sent.",
+    [{label: "Send to my Mac", cls: "primary", keep: true, run: async () => {
+      const b = $("sheetacts").querySelector("button.primary"), note = ta.value.trim();
+      if (!note && !shot) { $("sheetsay").textContent = "Write a line about what went wrong first."; ta.focus(); return; }
+      b.disabled = true; b.textContent = "Sending…";
+      const w = where();
+      const r = await sendTrouble({note: note || "(a screenshot only)", desk: w.desk, tab: w.tab, page: PAGE, shot: shot ? await base64(shot) : undefined});
+      if (r && r.ok) { closeSheet(); say("Sent to your Mac."); }
+      else { b.disabled = false; b.textContent = "Send to my Mac"; $("sheetsay").textContent = (r && r.message) || "Couldn't send it. Try again in a moment."; }
+    }}]);
+  const ta = el("textarea", "report"); ta.placeholder = "What were you doing, and what went wrong?";
+  const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
+  const pick = el("button", "", "Add a screenshot");
+  pick.onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files && file.files[0]; if (!f) return;
+    const s = await shrink(f); URL.revokeObjectURL(s.url);
+    shot = s.blob; pick.textContent = "Screenshot added ✓";
+  };
+  const seen = diag.filter(e => !["visible", "online"].includes(e.kind)).slice(-14);
+  const log = el("div", "diag", seen.length ? seen.map(e => new Date(e.t).toTimeString().slice(0, 8) + "  " + e.kind + "  " + e.msg + (e.n > 1 ? " (" + e.n + " times)" : "")).join("\n") : "Nothing has gone wrong that the page could see.");
+  $("sheetacts").prepend(ta, pick, file, log);
+}
+
 // The app is exactly what the screen shows, so the message box rides on the
 // keyboard rather than hiding behind it or floating halfway up.
 function fit() {
@@ -317,7 +406,6 @@ if (darkQuery.addEventListener) darkQuery.addEventListener("change", paintLook);
 // never freezes the page; a note says so, and it tries again on its own.
 // The page this is, and what to do when the Mac serves a newer one (an
 // update while you were away): reload by itself, unless you're writing.
-const PAGE = "__PAGE_VERSION__";
 let newer = false;
 function checkPage(v) {
   if (!v || v === PAGE || newer) return;
@@ -339,6 +427,7 @@ function tryUpdate() {
     return;
   }
   try { sessionStorage.setItem("cf.reloaded", String(Date.now())); } catch (e) {}
+  trouble("reload", "Coldfall was updated: loading the new page");
   location.reload();
 }
 
@@ -351,13 +440,21 @@ function conn(ok, why) {
 function api(path, body) {
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 12000);
   const o = body === undefined ? {signal: ctl.signal} : {method:"POST", signal: ctl.signal, headers:{"Content-Type":"application/json","X-Coldfall":"1"}, body:JSON.stringify(body)};
-  return fetch(path, o).catch(() => { clearTimeout(t); conn(false); throw new Error("Can't reach your Mac. Is it awake, and is Tailscale on here?"); })
+  const route = path.split("?")[0], started = Date.now();
+  return fetch(path, o).catch(() => {
+      clearTimeout(t);
+      trouble(ctl.signal.aborted ? "timeout" : "net", route + (ctl.signal.aborted ? ": no answer in 12s" : ": couldn't connect") + (navigator.onLine === false ? " (offline)" : ""));
+      conn(false); throw new Error("Can't reach your Mac. Is it awake, and is Tailscale on here?");
+    })
     .then(r => {
       clearTimeout(t);
-      if (r.status === 401) { if (!asking) { asking = true; location.reload(); } throw new Error("Coldfall needs its link again."); }
+      const ms = Date.now() - started;
+      if (ms > 5000) trouble("slow", route + " took " + (ms / 1000).toFixed(1) + "s");
+      if (r.status === 401) { trouble("reload", route + " was refused: asking for the link again"); if (!asking) { asking = true; location.reload(); } throw new Error("Coldfall needs its link again."); }
+      if (r.status >= 500) trouble("http", route + " answered " + r.status);
       checkPage(r.headers.get("X-Coldfall-Page"));
       if (!newer) conn(true);
-      return r.json();
+      return r.json().catch(() => { trouble("http", route + " answered " + r.status + " with something that isn't JSON"); throw new Error("Coldfall's answer didn't make sense. Try again."); });
     });
 }
 // A 401 means the secret changed or was never here: load the page that asks for it.
@@ -509,6 +606,7 @@ $("q").addEventListener("input", renderList);
 function openDrawer() { refreshList(); document.body.classList.add("drawer"); }
 function closeDrawer() { document.body.classList.remove("drawer"); }
 $("menu").onclick = openDrawer;
+$("reportbtn").onclick = reportSheet;
 $("backdrop").onclick = closeDrawer;
 
 // --- sheets ----------------------------------------------------------------
@@ -533,6 +631,7 @@ function deskSheet(d) {
   else acts.push({label: d.asleep ? "Wake and start" : "Start", run: () => start(d.name)});
   acts.push({label: d.pinned ? "Unpin" : "Pin to top", run: () => api("/api/pin", {desk: d.name, on: d.pinned ? "false" : "true"}).then(r => { say(r.message); refreshList(); }).catch(e => say(e.message))});
   if (d.name === current) acts.push({label: tab === "chat" ? "Show its screen" : "Show the chat", run: () => setTab(tab === "chat" ? "screen" : "chat")});
+  if (d.name === current) acts.push({label: "Report a problem…", run: reportSheet});
   sheet(d.name, [labels[kind(d)], d.group, d.memory].filter(Boolean).join(" · "), acts);
 }
 function stopSheet(d) {

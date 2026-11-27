@@ -22,6 +22,7 @@ ScreenChange.logPath = testSandbox + "/share/logs/green.log"
 RemoteOpen.root = testSandbox + "/share/remote"
 Wake.root = testSandbox + "/share/wake"
 WebPush.root = testSandbox + "/share/push"
+PhoneLog.dir = testSandbox + "/share/phone"
 // Short: a unix socket path has to fit in 104 bytes.
 Holder.root = NSTemporaryDirectory() + "cfh\(getpid())"
 /// Whether a real usage cache existed before any test ran. Lets the final
@@ -5082,6 +5083,69 @@ do {
     var noHeader = req("POST", "/api/notice/clear", body: #"{"desk":"asks"}"#); noHeader.headers["x-coldfall"] = nil
     eq("inbox: and needs the page's header like any change",
        Inbox.respond(noHeader, token: tok, allowedHosts: ["127.0.0.1"], host: h).status, 403)
+}
+
+// MARK: - what went wrong on the phone (coldfall-cli phone-log)
+do {
+    let was = PhoneLog.dir
+    PhoneLog.dir = testSandbox + "/phone-\(UUID().uuidString.prefix(6))"
+    defer { try? FileManager.default.removeItem(atPath: PhoneLog.dir); PhoneLog.dir = was }
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    eq("phone log: the inbox secret is taken out of a link", PhoneLog.clean("fetch http://mac:47100/?t=SECRET123&x=1 failed", max: 500),
+       "fetch http://mac:47100/?t=…&x=1 failed")
+    eq("phone log: and out of a fragment", PhoneLog.clean("at /#t=abc", max: 500), "at /#t=…")
+    eq("phone log: control characters become spaces", PhoneLog.clean("a\u{1B}[31mb\u{202E}c", max: 500), "a [31mb c")
+    eq("phone log: cut to its limit", PhoneLog.clean(String(repeating: "x", count: 600), max: 500).count, 501)
+
+    let body = #"{"events":[{"t":1800000000000,"kind":"error","msg":"TypeError: x is undefined (line 12:4)","desk":"api","tab":"chat","page":"abc123"},"#
+        + #"{"t":1800000001000,"kind":"rm -rf","msg":"not a kind"},{"t":1800000002000,"kind":"report","msg":"a report can't come in as an event"},"#
+        + #"{"t":1800000003000,"kind":"stall","msg":"The page didn't run for 6.0s"}],"device":"iPhone Safari","size":"390×844 app"}"#
+    let got = PhoneLog.entries(Data(body.utf8), now: t0)
+    eq("phone log: only known kinds kept", got.map(\.kind), ["error", "stall"])
+    eq("phone log: where it happened kept", got.first.map { [$0.desk, $0.tab, $0.page] }, ["api", "chat", "abc123"])
+    eq("phone log: the device goes with the batch", got.last?.device, "iPhone Safari · 390×844 app")
+    eq("phone log: not JSON is nothing", PhoneLog.entries(Data("<html>".utf8)), [])
+    let many = #"{"events":["# + Array(repeating: #"{"kind":"net","msg":"x"}"#, count: 500).joined(separator: ",") + "]}"
+    eq("phone log: a batch is capped", PhoneLog.entries(Data(many.utf8)).count, PhoneLog.maxEvents)
+
+    eq("phone log: kept", PhoneLog.record(Data(body.utf8), now: t0), 2)
+    let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0, count: 40))
+    let report = #"{"events":[],"note":"The chat froze after I sent a photo","desk":"api","tab":"chat","page":"abc123","device":"iPhone"}"#
+    eq("phone log: a report with its screenshot", PhoneLog.record(Data(report.utf8), shot: jpeg, now: t0), 1)
+    let all = PhoneLog.read()
+    eq("phone log: read back in order", all.map(\.kind), ["error", "stall", "report"])
+    check("phone log: the screenshot saved under a name made here", all.last?.shot.hasPrefix(PhoneLog.dir + "/report-") == true && all.last?.shot.hasSuffix(".jpg") == true)
+    let mode = (try? FileManager.default.attributesOfItem(atPath: PhoneLog.dir + "/phone.log"))?[.posixPermissions] as? Int
+    eq("phone log: readable by this account only", mode, 0o600)
+    PhoneLog.record(Data(#"{"events":[],"note":"script","device":"x"}"#.utf8), shot: Data("#!/bin/sh\n".utf8), now: t0)
+    eq("phone log: anything but a picture isn't saved as a screenshot", PhoneLog.read().last?.shot, "")
+    check("phone log: a report reads as one", PhoneLog.describe(all.last!).contains("report    The chat froze after I sent a photo  [api/chat]"))
+
+    let keep = PhoneLog.maxLog
+    PhoneLog.maxLog = 4096
+    for _ in 0..<60 { PhoneLog.record(Data(body.utf8), now: t0) }
+    let size = (try? FileManager.default.attributesOfItem(atPath: PhoneLog.dir + "/phone.log"))?[.size] as? Int ?? 0
+    check("phone log: keeps itself small", size > 0 && size <= 4096, "\(size)")
+    check("phone log: and still reads after being cut", PhoneLog.read().count > 4 && PhoneLog.read().allSatisfy { !$0.kind.isEmpty })
+    PhoneLog.maxLog = keep
+
+    let tok = String(repeating: "p", count: 43)
+    func req(_ target: String, body: String, header: Bool = true) -> Inbox.Request {
+        let raw = "POST \(target) HTTP/1.1\r\nHost: 127.0.0.1:47101\r\nCookie: cf_inbox=\(Inbox.cookieValue(tok))\r\n" + (header ? "X-Coldfall: 1\r\n" : "")
+            + "Content-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        guard case .request(let r) = Inbox.parse(Data(raw.utf8)) else { return Inbox.Request(method: "BAD", path: "") }
+        return r
+    }
+    let h = FakeInboxHost()
+    let before = PhoneLog.read().count
+    let r = Inbox.respond(req("/api/report", body: report), token: tok, allowedHosts: ["127.0.0.1"], host: h)
+    check("phone log: the page's route keeps it", r.status == 200 && PhoneLog.read().count == before + 1)
+    check("phone log: and acts on no desk", h.sent.isEmpty && h.pressed.isEmpty)
+    eq("phone log: needs the page's header like any change",
+       Inbox.respond(req("/api/report", body: report, header: false), token: tok, allowedHosts: ["127.0.0.1"], host: h).status, 403)
+    let big = #"{"events":[],"note":"x","shot":""# + String(repeating: "A", count: 200_000) + #""}"#
+    check("phone log: a screenshot is allowed past the small-body limit", req("/api/report", body: big).method == "POST")
 }
 
 // MARK: - the suite must not touch a real home directory
