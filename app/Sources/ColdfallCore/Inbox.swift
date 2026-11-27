@@ -746,7 +746,12 @@ extension Inbox {
         case .denied(let resp): return resp
         case .setCookie(let to):
             return Response(status: 302, headers: [cookieHeader(token, secure: cameSecure(r)), ("Location", to.isEmpty ? "/" : to)])
-        case .allowed: return route(r, host: host, allowedHosts: allowedHosts)
+        case .allowed:
+            // Every answer says which page this Coldfall serves, so one left
+            // open on a phone through an update knows to reload.
+            var resp = route(r, host: host, allowedHosts: allowedHosts)
+            resp.headers.append(("X-Coldfall-Page", pageVersion))
+            return resp
         }
     }
 }

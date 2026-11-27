@@ -4372,6 +4372,12 @@ do {
         eq("chat: all again when the page's last is gone", (chatJSON("&after=5")["messages"] as? [Any])?.count, 3)
         h.chatView = nil
         check("chat: a desk without one says so", chatJSON("")["none"] as? Bool == true)
+        // A page left open through an update finds out and reloads.
+        check("page version: written into the page, no placeholder left",
+              Inbox.page.contains("const PAGE = \"\(Inbox.pageVersion)\"") && !Inbox.page.contains("__PAGE_VERSION__"))
+        eq("page version: every answer carries it", respond(req("GET", "/api/desks")).header("X-Coldfall-Page"), Inbox.pageVersion)
+        check("page version: the page itself is allowed to run (its script hash is of the page as served)",
+              Inbox.scriptHashes(Inbox.page).allSatisfy { Inbox.pagePolicy.1.contains($0) })
         let look = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/look")).body)) as? [String: Any] ?? [:]
         check("look: the default theme keeps the page's own colours", look["default"] as? Bool == true)
         h.family = "graphite"

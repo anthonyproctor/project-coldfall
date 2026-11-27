@@ -3,7 +3,14 @@ import Foundation
 extension Inbox {
     /// The whole page. Agent output only ever reaches it through textContent,
     /// never innerHTML, so nothing a desk prints can become markup.
-    public static let page = #"""
+    /// The page as served: the template with its own version written in,
+    /// so a page left open on a phone can tell that the Mac now serves a
+    /// newer one (see `pageVersion`).
+    public static let page = pageTemplate.replacingOccurrences(of: "__PAGE_VERSION__", with: pageVersion)
+    /// Which page this Coldfall serves: a hash of it, sent with every answer.
+    public static let pageVersion = textHash(pageTemplate)
+
+    static let pageTemplate = #"""
 <!doctype html>
 <html lang="en">
 <head>
@@ -308,6 +315,33 @@ if (darkQuery.addEventListener) darkQuery.addEventListener("change", paintLook);
 
 // Every request gives up after 12 seconds, so a Mac that stopped answering
 // never freezes the page; a note says so, and it tries again on its own.
+// The page this is, and what to do when the Mac serves a newer one (an
+// update while you were away): reload by itself, unless you're writing.
+const PAGE = "__PAGE_VERSION__";
+let newer = false;
+function checkPage(v) {
+  if (!v || v === PAGE || newer) return;
+  newer = true;
+  tryUpdate();
+}
+function tryUpdate() {
+  if (!newer || document.hidden) return;
+  const writing = ($("msg").value.trim() !== "") || photos.length > 0;
+  // Once a minute at most, so a page that somehow can't get the new one never loops.
+  let last = 0; try { last = +sessionStorage.getItem("cf.reloaded") || 0; } catch (e) {}
+  if (writing || Date.now() - last < 60000) {
+    $("conn").textContent = "Coldfall was updated. ";
+    const b = el("button", "", "Reload");
+    b.style.cssText = "background:none;border:0;color:inherit;font:inherit;font-weight:600;text-decoration:underline;padding:0";
+    b.onclick = () => { if (current) { drafts[current] = $("msg").value; } location.reload(); };
+    $("conn").append(b);
+    $("conn").classList.remove("hidden");
+    return;
+  }
+  try { sessionStorage.setItem("cf.reloaded", String(Date.now())); } catch (e) {}
+  location.reload();
+}
+
 let failures = 0;
 function conn(ok, why) {
   failures = ok ? 0 : failures + 1;
@@ -321,7 +355,8 @@ function api(path, body) {
     .then(r => {
       clearTimeout(t);
       if (r.status === 401) { if (!asking) { asking = true; location.reload(); } throw new Error("Coldfall needs its link again."); }
-      conn(true);
+      checkPage(r.headers.get("X-Coldfall-Page"));
+      if (!newer) conn(true);
       return r.json();
     });
 }
@@ -884,7 +919,7 @@ function show() {
   renderList(); grow(); fit();
 }
 // Back from the background or the network: look again at once.
-function wake() { if (document.hidden) return; failures = 0; conn(true); refreshList(); loadLook(); if (current) { fetching = false; refreshDesk(); refreshChat(); } seen(); }
+function wake() { if (document.hidden) return; if (newer) { tryUpdate(); return; } failures = 0; conn(true); refreshList(); loadLook(); if (current) { fetching = false; refreshDesk(); refreshChat(); } seen(); }
 window.addEventListener("pageshow", wake);
 window.addEventListener("online", wake);
 window.addEventListener("focus", wake);
