@@ -24,12 +24,16 @@ extension Controller: InboxHost {
         let s = sessions[name]
         let running = s?.started ?? false
         let asking = s?.isBlocked == true
+        let state = running ? DeskState.load(name) : nil
         let prompt = asking ? s.flatMap { choices(of: $0, on: $0.screenText(lines: 60)) } : nil
         return Inbox.DeskView(text: running ? (s?.screenText(lines: lines) ?? "") : "", running: running,
                               activity: Controller.activityWord(s?.activity), runtime: d.runtime == "shell" ? "shell" : d.vendorLabel,
                               agent: running && !(s?.agentGone ?? true) && d.runtime != "shell",
                               prompt: prompt,
-                              unread: asking && prompt == nil ? s.flatMap { PromptCheck.note(stamp(of: $0), read: ui.choicesRead) } : nil)
+                              unread: asking && prompt == nil ? s.flatMap { PromptCheck.note(stamp(of: $0), read: ui.choicesRead) } : nil,
+                              model: running ? state?.model : nil, effort: running ? state?.effort : nil,
+                              context: running ? state?.ctxPct : nil,
+                              place: d.group ?? (d.resolvedCwd as NSString).lastPathComponent)
     }
 
     private func inboxTarget(_ name: String) -> RemoteOpen.Target? { sessions[name]?.remoteTarget() }
@@ -73,6 +77,69 @@ extension Controller: InboxHost {
             return (nil, "\(name) runs on another machine, so it can't open a photo saved on this Mac.")
         }
         return (d.resolvedCwd, "")
+    }
+
+    func inboxInterrupt(_ name: String) -> (ok: Bool, message: String) {
+        guard let d = desks.first(where: { $0.name == name }), !d.hidden else { return (false, "No such desk.") }
+        guard let s = sessions[name], s.started, !s.agentGone, d.runtime != "shell" else { return (false, "\(name) isn't running an agent.") }
+        // A question is answered with its own keys, never stopped by accident.
+        guard !s.isBlocked else { return (false, "\(name) is asking you something. Answer it instead.") }
+        guard s.activity == .working else { return (false, "\(name) isn't working on anything.") }
+        s.typeOnBehalf([27])
+        return (true, "Asked \(name) to stop.")
+    }
+
+    /// The desk's conversation for the phone (see Chat). Finding which
+    /// transcript is the desk's reads files, so it happens off the main
+    /// thread, once a minute at most per desk; following it reads only
+    /// what it gained.
+    func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer {
+        guard let d = desks.first(where: { $0.name == name }), !d.hidden else { return .none("No such desk.") }
+        guard d.runtime == "claude" || d.runtime == "codex" else { return .none("Only Claude and Codex desks have a conversation to show.") }
+        let known = chatSources[name]
+        if known == nil || Date().timeIntervalSince(known!.at) > 60, !chatFinding.contains(name) {
+            chatFinding.insert(name)
+            let desk = d
+            DispatchQueue.global(qos: .userInitiated).async {
+                var path: String?
+                if desk.runtime == "claude" { path = Reopen.claude(desk)?.path }
+                else { path = Transcripts.codex(folder: desk.resolvedCwd, limit: 200).first?.path }
+                DispatchQueue.main.async { [weak self] in
+                    self?.chatFinding.remove(name)
+                    self?.chatSources[name] = (path, Date())
+                }
+            }
+        }
+        guard let k = known else { return .loading }
+        // Nothing found last time and a fresh look under way: wait for it
+        // rather than tell the page there's nothing.
+        guard let path = k.path else { return chatFinding.contains(name) ? .loading : .none("\(name) has no conversation yet.") }
+        let vendor = d.runtime
+        // Quick reads here; a first look or a page further back is read in
+        // the background and handed over on the page's next ask.
+        let job = path + "#" + (before.map(String.init) ?? "")
+        if let done = chatDone.removeValue(forKey: job) {
+            return done.map { .chat($0) } ?? .none("\(name)'s conversation couldn't be read.")
+        }
+        if before == nil, chatTail.isQuick(path, vendor: vendor) {
+            guard let v = chatTail.read(path, vendor: vendor) else { return .none("\(name)'s conversation couldn't be read.") }
+            return .chat(v)
+        }
+        if !chatJobs.contains(job) {
+            chatJobs.insert(job)
+            let tail = chatTail
+            DispatchQueue.global(qos: .userInitiated).async {
+                let v = before.map { tail.earlier(path, vendor: vendor, before: $0) } ?? tail.read(path, vendor: vendor)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.chatJobs.remove(job)
+                    // A first look is kept by the reader itself; a page back is handed over once.
+                    if before != nil { self.chatDone[job] = v } else if v == nil { self.chatDone[job] = .some(nil) }
+                    self.chatTail.keep(Set(self.chatSources.values.compactMap(\.path)))
+                }
+            }
+        }
+        return .loading
     }
 
     func inboxOpen(_ name: String) -> RemoteOpen.Answer {

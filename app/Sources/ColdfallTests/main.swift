@@ -4246,6 +4246,8 @@ final class FakeInboxHost: InboxHost {
         pressed.append((name, keys)); return .init(.pressed, "Pressed.")
     }
     func inboxOpen(_ name: String) -> RemoteOpen.Answer { opened.append(name); return .init(.started, "Started.") }
+    var chatView: Chat.View?
+    func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer { chatView.map { .chat($0) } ?? .none("none") }
     var stopped: [String] = [], pins: [(String, Bool)] = []
     var photoFolder: String?
     func inboxStop(_ name: String) -> (ok: Bool, message: String) { stopped.append(name); return (true, "Stopped \(name).") }
@@ -4355,6 +4357,74 @@ do {
         eq("inbox: a desk with nowhere to put one says so",
            respond(req("POST", "/api/upload", body: #"{"desk":"idle","data":""# + jpeg.base64EncodedString() + #""}"#)).status, 400)
         check("inbox page: blob previews are allowed, nothing else new", Inbox.pagePolicy.1.contains("img-src 'self' blob:;"))
+
+        // The chat view: the conversation as messages, only what's new.
+        let ms = [Chat.Message(id: 10, role: "user", text: "hi", time: 1), Chat.Message(id: 20, role: "assistant", text: "hello", time: 2),
+                  Chat.Message(id: 30, role: "tool", text: "Bash · ls", time: 3)]
+        h.chatView = Chat.View(messages: ms, rev: "0-40", more: false, before: 0)
+        func chatJSON(_ q: String) -> [String: Any] { (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/chat?desk=idle" + q)).body)) as? [String: Any] ?? [:] }
+        eq("chat: all of it the first time", (chatJSON("")["messages"] as? [Any])?.count, 3)
+        check("chat: nothing when the page has it already", chatJSON("&have=0-40")["same"] as? Bool == true && chatJSON("&have=0-40")["messages"] == nil)
+        let after = chatJSON("&have=old&after=20")
+        check("chat: only what came after the page's last message", (after["messages"] as? [[String: Any]])?.map { $0["id"] as? Int } == [30] && after["append"] as? Bool == true)
+        eq("chat: all again when the page's last is gone", (chatJSON("&after=5")["messages"] as? [Any])?.count, 3)
+        h.chatView = nil
+        check("chat: a desk without one says so", chatJSON("")["none"] as? Bool == true)
+        eq("chat: not for a desk it doesn't list", respond(req("GET", "/api/chat?desk=secret")).status, 404)
+    }
+
+    // Reading a transcript into messages.
+    do {
+        func line(_ o: [String: Any]) -> Data { try! JSONSerialization.data(withJSONObject: o) }
+        let u = Chat.claude(line(["type": "user", "timestamp": "2026-11-26T10:00:00.000Z", "message": ["role": "user", "content": "Fix the cart"]]), at: 100)
+        check("chat: a typed message", u.count == 1 && u[0].role == "user" && u[0].text == "Fix the cart" && u[0].id == 100 && u[0].time != nil)
+        eq("chat: a tool's result isn't a message", Chat.messages(line(["type": "user", "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "x", "content": "ok"]]]]), at: 0, vendor: "claude").count, 0)
+        eq("chat: the harness's own lines aren't yours", Chat.claude(line(["type": "user", "message": ["role": "user", "content": "<command-name>/clear</command-name>"]]), at: 0).count, 0)
+        eq("chat: nor are meta lines", Chat.claude(line(["type": "user", "isMeta": true, "message": ["role": "user", "content": "x"]]), at: 0).count, 0)
+        eq("chat: nor a side agent's", Chat.claude(line(["type": "assistant", "isSidechain": true, "message": ["role": "assistant", "content": [["type": "text", "text": "x"]]]]), at: 0).count, 0)
+        let a = Chat.claude(line(["type": "assistant", "message": ["role": "assistant", "content": [["type": "thinking", "thinking": "hmm"], ["type": "text", "text": "Found it."],
+                                  ["type": "tool_use", "name": "Bash", "input": ["command": "swift test\nmore", "description": "Run the tests"]]]]]), at: 500)
+        check("chat: an answer and its tool, not its thinking", a.map(\.role) == ["assistant", "tool"] && a[0].text == "Found it." && a[1].text == "Bash · Run the tests" && a[1].id == 501)
+        let pic = Chat.claude(line(["type": "user", "message": ["role": "user", "content": [["type": "text", "text": "this one"], ["type": "image", "source": [:]]]]]), at: 0)
+        eq("chat: a photo you sent shows as one", pic.map(\.text), ["this one", "[image]"])
+        let cx = Chat.codex(line(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [["type": "input_text", "text": "Hello"]]]]), at: 0)
+            + Chat.codex(line(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [["type": "input_text", "text": "<environment_context>x</environment_context>"]]]]), at: 1)
+            + Chat.codex(line(["type": "response_item", "payload": ["type": "function_call", "name": "shell", "arguments": #"{"command":["ls","-la"]}"#]]), at: 2)
+            + Chat.codex(line(["type": "response_item", "payload": ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "Done"]]]]), at: 3)
+        eq("chat: Codex, the same way", cx.map { $0.role + ":" + $0.text }, ["user:Hello", "tool:shell · ls -la", "assistant:Done"])
+        // A long tool call puts the record's type far in; its role still counts.
+        // Written out as Claude writes it: role first, the record's type last.
+        let long = Data(("{\"parentUuid\":\"p\",\"message\":{\"model\":\"m\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Write\",\"input\":{\"file_path\":\"a.txt\",\"content\":\""
+                         + String(repeating: "x", count: 5000) + "\"}}]},\"type\":\"assistant\"}").utf8)
+        eq("chat: a long tool call isn't skipped", Chat.messages(long, at: 0, vendor: "claude").map(\.text), ["Write · a.txt"])
+        check("chat: a huge tool result is skipped unread", Chat.skips(Data(("{\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"t\",\"type\":\"tool_result\",\"content\":\""
+                                                                          + String(repeating: "y", count: 9000) + "\"}]},\"type\":\"user\"}").utf8), vendor: "claude"))
+
+        // Following a file: the end first, then only what's added.
+        let f = testSandbox + "/chat-\(UUID().uuidString).jsonl"
+        func say(_ role: String, _ text: String) -> String {
+            String(decoding: line(["type": role, "message": ["role": role, "content": role == "user" ? text as Any : [["type": "text", "text": text]] as Any]]), as: UTF8.self) + "\n"
+        }
+        var body = ""
+        for i in 0..<30 { body += say("user", "q\(i)") + say("assistant", "a\(i)") }
+        try? body.write(toFile: f, atomically: true, encoding: .utf8)
+        let tail = Chat.Tail(window: 600, keep: 300)
+        tail.enough = 6
+        let v1 = tail.read(f, vendor: "claude")
+        check("tail: a first look reads from the end, enough for a screen", v1.map { $0.messages.count >= 6 && $0.messages.count < 60 && $0.more && $0.messages.last?.text == "a29" } == true,
+              "\(v1?.messages.count ?? -1)")
+        let h1 = FileHandle(forWritingAtPath: f)!; h1.seekToEndOfFile(); h1.write(Data(say("user", "new one").utf8)); try? h1.close()
+        check("tail: then only what was added, and it's quick", tail.isQuick(f, vendor: "claude"))
+        let v2 = tail.read(f, vendor: "claude")
+        check("tail: the new message arrives", v2?.messages.last?.text == "new one" && v2?.rev != v1?.rev)
+        eq("tail: nothing new, the same mark", tail.read(f, vendor: "claude")?.rev, v2?.rev)
+        let back = tail.earlier(f, vendor: "claude", before: v2!.before)
+        check("tail: earlier messages, from before the first shown", back.map { !$0.messages.isEmpty && $0.messages.allSatisfy { $0.id < v2!.before } } == true)
+        var all: [Chat.Message] = back?.messages ?? [], at = back?.before ?? 0, guardN = 0
+        while at > 0, guardN < 50, let b = tail.earlier(f, vendor: "claude", before: at) { all = b.messages + all; at = b.more ? b.before : 0; guardN += 1 }
+        eq("tail: paging back reaches the very first message", all.first?.text, "q0")
+        try? "".write(toFile: f, atomically: true, encoding: .utf8)
+        check("tail: a file that was cut short starts again", tail.read(f, vendor: "claude")?.messages.isEmpty == true)
     }
     _ = respond(req("POST", "/api/send", body: #"{"desk":"idle","text":"go"}"#))
     check("inbox: a send reaches the desk", h.sent.first.map { $0 == ("idle", "go") } == true)

@@ -37,7 +37,9 @@ Fixes go into the newest release only.
   Reading or answering a desk without that secret, from a web page in a browser
   on the same Mac, or over Tailscale Funnel, is a hole. So is a photo sent from
   the phone landing anywhere but its desk's `.coldfall-photos` folder, under a
-  name the phone chose, or as anything but a picture.
+  name the phone chose, or as anything but a picture. The page reads a listed
+  desk's own transcript to show its conversation; reaching a hidden desk's, or
+  any other file, through it is a hole.
 - **One desk reaching another.** `coldfall-cli send`, `ask` and `wake` let an
   agent in one desk reach another. Getting past the limits on them (a desk's
   `wake_from` list, the refusal to type into a desk that is asking a question)

@@ -51,6 +51,14 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// allows. The Mac can still sleep.
     var noNap: NSObjectProtocol?
 
+    /// The phone's chat view (see Chat): each desk's transcript, when it was
+    /// last looked for, and the reader that follows them.
+    var chatSources: [String: (path: String?, at: Date)] = [:]
+    var chatFinding = Set<String>()
+    var chatJobs = Set<String>()
+    var chatDone: [String: Chat.View?] = [:]
+    let chatTail = Chat.Tail()
+
     /// For Shortcuts and Siri (see Intents.swift), which run inside the app.
     static weak var shared: Controller?
 

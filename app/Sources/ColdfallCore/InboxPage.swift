@@ -10,8 +10,8 @@ extension Inbox {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f7f6f3" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1b1a19" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1f1e1d" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -20,110 +20,185 @@ extension Inbox {
 <link rel="apple-touch-icon" href="/icon-180.png">
 <title>Coldfall</title>
 <style>
-:root{--bg:#f7f6f3;--side:#efede8;--card:#fff;--text:#1d1d1b;--dim:#76746e;--line:#e3e0d8;--accent:#2f6fdb;--green:#2e9d4f;--orange:#d9761c;--red:#c8432f;--term:#fbfaf7;--sel:#e4e9f5;--vh:100dvh}
-@media (prefers-color-scheme:dark){:root{--bg:#1b1a19;--side:#201f1d;--card:#262523;--text:#ecebe8;--dim:#9b9892;--line:#353330;--accent:#6ea0ff;--green:#5cc27a;--orange:#f0a050;--red:#ef6a55;--term:#151413;--sel:#2b3242}}
+:root{--bg:#faf9f5;--side:#f3f1ea;--surface:#fff;--raised:#f0eee6;--bubble:#efece3;--text:#1f1e1d;--dim:#73726c;--faint:#a3a199;--line:#e6e3da;--accent:#c96442;--green:#3f8f55;--amber:#c27c12;--red:#c0392b;--term:#fdfcf9;--glass:rgba(250,249,245,.86);--vh:100dvh}
+@media (prefers-color-scheme:dark){:root{--bg:#1f1e1d;--side:#1a1918;--surface:#2a2927;--raised:#30302e;--bubble:#3a3936;--text:#f3f2ee;--dim:#a6a39b;--faint:#75736d;--line:#3b3a37;--accent:#d97757;--green:#71c287;--amber:#e3ab4f;--red:#ef6a55;--term:#191817;--glass:rgba(31,30,29,.86)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
-body{background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-button{font:inherit;color:inherit}
+body{background:var(--bg);color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.hidden{display:none!important}
 #app{position:fixed;left:0;right:0;top:0;height:var(--vh);display:flex}
-.pane{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1}
-#side{background:var(--bg)}
-.bar{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 14px) 8px calc(env(safe-area-inset-left) + 14px);flex:none}
-.bar h1{font-size:22px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar .t{flex:1;min-width:0}
-.bar .t h1{font-size:18px}
-.iconbtn{background:none;border:0;color:var(--accent);font-size:17px;padding:6px 4px;cursor:pointer;min-width:34px}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;position:relative}
+.circle{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:grid;place-items:center;flex:none;padding:0}
+.circle svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.pill{border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:999px}
 .muted{color:var(--dim);font-size:13px}
-.tools{padding:0 calc(env(safe-area-inset-right) + 12px) 6px calc(env(safe-area-inset-left) + 12px);flex:none}
-#q{width:100%;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;font-size:16px}
-.chips{display:flex;gap:6px;margin-top:8px}
-.chips button{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer}
+
+/* the list (home on a phone, a drawer over a desk, a sidebar when wide) */
+#side{background:var(--bg)}
+.top{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) 6px calc(env(safe-area-inset-left) + 16px);flex:none}
+.top h1{font-size:26px;letter-spacing:-.01em;margin:0;flex:1}
+.tools{padding:4px calc(env(safe-area-inset-right) + 16px) 8px calc(env(safe-area-inset-left) + 16px);flex:none}
+#q{width:100%;background:var(--raised);color:var(--text);border:0;border-radius:12px;padding:10px 14px;font:inherit;font-size:16px;outline:none}
+.chips{display:flex;gap:6px;margin-top:10px;overflow-x:auto}
+.chips button{background:none;border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:14px;white-space:nowrap;color:var(--dim)}
 .chips button.on{background:var(--text);color:var(--bg);border-color:var(--text)}
-.chips .n{opacity:.6;margin-left:4px}
-.scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:0 calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 12px)}
-h2{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin:18px 4px 6px;display:flex;align-items:center;gap:6px}
-.group{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;padding:10px 4px 4px;color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;text-align:left}
-.group .chev{display:inline-block;transition:transform .15s;width:12px}
+.chips .n{opacity:.65;margin-left:5px}
+.scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:0 calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 10px)}
+h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:20px 8px 4px}
+.group{display:flex;align-items:center;gap:6px;width:100%;background:none;border:0;padding:12px 8px 4px;color:var(--dim);font-size:13px;font-weight:600;text-align:left}
+.group .chev{display:inline-block;transition:transform .15s;width:12px;font-size:10px}
 .group.folded .chev{transform:rotate(-90deg)}
-.group .n{font-weight:400}
-.row{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 6px 10px 12px;margin:5px 0;cursor:pointer;text-align:left}
-.row.cur{border-color:var(--accent);background:var(--sel)}
+.group .n{font-weight:400;color:var(--faint)}
+.row{display:flex;align-items:center;gap:12px;width:100%;border-radius:14px;padding:10px 4px 10px 10px;cursor:pointer}
+.row:active,.row.cur{background:var(--raised)}
 .row .mid{flex:1;min-width:0}
-.row .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
-.row .sub{color:var(--dim);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .end{text-align:right;color:var(--dim);font-size:12px;flex:none;line-height:1.3}
-.row .more{background:none;border:0;color:var(--dim);font-size:20px;padding:4px 8px;cursor:pointer;flex:none;line-height:1}
-.pin{font-size:11px;filter:grayscale(1);opacity:.55}
-.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--dim);opacity:.45}
-.blocked .dot{background:var(--orange);opacity:1}.ready .dot{background:var(--green);opacity:1}.working .dot{background:var(--accent);opacity:1;animation:pulse 1.6s ease-in-out infinite}
-.asleep .dot{background:none;opacity:1;width:auto;height:auto;font-size:11px}
-.asleep .dot::before{content:"☾";color:var(--dim)}
-@keyframes pulse{50%{opacity:.35}}
-.blocked .name{color:var(--orange)}
-.badge{width:22px;height:22px;border-radius:6px;flex:none;display:grid;place-items:center;font:700 11px/1 -apple-system,system-ui,sans-serif;color:#fff;background:#6b6b6b}
-.empty{color:var(--dim);padding:24px 6px;text-align:center}
-.ask{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:12px;padding:12px 14px;margin:8px 0}
+.row .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.row .sub{color:var(--dim);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .end{text-align:right;color:var(--faint);font-size:12px;flex:none;line-height:1.35}
+.row .more{background:none;border:0;color:var(--faint);font-size:18px;padding:6px 8px;flex:none;line-height:1}
+.pin{font-size:10px;filter:grayscale(1);opacity:.55}
+.av{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;font:700 13px/1 -apple-system,system-ui,sans-serif;color:#fff;background:#6b6b6b;position:relative}
+.av .st{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:50%;border:2px solid var(--bg);background:var(--faint)}
+.row.cur .av .st,.row:active .av .st{border-color:var(--raised)}
+.off .av{opacity:.55}.off .av .st,.asleep .av .st{display:none}
+.blocked .st{background:var(--amber)}.ready .st{background:var(--green)}.working .st{background:var(--accent);animation:pulse 1.4s ease-in-out infinite}.quiet .st{background:var(--faint)}
+.blocked .name{color:var(--amber)}
+.moon{color:var(--faint);font-size:12px}
+@keyframes pulse{50%{opacity:.3}}
+.empty{color:var(--dim);padding:28px 8px;text-align:center}
+.ask{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:8px 4px}
 .ask .who{display:flex;gap:8px;align-items:baseline;margin-bottom:4px}
-.ask .who b{color:var(--orange)}
-.ask p{margin:0;font-size:15px;line-height:1.4;word-break:break-word}
+.ask .who b{color:var(--amber)}
+.ask p{margin:0;font-size:15px;word-break:break-word}
 .ask .act{display:flex;gap:8px;margin-top:10px}
-.ask button{background:none;color:var(--accent);border:1px solid var(--line);border-radius:10px;padding:7px 12px;cursor:pointer}
-#detail .bar{border-bottom:1px solid var(--line)}
-.state{font-weight:600}
-#notice{margin:8px 12px 0}
-#screen{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;background:var(--term);padding:10px calc(env(safe-area-inset-right) + 12px) 10px calc(env(safe-area-inset-left) + 12px);white-space:pre-wrap;word-break:break-word;font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-#top{font:12px/1.4 -apple-system,system-ui,sans-serif;color:var(--dim);text-align:center;padding:2px 0 10px}
-.dock{flex:none;border-top:1px solid var(--line);background:var(--bg);padding:8px calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 12px)}
-.keys{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 8px}
-.keys button,.open{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 13px;cursor:pointer}
-.open{width:100%;background:var(--accent);color:#fff;border-color:transparent;font-weight:600;padding:12px}
-.send{display:flex;gap:8px;align-items:flex-end}
-textarea{flex:1;min-height:40px;max-height:34vh;resize:none;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:20px;padding:9px 14px;font:inherit;font-size:16px;line-height:1.35}
-.send .go{background:var(--accent);color:#fff;border:0;border-radius:20px;height:40px;padding:0 16px;font-weight:600;cursor:pointer;flex:none}
-.send .add{background:var(--card);border:1px solid var(--line);border-radius:50%;width:40px;height:40px;font-size:22px;line-height:1;color:var(--accent);cursor:pointer;flex:none}
-.photos{display:flex;gap:10px;overflow-x:auto;margin:0 0 8px;padding:8px 8px 0 0}
-.photo{position:relative;flex:none}
-.photo img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block}
-.photo button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--text);color:var(--bg);font-size:13px;line-height:1;cursor:pointer}
-.photo.busy img{opacity:.4}
-#note{min-height:0;font-size:13px;color:var(--dim);margin-top:6px}
-#note:empty{display:none}
-#none{flex:1;display:none;place-items:center;color:var(--dim)}
-#phone{margin-top:26px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;color:var(--dim);margin-top:8px}
+.ask .act button{background:var(--raised);border:0;border-radius:999px;padding:7px 14px;font-size:14px}
+#phone{margin:28px 4px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;font-size:14px;color:var(--dim);margin-top:8px}
 .card .keys{margin:10px 0 0}
-.card .keys button.go{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}
-#sheet{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9}
-#sheet .panel{background:var(--card);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 14px calc(env(safe-area-inset-bottom) + 14px)}
-#sheet .title{font-weight:600;text-align:center;margin:2px 0 4px}
-#sheet .say{color:var(--dim);font-size:14px;text-align:center;margin:0 6px 10px}
-#sheet .acts button{display:block;width:100%;background:var(--bg);border:0;border-radius:12px;padding:13px;margin:6px 0;font-size:16px;cursor:pointer}
+.card .keys button{background:var(--raised);border:0;border-radius:999px;padding:8px 14px}
+.card .keys button.go{background:var(--accent);color:#fff;font-weight:600}
+#backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:7;opacity:0;pointer-events:none;transition:opacity .2s}
+
+/* a desk */
+#detail{background:var(--bg)}
+.head{position:absolute;left:0;right:0;top:0;z-index:3;padding:calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px) 16px calc(env(safe-area-inset-left) + 12px);background:linear-gradient(var(--bg) 72%,transparent)}
+.hrow{display:flex;align-items:center;gap:8px}
+.title{flex:1;display:flex;justify-content:center;min-width:0}
+.title .pill{padding:5px 18px;text-align:center;max-width:100%;min-width:0;background:var(--glass)}
+.title b{display:block;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.title span{display:block;font-size:12.5px;color:var(--dim);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.right{display:flex;align-items:center;gap:2px;padding:3px 4px 3px 6px;flex:none}
+.right button{background:none;border:0;padding:6px 8px;display:grid;place-items:center}
+.ring{width:32px;height:32px;position:relative}
+.ring svg{width:32px;height:32px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.ring .bgc{stroke:var(--line)}.ring .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .4s}
+.ring i{position:absolute;inset:0;display:grid;place-items:center;font:600 10.5px/1 -apple-system,system-ui,sans-serif;font-style:normal}
+.dots3{font-size:20px;letter-spacing:1px;line-height:1}
+.tabs{display:flex;justify-content:center;gap:4px;margin:0 auto}
+.tabs button{background:none;border:0;border-radius:999px;padding:3px 12px;font-size:13px;color:var(--dim)}
+.tabs button.on{background:var(--raised);color:var(--text)}
+#tabsrow{display:flex;justify-content:center;margin-top:8px}
+.body{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+#chat{padding:0 calc(env(safe-area-inset-right) + 18px) 14px calc(env(safe-area-inset-left) + 18px)}
+#chatlist{max-width:760px;margin:0 auto}
+.m{margin:14px 0;word-break:break-word}
+.m.user{display:flex;justify-content:flex-end}
+.m.user .b{background:var(--bubble);border-radius:20px;padding:10px 15px;max-width:86%;white-space:pre-wrap}
+.m.user.pending{flex-direction:column;align-items:flex-end}.m.user.pending .b{opacity:.7}
+.m.user .lbl{font-size:12px;color:var(--faint);margin:4px 8px 0}
+.m.assistant{font-size:16px;line-height:1.55}
+.m.assistant p{margin:0 0 .7em}.m.assistant p:last-child{margin-bottom:0}
+.m.assistant h3,.m.assistant h4{font-size:16.5px;margin:1em 0 .4em}
+.m.assistant ul,.m.assistant ol{margin:.2em 0 .8em;padding-left:1.4em}.m.assistant li{margin:.25em 0}
+.m.assistant blockquote{margin:.5em 0;padding-left:12px;border-left:3px solid var(--line);color:var(--dim)}
+.m code{font:13.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--raised);border-radius:5px;padding:1px 5px}
+.m pre{background:var(--term);border:1px solid var(--line);border-radius:12px;padding:10px 12px;overflow-x:auto;margin:.4em 0 .9em}
+.m pre code{background:none;padding:0;font-size:12.5px;white-space:pre}
+.m table{border-collapse:collapse;font-size:14px;margin:.4em 0 .9em;display:block;overflow-x:auto}
+.m th,.m td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+.m th{background:var(--raised)}
+.m a{color:var(--accent)}
+.toolrow{margin:10px 0;color:var(--dim);font-size:14px}
+.toolrow summary{list-style:none;display:inline-flex;align-items:center;gap:7px;cursor:pointer;padding:4px 10px 4px 8px;border:1px solid var(--line);border-radius:999px}
+.toolrow summary::-webkit-details-marker{display:none}
+.toolrow div{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:6px 0 0 10px;padding-left:10px;border-left:2px solid var(--line);white-space:pre-wrap;word-break:break-all}
+.when{color:var(--faint);font-size:12px;text-align:center;margin:20px 0 6px}
+#earlier{text-align:center;color:var(--faint);font-size:13px;padding:6px 0 0}
+#working{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:15px;margin:16px 0 4px}
+.spark{display:inline-flex;gap:4px}.spark i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:blink 1.2s infinite}
+.spark i:nth-child(2){animation-delay:.2s}.spark i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+#screen{padding:0 calc(env(safe-area-inset-right) + 12px) 12px calc(env(safe-area-inset-left) + 12px);white-space:pre-wrap;word-break:break-word;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--term)}
+#top{font:12.5px/1.4 -apple-system,system-ui,sans-serif;color:var(--faint);text-align:center;padding:4px 10px 12px}
+#jump{position:absolute;left:50%;transform:translateX(-50%);z-index:2;bottom:0;margin-bottom:8px}
+.dock{flex:none;padding:6px calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 12px);position:relative}
+.dockin{max-width:760px;margin:0 auto}
+#notice{margin:0 0 8px;border-color:var(--amber)}
+.q{background:var(--surface);border:1px solid var(--amber);border-radius:20px;padding:12px;margin:0 0 8px}
+.q .qt{font-weight:600;margin:0 4px 8px}
+.q .qs{display:flex;flex-direction:column;gap:6px}
+.q .qs button{background:var(--raised);border:0;border-radius:12px;padding:10px 12px;text-align:left;font-size:15px}
+.q .qs button b{color:var(--dim);margin-right:8px;font-weight:600}
+.q .row2{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.q .row2 button{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:14px}
+.q .muted{margin:8px 4px 0}
+.composer{background:var(--surface);border:1px solid var(--line);border-radius:26px;padding:10px 10px 8px 16px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.composer textarea{width:100%;min-height:26px;max-height:34vh;resize:none;background:none;color:var(--text);border:0;outline:none;padding:4px 4px 6px 0;font:inherit;font-size:16.5px;line-height:1.4;display:block}
+.composer .bar{display:flex;align-items:center;gap:8px;margin-left:-6px}
+.composer .bar .sp{flex:1}
+.model{border:1px solid var(--line);background:none;border-radius:999px;padding:6px 13px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56%}
+.model .ef{color:var(--dim)}
+.send{width:38px;height:38px;border-radius:50%;border:0;background:var(--accent);color:#fff;display:grid;place-items:center;flex:none;padding:0}
+.send svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.send:disabled{opacity:.35}
+.send.stop{background:var(--text)}.send.stop i{width:12px;height:12px;border-radius:2px;background:var(--bg)}
+.add{width:36px;height:36px;border:1px solid var(--line);background:none}
+.photos{display:flex;gap:10px;overflow-x:auto;padding:8px 8px 6px 0}
+.photo{position:relative;flex:none}
+.photo img{width:60px;height:60px;object-fit:cover;border-radius:12px;display:block}
+.photo button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--text);color:var(--bg);font-size:12px;line-height:1;padding:0}
+.photo.busy img{opacity:.4}
+.start{width:100%;background:var(--accent);color:#fff;border:0;border-radius:999px;padding:13px;font-weight:600;font-size:16px}
+#note{font-size:13px;color:var(--dim);margin:6px 8px 0;text-align:center}
+#note:empty{display:none}
+#conn{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 60px);z-index:8;background:var(--text);color:var(--bg);border-radius:999px;padding:7px 14px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+#none{flex:1;display:none;place-items:center;color:var(--faint)}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:9}
+#sheet .panel{background:var(--surface);width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:16px 14px calc(env(safe-area-inset-bottom) + 14px)}
+#sheet .stitle{font-weight:600;text-align:center;margin:2px 0 4px}
+#sheet .say{color:var(--dim);font-size:14px;text-align:center;margin:0 8px 10px}
+#sheet .acts button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--raised);border:0;border-radius:14px;padding:14px;margin:6px 0;font-size:16px}
 #sheet .acts button.danger{color:var(--red);font-weight:600}
-#sheet .acts button.cancel{font-weight:600}
+#sheet .acts button.on{font-weight:600}
+#sheet .acts button.on::after{content:"✓";color:var(--accent)}
+#sheet .acts button.cancel{font-weight:600;background:none}
 @media (min-width:820px){
   #side{flex:0 0 340px;border-right:1px solid var(--line);background:var(--side)}
-  #side .row{background:var(--bg)}
-  #back{display:none}
+  #menu{display:none}
   body.nodesk #none{display:grid}
   #sheet{align-items:center}
-  #sheet .panel{border-radius:16px}
+  #sheet .panel{border-radius:22px}
 }
 @media (max-width:819px){
-  #screen{font-size:11.5px}
-  body.indesk #side{display:none}
+  body.indesk #side{position:fixed;left:0;top:0;bottom:0;width:86%;max-width:380px;z-index:8;transform:translateX(-102%);transition:transform .22s ease;box-shadow:0 0 30px rgba(0,0,0,.3);height:var(--vh)}
+  body.drawer #side{transform:none}
+  body.drawer #backdrop{opacity:1;pointer-events:auto}
   body.nodesk #detail{display:none}
 }
-.hidden{display:none!important}
 </style>
 </head>
 <body class="nodesk">
 <div id="app">
 <div class="pane" id="side">
-  <div class="bar"><h1>Desks</h1><span class="muted" id="when"></span></div>
+  <div class="top">
+    <h1>Desks</h1>
+    <button class="circle" id="sortbtn" aria-label="Sort desks"><svg viewBox="0 0 24 24"><path d="M7 4v16M3.5 16.5 7 20l3.5-3.5M17 20V4M13.5 7.5 17 4l3.5 3.5"/></svg></button>
+  </div>
   <div class="tools">
-    <input id="q" type="search" placeholder="Find a desk" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
-    <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="active">Active<span class="n" id="nactive"></span></button><button data-f="waiting">Waiting<span class="n" id="nwaiting"></span></button></div>
+    <input id="q" type="search" placeholder="Search desks" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    <div class="chips" id="chips"><button data-f="all" class="on">All</button><button data-f="active">Running<span class="n" id="nactive"></span></button><button data-f="waiting">Needs me<span class="n" id="nwaiting"></span></button></div>
   </div>
   <div class="scroll" id="sidescroll">
     <section id="asks"></section>
@@ -146,59 +221,92 @@ textarea{flex:1;min-height:40px;max-height:34vh;resize:none;background:var(--car
   </div>
 </div>
 <div class="pane" id="detail">
-  <div class="bar">
-    <button class="iconbtn" id="back" aria-label="Desks">‹ Desks</button>
-    <div class="t"><h1 id="title"></h1><div class="muted"><span class="state" id="state"></span> <span id="runtime"></span></div></div>
-    <button class="iconbtn" id="more" aria-label="Desk actions">•••</button>
-  </div>
-  <div class="ask hidden" id="notice"><p id="noticetext"></p><div class="act"><button id="noticeclear">Dismiss</button></div></div>
-  <div id="screen"><div id="top" class="hidden"></div><div id="screentext"></div></div>
-  <div class="dock">
-    <div class="keys hidden" id="opts"></div>
-    <div class="keys hidden" id="keys"></div>
-    <div class="muted hidden" id="unread" style="margin-bottom:8px"></div>
-    <button class="open hidden" id="open">Start this desk</button>
-    <div class="photos hidden" id="photos"></div>
-    <div class="send" id="sendrow">
-      <button class="add" id="attach" aria-label="Attach a photo">+</button>
-      <input type="file" id="file" accept="image/*" multiple class="hidden">
-      <textarea id="msg" placeholder="Message" rows="1" enterkeyhint="enter"></textarea>
-      <button class="go" id="send">Send</button>
+  <div class="head" id="head">
+    <div class="hrow">
+      <button class="circle" id="menu" aria-label="Desks"><svg viewBox="0 0 24 24"><path d="M5 9h14M5 15h9"/></svg></button>
+      <div class="title"><div class="pill" id="titlepill"><b id="title"></b><span id="place"></span></div></div>
+      <div class="right pill">
+        <div class="ring" id="ring" title="How full its context is"><svg viewBox="0 0 36 36"><circle class="bgc" cx="18" cy="18" r="15"/><circle class="fg" id="ringfg" cx="18" cy="18" r="15" stroke-dasharray="94.25" stroke-dashoffset="94.25"/></svg><i id="ringtext"></i></div>
+        <button id="more" aria-label="Desk actions"><span class="dots3">···</span></button>
+      </div>
     </div>
-    <div id="note"></div>
+    <div id="tabsrow"><div class="tabs pill" id="tabs"><button data-t="chat" class="on">Chat</button><button data-t="screen">Screen</button></div></div>
+  </div>
+  <div class="body" id="chatbody">
+    <div id="chat">
+      <div id="chatlist"><div id="earlier"></div><div id="msgs"></div>
+        <div id="working" class="hidden"><span class="spark"><i></i><i></i><i></i></span><span id="worktext">Working</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="body hidden" id="screenbody"><div id="screen"><div id="top" class="hidden"></div><div id="screentext"></div></div></div>
+  <div class="dock">
+    <button class="circle hidden" id="jump" aria-label="Go to the latest"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
+    <div class="dockin">
+      <div class="ask hidden" id="notice"><p id="noticetext"></p><div class="act"><button id="noticeclear">Dismiss</button></div></div>
+      <div class="q hidden" id="question"><div class="qt" id="qtext"></div><div class="qs" id="opts"></div><div class="row2" id="keys"></div><div class="muted hidden" id="unread"></div></div>
+      <button class="start hidden" id="open">Start</button>
+      <div class="composer" id="composer">
+        <div class="photos hidden" id="photos"></div>
+        <textarea id="msg" rows="1" placeholder="Message" enterkeyhint="enter"></textarea>
+        <input type="file" id="file" accept="image/*" multiple class="hidden">
+        <div class="bar">
+          <button class="circle add" id="attach" aria-label="Attach photos"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="model hidden" id="model"></button>
+          <span class="sp"></span>
+          <button class="send" id="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+        </div>
+      </div>
+      <div id="note"></div>
+    </div>
   </div>
 </div>
 <div id="none">Pick a desk</div>
+<div id="backdrop"></div>
 </div>
-<div id="sheet" class="hidden"><div class="panel"><div class="title" id="sheettitle"></div><div class="say" id="sheetsay"></div><div class="acts" id="sheetacts"></div></div></div>
+<div id="conn" class="hidden"></div>
+<div id="sheet" class="hidden"><div class="panel"><div class="stitle" id="sheettitle"></div><div class="say" id="sheetsay"></div><div class="acts" id="sheetacts"></div></div></div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const labels = {blocked:"Needs you", ready:"Done", working:"Working", quiet:"Idle", off:"Not running", asleep:"Asleep"};
-let current = null, listTimer = null, deskTimer = null, desks = [], notices = [], filter = "all";
-// Each desk's half-written message and photos, kept when you go to another desk.
+let current = null, listTimer = null, deskTimer = null, chatTimer = null, desks = [], notices = [], filter = "all";
 const drafts = {}, photoDrafts = {};
 let photos = [];
 const store = {get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
                set(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }};
 const wide = () => window.matchMedia("(min-width: 820px)").matches;
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
-// The app fills what the screen shows, so the message box sits on the
-// keyboard, not behind it or halfway up the page.
+// The app is exactly what the screen shows, so the message box rides on the
+// keyboard rather than hiding behind it or floating halfway up.
 function fit() {
   const v = window.visualViewport;
-  const h = v ? v.height : window.innerHeight;
-  document.documentElement.style.setProperty("--vh", h + "px");
+  document.documentElement.style.setProperty("--vh", (v ? v.height : window.innerHeight) + "px");
   $("app").style.transform = v && v.offsetTop ? "translateY(" + v.offsetTop + "px)" : "";
+  pad();
 }
 if (window.visualViewport) { visualViewport.addEventListener("resize", fit); visualViewport.addEventListener("scroll", fit); }
 window.addEventListener("resize", fit);
-fit();
 
+// Every request gives up after 12 seconds, so a Mac that stopped answering
+// never freezes the page; a note says so, and it tries again on its own.
+let failures = 0;
+function conn(ok, why) {
+  failures = ok ? 0 : failures + 1;
+  $("conn").textContent = why || "Can't reach your Mac. Trying again…";
+  $("conn").classList.toggle("hidden", failures < 2);
+}
 function api(path, body) {
-  const o = body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json","X-Coldfall":"1"}, body:JSON.stringify(body)};
-  return fetch(path, o).catch(() => { throw new Error("Can't reach your Mac. Is it awake, and is Tailscale on here?"); })
-    .then(r => { if (r.status === 401) { if (!asking) { asking = true; location.reload(); } throw new Error("Coldfall needs its link again."); } return r.json(); });
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 12000);
+  const o = body === undefined ? {signal: ctl.signal} : {method:"POST", signal: ctl.signal, headers:{"Content-Type":"application/json","X-Coldfall":"1"}, body:JSON.stringify(body)};
+  return fetch(path, o).catch(() => { clearTimeout(t); conn(false); throw new Error("Can't reach your Mac. Is it awake, and is Tailscale on here?"); })
+    .then(r => {
+      clearTimeout(t);
+      if (r.status === 401) { if (!asking) { asking = true; location.reload(); } throw new Error("Coldfall needs its link again."); }
+      conn(true);
+      return r.json();
+    });
 }
 // A 401 means the secret changed or was never here: load the page that asks for it.
 let asking = false;
@@ -208,64 +316,76 @@ function ago(t) {
   return s < 60 ? "now" : s < 3600 ? Math.floor(s/60) + "m" : s < 86400 ? Math.floor(s/3600) + "h" : Math.floor(s/86400) + "d";
 }
 function kind(d) { return d.running ? d.activity : (d.asleep ? "asleep" : "off"); }
-const rank = {blocked:0, ready:1, working:2, quiet:3};
+const rank = {blocked:0, ready:1, working:2, quiet:3, asleep:4, off:5};
 // The same letters and colours as the desk list in the app (VendorBadge).
-const badges = {claude:["C","#c96442"], codex:["X","#10a37f"], antigravity:["A","#4285f4"], copilot:["G","#8957e5"], grok:["K","#3a3a3a"], ollama:["O","#5a5a5a"], shell:["›",""]};
-function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-function go(name) { location.hash = "desk=" + encodeURIComponent(name); }
+const badges = {claude:["C","#c96442"], codex:["X","#10a37f"], antigravity:["A","#4285f4"], copilot:["G","#8957e5"], grok:["K","#3a3a3a"], ollama:["O","#5a5a5a"], shell:["›","#55534e"]};
+function avatar(d) {
+  const a = el("span", "av");
+  const [letter, colour] = badges[d.runtime] || [(d.runtime || "?").slice(0,1).toUpperCase(), "#6b6b6b"];
+  a.textContent = letter; a.style.background = colour;
+  a.append(el("span", "st"));
+  return a;
+}
+function go(name) { closeDrawer(); location.hash = "desk=" + encodeURIComponent(name); }
 
+// --- the desk list --------------------------------------------------------
 function row(d, showGroup) {
   const k = kind(d);
   const b = el("div", "row " + k + (d.name === current ? " cur" : ""));
   b.setAttribute("role", "button");
-  const bd = el("span", "badge");
-  const [letter, colour] = badges[d.runtime] || [(d.runtime || "?").slice(0,1).toUpperCase(), "#6b6b6b"];
-  bd.textContent = letter; if (colour) bd.style.background = colour; else { bd.style.background = "none"; bd.style.color = "var(--dim)"; }
   const mid = el("div", "mid");
   const n = el("div", "name");
-  n.append(el("span", "dot"), document.createTextNode(d.name));
+  n.append(document.createTextNode(d.name));
   if (d.pinned) n.append(el("span", "pin", "📌"));
+  if (k === "asleep") n.append(el("span", "moon", "☾"));
   const note = notices.find(x => x.desk === d.name);
-  const sub = note ? "Asked for you: " + note.text : (d.detail || labels[k] || k);
-  mid.append(n, el("div", "sub", showGroup && d.group ? d.group + " · " + sub : sub));
+  const what = note ? "Asked for you: " + note.text : (d.detail || labels[k] || k);
+  mid.append(n, el("div", "sub", showGroup && d.group ? d.group + " · " + what : what));
   const end = el("div", "end");
   end.append(el("div", "", ago(d.lastOutput)));
   if (d.memory) end.append(el("div", "", d.memory));
-  const more = el("button", "more", "⋯");
+  const more = el("button", "more", "···");
   more.setAttribute("aria-label", "Actions for " + d.name);
   more.onclick = e => { e.stopPropagation(); deskSheet(d); };
-  b.append(bd, mid, end, more);
+  b.append(avatar(d), mid, end, more);
   b.onclick = () => go(d.name);
   return b;
 }
-
+function waiting(d) { return (d.running && (d.activity === "blocked" || d.activity === "ready")) || notices.some(n => n.desk === d.name); }
 function matches(d) {
   const q = $("q").value.trim().toLowerCase();
-  if (q && !(d.name.toLowerCase().includes(q) || (d.group || "").toLowerCase().includes(q))) return false;
+  if (q && !(d.name.toLowerCase().includes(q) || (d.group || "").toLowerCase().includes(q) || (d.detail || "").toLowerCase().includes(q))) return false;
   if (filter === "active") return d.running;
   if (filter === "waiting") return waiting(d);
   return true;
 }
-function waiting(d) { return (d.running && (d.activity === "blocked" || d.activity === "ready")) || notices.some(n => n.desk === d.name); }
-const pinnedFirst = (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
-
-// Like the app's rail: what's running on top (pinned first, then what needs
-// you), then everything else by group, each group folded or open as you left it.
+// How the list is ordered, as on the Mac: by group (running on top), what
+// needs you first, most recent, or by name. Pinned desks always lead.
+const sorts = {groups: "By group", needs: "Needs me first", recent: "Most recent", name: "By name"};
+let sortBy = store.get("cf.sort") || "groups";
+let runningTop = store.get("cf.runningTop") !== "0";
+const byName = (a, b) => a.name.localeCompare(b.name);
+const byRecent = (a, b) => (b.lastOutput || 0) - (a.lastOutput || 0) || byName(a, b);
+const byNeed = (a, b) => rank[kind(a)] - rank[kind(b)] || byRecent(a, b);
+const pinFirst = f => (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || f(a, b);
 function renderList() {
   const list = $("list");
   list.textContent = "";
   $("nactive").textContent = desks.filter(d => d.running).length || "";
   $("nwaiting").textContent = desks.filter(waiting).length || "";
   const shown = desks.filter(matches);
-  const active = shown.filter(d => d.running).sort((a, b) => pinnedFirst(a, b) || 0);
-  const rest = shown.filter(d => !d.running);
-  if (active.length) {
-    list.append(el("h2", "", "Active"));
-    for (const d of active) list.append(row(d, true));
-  }
-  if (rest.length) {
-    list.append(el("h2", "", "Not running"));
-    for (const d of rest.filter(d => d.pinned)) list.append(row(d, true));
+  const section = (title, items, showGroup) => {
+    if (!items.length) return;
+    if (title) list.append(el("h2", "", title));
+    for (const d of items) list.append(row(d, showGroup));
+  };
+  if (sortBy === "groups") {
+    const top = runningTop ? shown.filter(d => d.running).sort(pinFirst(byNeed)) : [];
+    const rest = runningTop ? shown.filter(d => !d.running) : shown.slice();
+    section(top.length ? "Running" : "", top, true);
+    const pinned = rest.filter(d => d.pinned).sort(byName);
+    if (rest.length && top.length) list.append(el("h2", "", "Not running"));
+    for (const d of pinned) list.append(row(d, true));
     const groups = [];
     for (const d of rest.filter(d => !d.pinned)) {
       const g = d.group || "";
@@ -273,20 +393,35 @@ function renderList() {
       if (!e) { e = {name: g, desks: []}; groups.push(e); }
       e.desks.push(d);
     }
+    groups.sort((a, b) => (a.name ? 0 : 1) - (b.name ? 0 : 1) || a.name.localeCompare(b.name));
     const searching = !!$("q").value.trim();
     for (const g of groups) {
-      if (!g.name && groups.length === 1) { for (const d of g.desks) list.append(row(d, false)); continue; }
+      g.desks.sort(runningTop ? byName : pinFirst(byNeed));
+      if (groups.length === 1 && !g.name) { for (const d of g.desks) list.append(row(d, false)); continue; }
       const key = "cf.fold." + (g.name || "-");
       const folded = !searching && store.get(key) === "1";
       const h = el("button", "group" + (folded ? " folded" : ""));
-      h.append(el("span", "chev", "▾"), document.createTextNode(g.name || "No group"), el("span", "n", " " + g.desks.length));
+      h.append(el("span", "chev", "▼"), document.createTextNode(g.name || "No group"), el("span", "n", " " + g.desks.length));
       h.onclick = () => { store.set(key, folded ? null : "1"); renderList(); };
       list.append(h);
       if (!folded) for (const d of g.desks) list.append(row(d, false));
     }
+  } else {
+    const f = sortBy === "needs" ? byNeed : sortBy === "recent" ? byRecent : byName;
+    if (runningTop && sortBy !== "needs") {
+      section("Running", shown.filter(d => d.running).sort(pinFirst(f)), true);
+      section("Not running", shown.filter(d => !d.running).sort(pinFirst(f)), true);
+    } else section("", shown.sort(pinFirst(f)), true);
   }
   if (!shown.length) list.append(el("div", "empty", desks.length ? "No desk matches." : "No desks."));
 }
+$("sortbtn").onclick = () => {
+  const acts = Object.entries(sorts).map(([k, label]) => ({label, cls: k === sortBy ? "on" : "", keep: true,
+    run: () => { sortBy = k; store.set("cf.sort", k); renderList(); $("sortbtn").onclick(); }}));
+  acts.push({label: "Running desks on top", cls: runningTop ? "on" : "", keep: true,
+    run: () => { runningTop = !runningTop; store.set("cf.runningTop", runningTop ? "1" : "0"); renderList(); $("sortbtn").onclick(); }});
+  sheet("Sort desks", "Pinned desks always come first.", acts, "Done");
+};
 
 // What desks asked for in their own words (coldfall-cli notify), above the list.
 function renderAsks() {
@@ -300,19 +435,18 @@ function renderAsks() {
     const act = el("div", "act");
     const o = el("button", "", "Open desk"); o.onclick = () => go(n.desk);
     const x = el("button", "", "Dismiss");
-    x.onclick = () => { api("/api/notice/clear", {desk: n.desk}).then(refreshList).catch(e => { $("when").textContent = e.message; }); };
+    x.onclick = () => { api("/api/notice/clear", {desk: n.desk}).then(refreshList).catch(e => say(e.message)); };
     act.append(o, x);
     c.append(who, el("p", "", n.text), act);
     box.append(c);
   }
 }
-
 function refreshList() {
   return api("/api/desks").then(r => {
     desks = r.desks || []; notices = r.notices || [];
-    renderAsks(); renderList(); $("when").textContent = "";
+    renderAsks(); renderList();
     if (current) deskHead();
-  }).catch(e => { $("when").textContent = e.message; });
+  }).catch(() => {});
 }
 for (const b of $("chips").querySelectorAll("button")) b.onclick = () => {
   filter = b.dataset.f;
@@ -320,28 +454,33 @@ for (const b of $("chips").querySelectorAll("button")) b.onclick = () => {
   renderAsks(); renderList();
 };
 $("q").addEventListener("input", renderList);
+function openDrawer() { refreshList(); document.body.classList.add("drawer"); }
+function closeDrawer() { document.body.classList.remove("drawer"); }
+$("menu").onclick = openDrawer;
+$("backdrop").onclick = closeDrawer;
 
-// One desk's actions, as a sheet from the bottom: open, start or stop, pin.
-function sheet(title, say, acts) {
+// --- sheets ----------------------------------------------------------------
+function sheet(title, said, acts, cancel) {
   $("sheettitle").textContent = title;
-  $("sheetsay").textContent = say || "";
+  $("sheetsay").textContent = said || "";
   const box = $("sheetacts"); box.textContent = "";
-  for (const a of acts.concat([{label: "Cancel", cls: "cancel"}])) {
+  for (const a of acts.concat([{label: cancel || "Cancel", cls: "cancel"}])) {
     const b = el("button", a.cls || "", a.label);
-    b.onclick = () => { closeSheet(); if (a.run) a.run(); };
+    b.onclick = () => { if (!a.keep) closeSheet(); if (a.run) a.run(); };
     box.append(b);
   }
   $("sheet").classList.remove("hidden");
 }
 function closeSheet() { $("sheet").classList.add("hidden"); }
 $("sheet").onclick = e => { if (e.target === $("sheet")) closeSheet(); };
-function say(text) { if (current) $("note").textContent = text || ""; else $("when").textContent = text || ""; }
+function say(text) { $("note").textContent = text || ""; if (text) setTimeout(() => { if ($("note").textContent === text) $("note").textContent = ""; }, 6000); }
 function deskSheet(d) {
   const acts = [];
   if (d.name !== current) acts.push({label: "Open", run: () => go(d.name)});
   if (d.running) acts.push({label: "Stop…", cls: "danger", run: () => stopSheet(d)});
-  else acts.push({label: d.asleep ? "Wake and Start" : "Start", run: () => start(d.name)});
-  acts.push({label: d.pinned ? "Unpin" : "Pin to Top", run: () => api("/api/pin", {desk: d.name, on: d.pinned ? "false" : "true"}).then(r => { say(r.message); refreshList(); }).catch(e => say(e.message))});
+  else acts.push({label: d.asleep ? "Wake and start" : "Start", run: () => start(d.name)});
+  acts.push({label: d.pinned ? "Unpin" : "Pin to top", run: () => api("/api/pin", {desk: d.name, on: d.pinned ? "false" : "true"}).then(r => { say(r.message); refreshList(); }).catch(e => say(e.message))});
+  if (d.name === current) acts.push({label: tab === "chat" ? "Show its screen" : "Show the chat", run: () => setTab(tab === "chat" ? "screen" : "chat")});
   sheet(d.name, [labels[kind(d)], d.group, d.memory].filter(Boolean).join(" · "), acts);
 }
 function stopSheet(d) {
@@ -355,120 +494,295 @@ function start(name) {
 }
 $("more").onclick = () => { const d = desks.find(x => x.name === current); if (d) deskSheet(d); };
 
-// The desk on screen. Its screen comes back only when it changed; scrolling
-// to the top asks for more of what Coldfall keeps, up to 5000 lines.
-let want = 400, have = "", lines = 0, fetching = false, growing = false;
+// --- a desk: header ----------------------------------------------------------
 function deskHead() {
   const d = desks.find(x => x.name === current);
-  if (!d) return;
-  const k = kind(d);
-  $("state").textContent = labels[k] || k;
-  $("state").style.color = k === "blocked" ? "var(--orange)" : k === "ready" ? "var(--green)" : "";
+  if (d) { $("place").textContent = [labels[kind(d)], d.group].filter(Boolean).join(" · "); }
+}
+function ring(pct) {
+  const has = typeof pct === "number";
+  $("ring").classList.toggle("hidden", !has);
+  if (!has) return;
+  const p = Math.max(0, Math.min(100, pct));
+  $("ringfg").style.strokeDashoffset = String(94.25 * (1 - p / 100));
+  $("ringtext").textContent = Math.round(p);
+  $("ring").title = Math.round(p) + "% of its context used";
+}
+
+// --- a desk: chat --------------------------------------------------------------
+// Markdown from the agent, built as elements: nothing it wrote is ever markup.
+function inline(parent, text) {
+  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
+  let at = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > at) parent.append(document.createTextNode(text.slice(at, m.index)));
+    const t = m[0];
+    if (t[0] === "`") parent.append(el("code", "", t.slice(1, -1)));
+    else if (t[0] === "*") parent.append(el("strong", "", t.slice(2, -2)));
+    else { const i = t.indexOf("]("); const a = el("a", "", t.slice(1, i)); a.href = t.slice(i + 2, -1); a.target = "_blank"; a.rel = "noopener noreferrer"; parent.append(a); }
+    at = m.index + t.length;
+  }
+  if (at < text.length) parent.append(document.createTextNode(text.slice(at)));
+}
+function markdown(text) {
+  const out = document.createDocumentFragment();
+  const lines = text.replace(/\r/g, "").split("\n");
+  let i = 0, para = [];
+  const flush = () => { if (para.length) { const p = el("p"); para.forEach((l, k) => { if (k) p.append(el("br")); inline(p, l); }); out.append(p); para = []; } };
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) {
+      flush();
+      const body = []; i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
+      i++;
+      const pre = el("pre"); pre.append(el("code", "", body.join("\n"))); out.append(pre); continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      flush();
+      const cells = s => s.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const t = el("table"), hr = el("tr");
+      for (const c of cells(l)) { const th = el("th"); inline(th, c); hr.append(th); }
+      t.append(hr); i += 2;
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+        const tr = el("tr"); for (const c of cells(lines[i])) { const td = el("td"); inline(td, c); tr.append(td); } t.append(tr); i++;
+      }
+      out.append(t); continue;
+    }
+    let m;
+    if ((m = l.match(/^(#{1,6})\s+(.*)$/))) { flush(); const h = el(m[1].length <= 2 ? "h3" : "h4"); inline(h, m[2]); out.append(h); i++; continue; }
+    if (/^\s*([-*•]|\d+[.)])\s+/.test(l)) {
+      flush();
+      const ordered = /^\s*\d+[.)]/.test(l);
+      const list = el(ordered ? "ol" : "ul");
+      while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) {
+        const li = el("li"); inline(li, lines[i].replace(/^\s*([-*•]|\d+[.)])\s+/, "")); list.append(li); i++;
+        while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) { li.append(el("br")); inline(li, lines[i].trim()); i++; }
+      }
+      out.append(list); continue;
+    }
+    if (/^>\s?/.test(l)) { flush(); const q = el("blockquote"); inline(q, l.replace(/^>\s?/, "")); out.append(q); i++; continue; }
+    if (!l.trim()) { flush(); i++; continue; }
+    para.push(l); i++;
+  }
+  flush();
+  return out;
+}
+let chat = [], chatRev = "", chatMore = false, chatBefore = 0, chatLoading = false, chatNone = false, lastUserAt = 0;
+function bubbles(list) {
+  // Neighbouring tool lines fold into one row; a long quiet gap shows the time.
+  const frag = document.createDocumentFragment();
+  let tools = null, prevT = 0;
+  for (const m of list) {
+    if (m.time && prevT && m.time - prevT > 3600) frag.append(el("div", "when", new Date(m.time * 1000).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"})));
+    if (m.time) prevT = m.time;
+    if (m.role === "tool") {
+      if (!tools) { tools = {box: el("details", "toolrow"), lines: el("div"), n: 0}; tools.sum = el("summary"); tools.box.append(tools.sum, tools.lines); frag.append(tools.box); }
+      tools.n++; tools.lines.append(document.createTextNode((tools.n > 1 ? "\n" : "") + m.text));
+      tools.sum.textContent = "⚙ " + (tools.n === 1 ? m.text.split(" · ")[0] : "Used " + tools.n + " tools") + "  ›";
+      continue;
+    }
+    tools = null;
+    const d = el("div", "m " + m.role);
+    if (m.role === "user") { d.append(el("div", "b", m.text === "[image]" ? "📷 Photo" : m.text)); if (m.label) { d.classList.add("pending"); d.append(el("div", "lbl", m.label)); } }
+    else d.append(markdown(m.text));
+    frag.append(d);
+  }
+  return frag;
+}
+function nearBottom(b) { return b.scrollHeight - b.scrollTop - b.clientHeight < 80; }
+// What you sent from here, shown until the agent's transcript has it (Claude
+// queues a message sent mid-turn, and writes it down only once it takes it).
+let pending = null;
+function renderChat(keepPlace) {
+  const b = $("chatbody"), stick = nearBottom(b), from = b.scrollHeight - b.scrollTop;
+  $("msgs").textContent = "";
+  let list = chat.filter(m => m.id >= 0);
+  if (pending && pending.desk === current) {
+    const head = pending.text.slice(0, 60);
+    const landed = list.some(m => m.role === "user" && (!m.time || m.time >= pending.at - 30) && m.text.slice(0, 60) === head);
+    if (landed || Date.now() / 1000 - pending.at > 600) pending = null;
+    else list = list.concat([{id: -1, role: "user", text: pending.text, time: pending.at, label: pending.label}]);
+  }
+  $("msgs").append(bubbles(list));
+  $("earlier").textContent = chatNone ? "" : chatMore ? "Scroll up for earlier messages" : chat.length ? "Start of this conversation" : "";
+  const u = [...chat].reverse().find(m => m.role === "user");
+  lastUserAt = Math.max(u && u.time || 0, pending && pending.desk === current ? pending.at : 0);
+  if (keepPlace) b.scrollTop = b.scrollHeight - from;
+  else if (stick) b.scrollTop = b.scrollHeight;
+  else $("jump").classList.remove("hidden");
+}
+function refreshChat() {
+  if (!current || tab !== "chat") return;
+  const asked = current;
+  const last = chat.filter(m => m.id >= 0).slice(-1)[0];
+  api("/api/chat?desk=" + encodeURIComponent(asked) + "&have=" + encodeURIComponent(chatRev) + (last ? "&after=" + last.id : "")).then(r => {
+    if (asked !== current) return;
+    if (r.loading) { $("earlier").textContent = "Finding the conversation…"; setTimeout(refreshChat, 800); return; }
+    if (r.none) { chatNone = true; if (!chat.length) { setTab("screen", true); } return; }
+    chatNone = false;
+    if (r.same) return;
+    const first = !chat.length;
+    const got = r.messages || [];
+    chat = r.append ? chat.filter(m => m.id >= 0).concat(got) : got;
+    chatRev = r.rev || ""; chatMore = !!r.more; chatBefore = r.before || 0;
+    renderChat(false);
+    if (first) $("chatbody").scrollTop = $("chatbody").scrollHeight;
+  }).catch(() => {});
+}
+$("chatbody").addEventListener("scroll", () => {
+  const b = $("chatbody");
+  if (nearBottom(b)) $("jump").classList.add("hidden");
+  if (b.scrollTop < 120 && chatMore && !chatLoading && current) {
+    chatLoading = true;
+    const asked = current;
+    $("earlier").textContent = "Loading earlier messages…";
+    api("/api/chat?desk=" + encodeURIComponent(asked) + "&before=" + chatBefore).then(r => {
+      chatLoading = false;
+      // Read in the background on the Mac: ask again in a moment.
+      if (r.loading && asked === current) { setTimeout(() => $("chatbody").dispatchEvent(new Event("scroll")), 700); return; }
+      if (asked !== current || !r.messages) return;
+      chat = r.messages.concat(chat); chatMore = !!r.more; chatBefore = r.before || 0;
+      renderChat(true);
+    }).catch(() => { chatLoading = false; });
+  }
+});
+$("jump").onclick = () => { const b = tab === "chat" ? $("chatbody") : $("screenbody"); b.scrollTop = b.scrollHeight; $("jump").classList.add("hidden"); };
+
+// --- a desk: state, screen, question ----------------------------------------
+// The screen comes back only when it changed; scrolling up asks for more of
+// what Coldfall keeps, up to 5000 lines.
+let tab = "chat", want = 400, have = "", lines = 0, fetching = false, growing = false, deskState = null;
+function setTab(t, quiet) {
+  tab = t;
+  for (const b of $("tabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.t === t);
+  $("chatbody").classList.toggle("hidden", t !== "chat");
+  $("screenbody").classList.toggle("hidden", t !== "screen");
+  $("jump").classList.add("hidden");
+  if (!quiet && current) store.set("cf.tab." + current, t);
+  have = "";
+  refreshDesk(); refreshChat();
+  setTimeout(() => { const b = t === "chat" ? $("chatbody") : $("screenbody"); b.scrollTop = b.scrollHeight; }, 50);
+}
+for (const b of $("tabs").querySelectorAll("button")) b.onclick = () => setTab(b.dataset.t);
+function pad() {
+  // Room above the first message for the floating header and tabs.
+  const top = $("head").offsetHeight - 6;
+  $("chat").style.paddingTop = top + "px";
+  $("screen").style.paddingTop = top + "px";
 }
 function refreshDesk() {
   if (!current || fetching) return;
   const asked = current;
   fetching = true;
-  api("/api/read?desk=" + encodeURIComponent(asked) + "&lines=" + want + "&have=" + encodeURIComponent(have)).then(r => {
+  const n = tab === "screen" ? want : 1;
+  api("/api/read?desk=" + encodeURIComponent(asked) + "&lines=" + n + "&have=" + encodeURIComponent(tab === "screen" ? have : "")).then(r => {
     fetching = false;
-    // An answer for the desk you've since left belongs to nobody.
     if (asked !== current) return;
-    const sc = $("screen");
-    if (typeof r.text === "string") {
-      const fromBottom = sc.scrollHeight - sc.scrollTop, top = sc.scrollTop;
-      const atBottom = fromBottom - sc.clientHeight < 40;
-      $("screentext").textContent = r.text;
+    deskState = r;
+    const k = r.running ? r.activity : "off";
+    if (tab === "screen" && typeof r.text === "string") {
+      const sc = $("screenbody");
+      const fromBottom = sc.scrollHeight - sc.scrollTop, top = sc.scrollTop, atBottom = fromBottom - sc.clientHeight < 40;
+      $("screentext").textContent = r.running ? r.text : "";
       have = r.hash || ""; lines = r.lines || 0;
-      // Following along at the bottom stays there. Earlier lines arriving
-      // above keep what you're reading where it was; so does new output below.
       sc.scrollTop = atBottom ? sc.scrollHeight : growing ? sc.scrollHeight - fromBottom : top;
       growing = false;
+      const more = lines >= want && want < 5000;
+      $("top").textContent = !r.running ? current + " isn't running. Start it and it picks up its conversation where it left off."
+        : more ? "Scroll up for earlier lines" : "Start of what Coldfall keeps for this desk";
+      $("top").classList.toggle("hidden", r.running && lines < 30);
     }
-    const more = lines >= want && want < 5000;
-    $("top").textContent = !r.running ? current + " isn't running. Start it and it picks up its conversation where it left off."
-      : more ? "Scroll up for earlier lines" : "Start of what Coldfall keeps for this desk";
-    $("top").classList.toggle("hidden", r.running && lines < 30);
-    if (!r.running && $("screentext").textContent) { $("screentext").textContent = ""; have = ""; }
-    const k = r.running ? r.activity : "off";
-    $("state").textContent = labels[k] || k;
-    $("state").style.color = k === "blocked" ? "var(--orange)" : k === "ready" ? "var(--green)" : "";
-    $("runtime").textContent = r.runtime ? "· " + r.runtime : "";
-    $("keys").classList.toggle("hidden", k !== "blocked");
-    // Its own choices, by name, when they could be read off the screen.
+    $("place").textContent = [labels[k] || k, r.place].filter(Boolean).join(" · ");
+    ring(r.context);
+    const model = r.model ? r.model.replace(/^claude-/i, "") : "";
+    $("model").textContent = "";
+    if (model) { $("model").append(document.createTextNode(model + " ")); if (r.effort) $("model").append(el("span", "ef", r.effort)); }
+    $("model").classList.toggle("hidden", !model);
+    // Working: the agent's own spark, and how long since you last asked.
+    const working = k === "working";
+    $("working").classList.toggle("hidden", !working || tab !== "chat");
+    if (working) {
+      const s = lastUserAt ? Math.max(0, Math.round(Date.now() / 1000 - lastUserAt)) : 0;
+      $("worktext").textContent = s ? "Working · " + (s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s") : "Working";
+    }
+    // A question: its own choices as buttons, or the plain keys when they couldn't be read.
     const opts = (k === "blocked" && r.options) || [];
+    $("question").classList.toggle("hidden", k !== "blocked");
+    $("qtext").textContent = r.question || current + " is asking you something";
     const sig = JSON.stringify(opts);
     if ($("opts").dataset.sig !== sig) {
       $("opts").dataset.sig = sig;
       $("opts").textContent = "";
       for (const o of opts) {
-        const b = el("button", "", o.key + "  " + o.label);
-        b.onclick = () => { const desk = current; act("/api/keys", {desk, key: o.key}).then(a => { if (current === desk) { $("note").textContent = a.message || ""; setTimeout(refreshDesk, 400); } }); };
+        const b = el("button"); b.append(el("b", "", o.key), document.createTextNode(o.label));
+        b.onclick = () => { const desk = current; act("/api/keys", {desk, key: o.key}).then(a => { if (current === desk) { say(a.message); setTimeout(refreshDesk, 400); } }); };
         $("opts").append(b);
       }
     }
     $("opts").classList.toggle("hidden", !opts.length);
-    // No choices read, and a version Coldfall has no record of reading.
+    $("keys").classList.toggle("hidden", !!opts.length);
     const unread = (k === "blocked" && !opts.length && r.unread) || "";
     $("unread").textContent = unread ? "Its choices couldn't be read, so these are the plain keys. " + unread : "";
     $("unread").classList.toggle("hidden", !unread);
     $("noticetext").textContent = r.notice || "";
     $("notice").classList.toggle("hidden", !r.notice);
     $("open").classList.toggle("hidden", r.running);
+    $("open").textContent = "Start " + current;
     const canSend = r.running && k !== "blocked" && r.agent;
-    $("sendrow").classList.toggle("hidden", !canSend);
-    $("photos").classList.toggle("hidden", !canSend || !photos.length);
-  }).catch(e => { fetching = false; $("note").textContent = e.message; });
+    $("composer").classList.toggle("hidden", !canSend);
+    $("msg").placeholder = "Reply to " + current + "…";
+    sendState();
+  }).catch(() => { fetching = false; });
 }
-$("screen").addEventListener("scroll", () => {
-  const sc = $("screen");
-  if (sc.scrollTop < 80 && lines >= want && want < 5000 && !growing) {
-    growing = true; want = Math.min(5000, want * 2); have = ""; refreshDesk();
-  }
+$("screenbody").addEventListener("scroll", () => {
+  const sc = $("screenbody");
+  if (sc.scrollTop < 80 && lines >= want && want < 5000 && !growing) { growing = true; want = Math.min(5000, want * 2); have = ""; refreshDesk(); }
 });
-
-function show() {
-  const m = location.hash.match(/^#desk=(.+)$/);
-  if (current) { drafts[current] = $("msg").value; photoDrafts[current] = photos; }
-  current = m ? decodeURIComponent(m[1]) : null;
-  $("msg").value = (current && drafts[current]) || "";
-  photos = (current && photoDrafts[current]) || [];
-  renderPhotos(); grow();
-  document.body.classList.toggle("indesk", !!current);
-  document.body.classList.toggle("nodesk", !current);
-  $("title").textContent = current || "";
-  $("note").textContent = "";
-  $("screentext").textContent = ""; $("top").classList.add("hidden");
-  want = 400; have = ""; lines = 0; growing = false;
-  for (const id of ["keys", "opts", "unread", "notice", "open"]) $(id).classList.add("hidden");
-  $("opts").dataset.sig = "";
-  phoneShow();
-  clearInterval(listTimer); clearInterval(deskTimer);
-  refreshList();
-  if (current) { refreshDesk(); deskTimer = setInterval(refreshDesk, 2000); }
-  if (!current || wide()) listTimer = setInterval(refreshList, 3000);
-  renderList();
-}
-
 for (const [label, key] of [["1","1"],["2","2"],["3","3"],["↑","up"],["↓","down"],["Return","enter"],["Esc","esc"]]) {
   const b = el("button", "", label);
-  b.onclick = () => { const desk = current; act("/api/keys", {desk, key}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 400); } }); };
+  b.onclick = () => { const desk = current; act("/api/keys", {desk, key}).then(r => { if (current === desk) { say(r.message); setTimeout(refreshDesk, 400); } }); };
   $("keys").append(b);
 }
-// The box grows with what you write, up to a third of the screen.
-function grow() { const t = $("msg"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, window.innerHeight * .34) + "px"; }
+
+// --- sending ------------------------------------------------------------------
+function grow() { const t = $("msg"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, window.innerHeight * .34) + "px"; sendState(); }
+// Send when there's something to send; stop (Esc) when the agent is working
+// and the box is empty, as in Claude.
+const arrow = $("send").querySelector("svg").cloneNode(true);
+function sendState() {
+  const empty = !$("msg").value.trim() && !photos.length;
+  const working = deskState && deskState.running && deskState.activity === "working";
+  const stop = empty && working;
+  const b = $("send");
+  b.classList.toggle("stop", stop);
+  b.textContent = "";
+  if (stop) { b.append(el("i")); b.setAttribute("aria-label", "Stop this turn"); }
+  else { b.append(arrow.cloneNode(true)); b.setAttribute("aria-label", "Send"); }
+  b.disabled = empty && !stop;
+}
 $("msg").addEventListener("input", grow);
 $("send").onclick = () => {
   const desk = current;
   if (!desk) return;
-  if (photos.some(p => !p.path)) { $("note").textContent = "Wait for the photos to finish uploading."; return; }
+  if ($("send").classList.contains("stop")) {
+    act("/api/interrupt", {desk}).then(r => { say(r.message); setTimeout(refreshDesk, 600); });
+    return;
+  }
+  if (photos.some(p => !p.path)) { say("Wait for the photos to finish uploading."); return; }
   let text = $("msg").value.trim();
   if (photos.length) text = (text || "Have a look at " + (photos.length === 1 ? "this photo" : "these photos") + ".") + "\n\n" + photos.map(p => p.path).join("\n");
   if (!text) return;
-  $("note").textContent = "Sending to " + desk + "…";
+  pending = {desk, text, at: Date.now() / 1000, label: "Sending…"};
+  renderChat(false); $("chatbody").scrollTop = $("chatbody").scrollHeight;
+  $("msg").value = ""; const sentPhotos = photos; photos = []; renderPhotos(); grow();
   act("/api/send", {desk, text}).then(r => {
-    if (r.outcome === "sent") { drafts[desk] = ""; photoDrafts[desk] = []; if (current === desk) { $("msg").value = ""; photos = []; renderPhotos(); grow(); } }
-    if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 600); }
-  }).catch(e => { $("note").textContent = e.message; });
+    if (r.outcome === "sent") {
+      drafts[desk] = ""; photoDrafts[desk] = [];
+      if (pending && pending.desk === desk) { pending.label = deskState && deskState.activity === "working" ? "Queued until it finishes this turn" : "Sent"; renderChat(false); }
+    } else if (current === desk) { pending = null; renderChat(false); $("msg").value = text.split("\n\n/")[0]; photos = sentPhotos; renderPhotos(); grow(); }
+    if (current === desk) { if (r.outcome !== "sent") say(r.message); chatRev = ""; setTimeout(refreshChat, 900); setTimeout(refreshDesk, 600); }
+  }).catch(e => say(e.message));
 };
 
 // Photos: made smaller on the phone (a desk doesn't need 12 megapixels),
@@ -479,7 +793,7 @@ function renderPhotos() {
     const c = el("div", "photo" + (p.path ? "" : " busy"));
     const img = el("img"); img.src = p.url; img.alt = "";
     const x = el("button", "", "✕"); x.setAttribute("aria-label", "Remove photo");
-    x.onclick = () => { photos = photos.filter(q => q !== p); URL.revokeObjectURL(p.url); renderPhotos(); };
+    x.onclick = () => { photos = photos.filter(q => q !== p); URL.revokeObjectURL(p.url); renderPhotos(); sendState(); };
     c.append(img, x); box.append(c);
   }
   box.classList.toggle("hidden", !photos.length);
@@ -508,20 +822,55 @@ $("file").onchange = async () => {
   for (const f of files) {
     const s = await shrink(f);
     const p = {url: s.url, path: ""};
-    photos.push(p); renderPhotos();
+    photos.push(p); renderPhotos(); sendState();
     const r = await act("/api/upload", {desk, data: await base64(s.blob)});
-    if (r.ok && r.path) { p.path = r.path; }
-    else { photos = photos.filter(q => q !== p); if (current === desk) $("note").textContent = r.message || "Couldn't attach that photo."; }
-    if (current === desk) renderPhotos(); else photoDrafts[desk] = (photoDrafts[desk] || []).filter(q => q.path);
+    if (r.ok && r.path) p.path = r.path;
+    else { photos = photos.filter(q => q !== p); if (current === desk) say(r.message || "Couldn't attach that photo."); }
+    if (current === desk) { renderPhotos(); sendState(); } else photoDrafts[desk] = (photoDrafts[desk] || []).filter(q => q.path);
   }
 };
 $("noticeclear").onclick = () => {
   const desk = current;
-  api("/api/notice/clear", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; refreshDesk(); refreshList(); } })
-    .catch(e => { $("note").textContent = e.message; });
+  api("/api/notice/clear", {desk}).then(r => { if (current === desk) { say(r.message); refreshDesk(); refreshList(); } }).catch(e => say(e.message));
 };
 $("open").onclick = () => start(current);
-$("back").onclick = () => { location.hash = ""; };
+
+// --- moving between desks -----------------------------------------------------
+function show() {
+  const m = location.hash.match(/^#desk=(.+)$/);
+  if (current) { drafts[current] = $("msg").value; photoDrafts[current] = photos; }
+  current = m ? decodeURIComponent(m[1]) : null;
+  closeDrawer();
+  $("msg").value = (current && drafts[current]) || "";
+  photos = (current && photoDrafts[current]) || [];
+  renderPhotos();
+  document.body.classList.toggle("indesk", !!current);
+  document.body.classList.toggle("nodesk", !current);
+  $("title").textContent = current || "";
+  $("place").textContent = "";
+  $("note").textContent = "";
+  $("screentext").textContent = ""; $("top").classList.add("hidden");
+  $("msgs").textContent = ""; $("earlier").textContent = ""; $("working").classList.add("hidden");
+  chat = []; chatRev = ""; chatMore = false; chatNone = false; lastUserAt = 0; deskState = null;
+  want = 400; have = ""; lines = 0; growing = false; fetching = false;
+  for (const id of ["question", "notice", "open"]) $(id).classList.add("hidden");
+  $("opts").dataset.sig = ""; ring(null); $("model").classList.add("hidden");
+  phoneShow();
+  clearInterval(listTimer); clearInterval(deskTimer); clearInterval(chatTimer);
+  refreshList();
+  if (current) {
+    setTab(store.get("cf.tab." + current) || "chat", true);
+    deskTimer = setInterval(refreshDesk, 2000);
+    chatTimer = setInterval(refreshChat, 2500);
+  }
+  listTimer = setInterval(() => { if (!current || wide() || document.body.classList.contains("drawer")) refreshList(); }, 3000);
+  renderList(); grow(); fit();
+}
+// Back from the background or the network: look again at once.
+function wake() { if (document.hidden) return; failures = 0; conn(true); refreshList(); if (current) { fetching = false; refreshDesk(); refreshChat(); } seen(); }
+window.addEventListener("pageshow", wake);
+window.addEventListener("online", wake);
+window.addEventListener("focus", wake);
 
 // This device as an app: its notifications. Everything here is optional; the
 // list above works without it.
@@ -645,7 +994,7 @@ $("faceset").onclick = async () => {
 function seen() { if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {}); }
 
 window.addEventListener("hashchange", show);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { show(); seen(); faceState(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); faceState(); } });
 show();
 seen();
 pushState();

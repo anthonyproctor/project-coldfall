@@ -228,6 +228,26 @@ case "open":
     print(a.message)
     exit(a.outcome == .started || a.outcome == .alreadyRunning ? 0 : 1)
 
+case "chat":
+    // A desk's conversation as the phone shows it, read from its transcript
+    // (see Chat). `--roles` prints only who said what and how long, for
+    // checking the reader without printing the conversation.
+    let rest = Array(args.dropFirst())
+    guard let name = rest.first(where: { !$0.hasPrefix("--") }) else { print("usage: coldfall-cli chat <desk> [--last N] [--roles]"); exit(2) }
+    guard let d = DeskConfig.load().first(where: { $0.name == name }) else { print("No desk called \(name)."); exit(1) }
+    var path: String?
+    if d.runtime == "claude" { path = Reopen.claude(d)?.path }
+    else if d.runtime == "codex" { path = Transcripts.codex(folder: d.resolvedCwd, limit: 200).first?.path }
+    guard let path, let v = Chat.Tail().read(path, vendor: d.runtime) else { print("\(name) has no conversation to show."); exit(1) }
+    var last = 20
+    if let k = rest.firstIndex(of: "--last"), k + 1 < rest.count, let n = Int(rest[k + 1]) { last = n }
+    for m in v.messages.suffix(last) {
+        if rest.contains("--roles") { print("\(m.role) \(m.text.count) chars"); continue }
+        print(m.role == "user" ? "you: " + m.text : m.role == "tool" ? "  [" + m.text + "]" : m.text)
+        print("")
+    }
+    exit(0)
+
 case "attach":
     // A held desk in this terminal: another terminal app, or an SSH session
     // from another machine. See Attach.swift.

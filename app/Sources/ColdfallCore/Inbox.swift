@@ -466,6 +466,10 @@ public protocol InboxHost: AnyObject {
     func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String)
     /// Where a photo for this desk may go: its folder on this Mac, or why not.
     func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String)
+    /// The desk's conversation as messages: the latest, or those before an id.
+    func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer
+    /// Press Esc in a desk that is working, to stop its turn.
+    func inboxInterrupt(_ name: String) -> (ok: Bool, message: String)
 }
 
 extension InboxHost {
@@ -475,9 +479,21 @@ extension InboxHost {
     public func inboxStop(_ name: String) -> (ok: Bool, message: String) { (false, "Stopping isn't available here.") }
     public func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String) { (false, "Pinning isn't available here.") }
     public func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String) { (nil, "Photos aren't available here.") }
+    public func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer { .none("No conversation to show here.") }
+    public func inboxInterrupt(_ name: String) -> (ok: Bool, message: String) { (false, "Stopping a turn isn't available here.") }
 }
 
 extension Inbox {
+    /// What the phone's chat view gets for a desk.
+    public enum ChatAnswer: Equatable {
+        /// Found and read.
+        case chat(Chat.View)
+        /// Still being found, the first time: ask again in a moment.
+        case loading
+        /// No conversation to show (another agent, none yet): the screen instead.
+        case none(String)
+    }
+
     public struct DeskView: Equatable {
         public var text: String
         public var running: Bool
@@ -490,10 +506,16 @@ extension Inbox {
         /// Said when it is asking and no choices could be read: whether
         /// Coldfall has read choices from this agent's version (PromptCheck).
         public var unread: String?
+        /// From the agent's status line, while fresh: model, effort, how full its context is.
+        public var model: String? = nil
+        public var effort: String? = nil
+        public var context: Double? = nil
+        /// The desk's group, or its folder's name: the line under its name.
+        public var place: String? = nil
         public init(text: String, running: Bool, activity: String, runtime: String, agent: Bool, prompt: Prompt? = nil,
-                    unread: String? = nil) {
+                    unread: String? = nil, model: String? = nil, effort: String? = nil, context: Double? = nil, place: String? = nil) {
             self.text = text; self.running = running; self.activity = activity; self.runtime = runtime; self.agent = agent
-            self.prompt = prompt; self.unread = unread
+            self.prompt = prompt; self.unread = unread; self.model = model; self.effort = effort; self.context = context; self.place = place
         }
     }
 
@@ -559,6 +581,10 @@ extension Inbox {
             var o: [String: Any] = ["running": v.running, "activity": v.activity, "runtime": v.runtime, "agent": v.agent,
                                     "hash": hash, "lines": v.text.isEmpty ? 0 : v.text.split(separator: "\n", omittingEmptySubsequences: false).count]
             if r.query["have"] != hash { o["text"] = v.text }
+            if let m = v.model { o["model"] = m }
+            if let e = v.effort { o["effort"] = e }
+            if let c = v.context { o["context"] = c }
+            if let p = v.place { o["place"] = p }
             if let p = v.prompt {
                 o["question"] = p.question
                 o["options"] = p.options.map { ["key": $0.key, "label": Prompt.short($0.label, max: 60)] }
@@ -590,6 +616,41 @@ extension Inbox {
             if let no = needsFaceID(f) { return no }
             guard let name = f["desk"] else { return .json(["message": "Open needs a desk."], status: 400) }
             return answer(host.inboxOpen(name))
+        case ("GET", "/api/chat"):
+            guard let name = r.query["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["message": "No such desk."], status: 404)
+            }
+            let before = r.query["before"].flatMap { Int($0) }
+            switch host.inboxChat(name, before: before) {
+            case .loading: return .json(["loading": true])
+            case .none(let why): return .json(["none": true, "message": why])
+            case .chat(let v):
+                // Nothing new since the copy the page has: say so, send nothing.
+                if before == nil, r.query["have"] == v.rev { return .json(["same": true, "rev": v.rev]) }
+                var o: [String: Any] = ["rev": v.rev, "more": v.more, "before": v.before]
+                // Only what came after the page's last message, when it still
+                // has that one: a turn's progress, not the whole window again.
+                var list = v.messages
+                if before == nil, let after = r.query["after"].flatMap({ Int($0) }), let k = list.firstIndex(where: { $0.id == after }) {
+                    list = Array(list[(k + 1)...])
+                    o["append"] = true
+                }
+                o["messages"] = list.map { m -> [String: Any] in
+                    var x: [String: Any] = ["id": m.id, "role": m.role, "text": m.text]
+                    if let t = m.time { x["time"] = t }
+                    return x
+                }
+                return .json(o)
+            }
+        case ("POST", "/api/interrupt"):
+            // Esc into a working agent ends its turn: Face ID, like a send.
+            let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
+            guard let name = f["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["ok": false, "message": "No such desk."], status: 404)
+            }
+            let a = host.inboxInterrupt(name)
+            return .json(["ok": a.ok, "message": a.message])
         case ("POST", "/api/stop"):
             // Ends an agent, maybe mid-turn: Face ID, like anything that acts on a desk.
             let f = fields(r.body)
@@ -661,7 +722,7 @@ extension Inbox {
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
              (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
              (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"), (_, "/api/stop"), (_, "/api/pin"),
-             (_, "/api/upload"):
+             (_, "/api/upload"), (_, "/api/chat"), (_, "/api/interrupt"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)
