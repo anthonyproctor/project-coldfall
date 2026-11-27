@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- The phone page updates itself. After Coldfall is updated, a page left open on your phone notices and reloads on its own; if you're in the middle of a message it keeps it and shows a Reload bar instead.
+
 ## [0.3.56] - 2026-11-26
 
 Your phone as a chat with each desk, themes you pick by looking, attach from any terminal, and Shortcuts
