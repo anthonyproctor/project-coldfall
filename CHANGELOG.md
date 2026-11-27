@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.61] - 2026-11-27
+
+New two-step Welcome from a check-up of how you use AI; coldfall-cli checkup
+
 ### Added
 
 - **A new Welcome, in two steps.** First, how you use AI today: the tools you
@@ -1494,7 +1498,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.60...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.61...HEAD
+[0.3.61]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.60...v0.3.61
 [0.3.60]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.59...v0.3.60
 [0.3.59]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.58...v0.3.59
 [0.3.58]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.57...v0.3.58
