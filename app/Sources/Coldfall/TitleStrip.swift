@@ -75,6 +75,11 @@ final class TitleStrip: NSView {
     }
     required init?(coder: NSCoder) { nil }
 
+    /// The layout buttons go in the simple window; the update notice stays.
+    func setSimple(_ on: Bool) {
+        for b in [railBtn, meterBtn, readerBtn] { b.isHidden = on }
+    }
+
     /// Show "<version> is out", or nothing.
     func setUpdate(_ version: String?) {
         guard let version else { updateBtn.isHidden = true; return }

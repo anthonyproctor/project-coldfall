@@ -139,6 +139,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         // desks: the rail's desks above the tree, and no real usage numbers.
         if args.contains("--snapshot"), args.contains("--desks-on-top") { ui.treeOnTop = false }
         if args.contains("--snapshot"), args.contains("--meter-hidden") { ui.meterHidden = true }
+        if args.contains("--snapshot"), args.contains("--simple") { ui.simple = true }
         let firstRun = desks.isEmpty || !ui.seenWelcome
         if desks.isEmpty {
             DeskConfig.writeStarter()
@@ -192,11 +193,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         center.addSubview(tabs); center.addSubview(deskSplit)
         // The cards bring their own gap; this keeps them off the window's edges.
         let inset: CGFloat = 4
+        deskUnderTabs = deskSplit.topAnchor.constraint(equalTo: tabs.bottomAnchor)
+        deskAtTop = deskSplit.topAnchor.constraint(equalTo: center.topAnchor, constant: inset)
         NSLayoutConstraint.activate([
             tabs.topAnchor.constraint(equalTo: center.topAnchor),
             tabs.leadingAnchor.constraint(equalTo: center.leadingAnchor),
             tabs.trailingAnchor.constraint(equalTo: center.trailingAnchor),
-            deskSplit.topAnchor.constraint(equalTo: tabs.bottomAnchor),
+            deskUnderTabs,
             deskSplit.leadingAnchor.constraint(equalTo: center.leadingAnchor, constant: inset),
             deskSplit.trailingAnchor.constraint(equalTo: center.trailingAnchor, constant: -inset),
             deskSplit.bottomAnchor.constraint(equalTo: center.bottomAnchor, constant: -inset),
@@ -486,6 +489,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         sidebar.mode = CommandLine.arguments.contains("--all-desks") ? .all
             : (CommandLine.arguments.contains("--by-priority") ? .priority : deskListMode)
         sidebar.onNextMode = { [weak self] in if let self { self.setDeskList(self.deskListMode.next) } }
+        sidebar.onNewDesk = { [weak self] in self?.newDeskFromWelcome() }
         sidebar.onWantGroups = { [weak self] in self?.setDeskList(.group) }
         // When a desk was last used: this run's visits, or its agent's
         // last finished turn as the statusline recorder left it.
@@ -1417,6 +1421,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         add(viewMenu, "Show or Hide Usage Meter", #selector(toggleMeter), "j")
         viewMenu.addItem(.separator())
         add(viewMenu, "Pop Out or Dock Reader", #selector(popOutOrDock), "")
+        viewMenu.addItem(.separator())
+        add(viewMenu, "Simple Window", #selector(toggleSimple), "")
+        simpleItem = viewMenu.items.last
+        simpleItem?.toolTip = "Just your desks and the one you're in: no tabs, explorer, reader or meter"
+        simpleItem?.state = ui.simple ? .on : .off
         viewItem.submenu = viewMenu
 
         let deskItem = NSMenuItem(); main.addItem(deskItem)
@@ -2278,6 +2287,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     /// The desks get up to 70% of the left column, as much as they need;
     /// the file tree has the rest. Desks are what you came for.
     func fitRail() {
+        guard !ui.simple else { return }
         let h = rail.bounds.height
         let want = ui.treeOnTop ? h * 0.5 : min(sidebar.contentHeight + 8, h * 0.7)
         rail.setPosition(max(120, min(want, h - 120)), ofDividerAt: 0)
@@ -2914,7 +2924,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     @objc func showWelcome() {
         welcome = WelcomeWindow(projectDir: desks.first?.resolvedCwd
                                 ?? FileManager.default.currentDirectoryPath)
-        welcome?.onFinish = { [weak self] in self?.reloadDesks() }
+        welcome?.onFinish = { [weak self] in
+            guard let self else { return }
+            // A first Welcome may start someone in the simple window.
+            if let s = self.welcome?.chosenSimple, s != self.ui.simple { self.ui.simple = s; self.ui.save(); self.toggleSimpleApplied() }
+            self.ui.seenWelcome = true
+            self.reloadDesks()
+        }
         welcome?.showWindow(nil)
         welcome?.window?.makeKeyAndOrderFront(nil)
     }
@@ -4059,9 +4075,12 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     }
 
     /// Desks above the tree, or the tree above the desks. Persisted.
+    /// The simple window has no tree: the desks fill the rail.
     func applyRailOrder() {
         rail.arrangedSubviews.forEach { rail.removeArrangedSubview($0); $0.removeFromSuperview() }
-        if ui.treeOnTop {
+        if ui.simple {
+            rail.addArrangedSubview(deskScroll)
+        } else if ui.treeOnTop {
             rail.addArrangedSubview(tree); rail.addArrangedSubview(deskScroll)
         } else {
             rail.addArrangedSubview(deskScroll); rail.addArrangedSubview(tree)
@@ -4259,13 +4278,57 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         meter.isHidden = ui.meterHidden
         meterZero.isActive = ui.meterHidden
         mount(reader, in: readerPane)
-        if ui.readerPoppedOut {
+        if ui.readerPoppedOut, !ui.simple {
             popOutReader()
         } else {
-            placeReaderPane(shown: !ui.readerHidden)
+            placeReaderPane(shown: !ui.readerHidden && !ui.simple)
         }
+        applySimple()
         split.adjustSubviews()
         refreshToggles()
+    }
+
+    var deskUnderTabs: NSLayoutConstraint!
+    var deskAtTop: NSLayoutConstraint!
+    var simpleItem: NSMenuItem?
+
+    /// The simple window: the desk list and the desk, nothing else. The
+    /// tabs, the explorer, the reader, the meter and the layout buttons go;
+    /// your own settings for each are kept for when you switch back.
+    func applySimple() {
+        let s = ui.simple
+        sidebar.simple = s
+        rail.isHidden = s ? false : ui.railHidden
+        applyRailOrder()
+        tabs.isHidden = s
+        deskUnderTabs.isActive = !s
+        deskAtTop.isActive = s
+        meter.isHidden = s || ui.meterHidden
+        meterZero.isActive = s || ui.meterHidden
+        strip.setSimple(s)
+        simpleItem?.state = s ? .on : .off
+    }
+
+    @objc func toggleSimple() {
+        ui.simple.toggle(); ui.save()
+        toggleSimpleApplied()
+    }
+
+    /// Lay the window out for `ui.simple` as it now stands.
+    func toggleSimpleApplied() {
+        if ui.simple { placeReaderPane(shown: false) }
+        else if !ui.readerPoppedOut { placeReaderPane(shown: !ui.readerHidden) }
+        applySimple()
+        split.adjustSubviews()
+        refreshToggles()
+        fitRail()
+    }
+
+    /// The simple window's New desk: Welcome's first-desk step, for one more.
+    @objc func newDeskFromWelcome() {
+        WelcomeWindow.startStep = 2
+        showWelcome()
+        WelcomeWindow.startStep = 1
     }
 
     // MARK: - quick open (cmd-P)

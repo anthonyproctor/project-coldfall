@@ -8,6 +8,15 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- **The simple window** (View ▸ Simple Window). Just your desks and the one
+  you're in: no tabs, groups, file explorer, reader, usage meter or layout
+  buttons. The desk list shows every desk with a **New desk** row, which
+  opens Welcome's first-desk step to add one. Welcome offers it to someone new
+  to agents, ticked when the check-up suggests it. Your settings for each part
+  are kept for when you switch back.
+
 ## [0.3.61] - 2026-11-27
 
 New two-step Welcome from a check-up of how you use AI; coldfall-cli checkup

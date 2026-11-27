@@ -22,6 +22,10 @@ final class SidebarView: NSView {
     /// The Desks section by priority: every running desk, across groups,
     /// under Needs you, Done, Working, Idle. Off, it lists the selected group.
     var mode = DeskListMode.group { didSet { if mode != oldValue, let d = lastDesks { build(desks: d) } } }
+    /// The simple window: no Groups section and no ordering control, every
+    /// desk in one list, and a row to add one.
+    var simple = false { didSet { if simple != oldValue, let d = lastDesks { build(desks: d) } } }
+    var onNewDesk: (() -> Void)?
     var byPriority: Bool { mode == .priority }
     /// The button beside "Desks": on to the next way of listing them.
     var onNextMode: (() -> Void)?
@@ -253,8 +257,7 @@ final class SidebarView: NSView {
         groupTitle.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
         groupTitle.translatesAutoresizingMaskIntoConstraints = true
         groupTitle.autoresizingMask = [.width]
-        addSubview(groupTitle)
-        y += 22
+        if !simple { addSubview(groupTitle); y += 22 }
         // The group on show: the selected desk's, else the first with a
         // desk in it. The Desks section lists that group only.
         let order = order0(desks)
@@ -264,7 +267,7 @@ final class SidebarView: NSView {
         // A browsed group that has since lost its desks is no longer a look.
         if let b = browsing, !withDesks.contains(where: { $0 == b }) { browsing = nil }
         let selectedGroup = GroupOnShow.group(browsing: browsing, selected: ofSelected, first: withDesks.first)
-        for g in order {
+        for g in order where !simple {
             let members = desks.filter { $0.group == g && !$0.hidden }
             guard !members.isEmpty else { continue }
             let gr = GroupRow(frame: NSRect(x: 4, y: y, width: w - 8, height: 30))
@@ -291,7 +294,7 @@ final class SidebarView: NSView {
             groupRows.append((g, g ?? "General", members.map(\.name), gr))
             y += 32
         }
-        y += 10
+        if !simple { y += 10 }
 
         let title = SectionTitle("Desks")
         title.frame = NSRect(x: 14, y: y, width: w - 28, height: 16)
@@ -314,7 +317,7 @@ final class SidebarView: NSView {
         // Beside the title rather than flush right: the first build runs
         // before the rail has its width, and a right edge would be a guess.
         mode.frame = NSRect(x: 14 + title.intrinsicContentSize.width + 10, y: y - 2, width: mode.fittingSize.width + 2, height: 18)
-        addSubview(mode)
+        if !simple { addSubview(mode) }
         y += 22
         shownOrder = []
         drawnPriority = []
@@ -330,7 +333,7 @@ final class SidebarView: NSView {
         }
         if !zones.pinned.isEmpty { y += 8 }
 
-        if byPriority {
+        if byPriority && !simple {
             // Who next, not where: running desks from every group, by what
             // they need from you. Rows don't drag here; the order isn't yours.
             drawnPriority = wantedPriority(desks)
@@ -365,7 +368,7 @@ final class SidebarView: NSView {
             }
         }
 
-        if listMode == .all {
+        if listMode == .all && !simple {
             // Every desk, running or not, for finding one: the ones in
             // use first, then the ones used last. Rows don't drag here; the
             // order isn't yours.
@@ -396,7 +399,7 @@ final class SidebarView: NSView {
         // Only the group on show. Its name is the lit row above, so there
         // is no header here; a desk moves to another group by dragging it
         // onto that group's row.
-        for g in order where listMode == .group && selectedGroup == .some(g) {
+        for g in order where listMode == .group && selectedGroup == .some(g) && !simple {
             let members = desks.enumerated().filter { $0.element.group == g && !$0.element.hidden && !zones.contains($0.offset) }
             for (i, d) in members {
                 shownOrder.append(d.name)
@@ -407,6 +410,33 @@ final class SidebarView: NSView {
                 y += DeskRow.height + 2
             }
             y += 8
+        }
+
+        // The simple window: every desk in your order, then a row to add one.
+        if simple {
+            for (i, d) in desks.enumerated() where !d.hidden && !zones.contains(i) {
+                shownOrder.append(d.name)
+                let r = row(i, d, indent: 4, y: y, width: w)
+                r.onHide = { [weak self] in self?.onHideDesk?(i) }
+                r.onDragMoved = { [weak self] p in self?.dragMoved(from: i, to: p) }
+                r.onDragEnded = { [weak self] p in self?.dragEnded(from: i, at: p) }
+                y += DeskRow.height + 2
+            }
+            let add = NSButton(title: "New desk", target: self, action: #selector(newDesk))
+            add.isBordered = false
+            add.bezelStyle = .inline
+            add.font = .systemFont(ofSize: 12.5)
+            add.contentTintColor = Theme.ui.dimText
+            add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+            add.imagePosition = .imageLeading
+            add.imageHugsTitle = true
+            add.alignment = .left
+            add.toolTip = "Add a desk: a folder you work in, an agent you built, or a new job"
+            add.frame = NSRect(x: 14, y: y + 4, width: w - 28, height: 24)
+            add.autoresizingMask = [.width]
+            addSubview(add)
+            y += 36
         }
 
         // Hidden desks: one line saying how many, and the desks themselves
@@ -620,6 +650,8 @@ final class SidebarView: NSView {
     }
     @objc private func sortAll() { onSortDesks?() }
     @objc private func toggleLive() { onToggleLive?() }
+    @objc private func newDesk() { onNewDesk?() }
+
     @objc private func togglePriority() { onNextMode?() }
 
     /// The group clicked to look at, if any (see GroupOnShow).

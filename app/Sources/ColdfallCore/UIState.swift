@@ -73,6 +73,9 @@ public struct UIState: Codable {
     public var compactRail: Bool = true
     /// Drip, the character in the notch (see Companion). Beta.
     public var dripOn: Bool = true
+    /// The simple window (View, Simple Window): the desk list and the desk,
+    /// nothing else. Welcome turns it on for someone new to agents.
+    public var simple: Bool = false
 
     public init() {}
 
@@ -119,6 +122,7 @@ public struct UIState: Codable {
         prDismissed = try c.decodeIfPresent([String: String].self, forKey: .prDismissed) ?? [:]
         compactRail = try c.decodeIfPresent(Bool.self, forKey: .compactRail) ?? true
         dripOn = try c.decodeIfPresent(Bool.self, forKey: .dripOn) ?? true
+        simple = try c.decodeIfPresent(Bool.self, forKey: .simple) ?? false
     }
 
     public static var path: String { NSString(string: "~/.config/coldfall/ui.json").expandingTildeInPath }

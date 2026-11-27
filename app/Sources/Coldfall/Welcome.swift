@@ -12,6 +12,12 @@ import ColdfallCore
 ///    gets that one tool's install step. Never a desk per installed tool.
 final class WelcomeWindow: NSWindowController, NSTextFieldDelegate {
     var onFinish: (() -> Void)?
+    /// On a first Welcome: whether to start in the simple window. Nil when
+    /// Welcome was opened again later, which leaves the window as it is.
+    private(set) var chosenSimple: Bool?
+    private let firstTime = !UIState.load().seenWelcome
+    private let simpleSwitch = NSButton(checkboxWithTitle: "Start with the simple window", target: nil, action: nil)
+    private var simpleSet = false
     private var projectDir = FileManager.default.currentDirectoryPath
     private let updateSwitch = NSButton(checkboxWithTitle: UpdateCheck.switchLabel, target: nil, action: nil)
     /// Snapshot only: draw the first run of a Mac with no vendor CLI.
@@ -356,6 +362,14 @@ final class WelcomeWindow: NSWindowController, NSTextFieldDelegate {
         noteJob()
 
         views.append(gap(8))
+        if firstTime || WelcomeWindow.demo != nil {
+            if !simpleSet { simpleSwitch.state = report.simple ? .on : .off; simpleSet = true }
+            let v = NSStackView(views: [simpleSwitch, body("Just your desks and the one you're in, without tabs, the file explorer, "
+                + "the reader or the usage meter. Switch any time in the View menu.", size: 11.5, color: .tertiaryLabelColor)])
+            v.orientation = .vertical; v.alignment = .leading; v.spacing = 4
+            views.append(v)
+            views.append(gap(2))
+        }
         views.append(updates())
         return views
     }
@@ -481,6 +495,7 @@ final class WelcomeWindow: NSWindowController, NSTextFieldDelegate {
         }
         DeskConfig.write(existing + fresh)
         UIState.markSeenWelcome()
+        if firstTime { chosenSimple = simpleSwitch.state == .on }
         var upd = UpdateState.load()
         upd.enabled = updateSwitch.state == .on
         upd.noticeShown = true

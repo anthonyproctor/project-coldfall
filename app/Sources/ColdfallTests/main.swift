@@ -5235,6 +5235,13 @@ do {
 
 // MARK: - Welcome's first desks (FirstDesk)
 do {
+    let oldUI = try? JSONDecoder().decode(UIState.self, from: Data(#"{"seenWelcome":true}"#.utf8))
+    eq("simple window: off for a setup from before it", oldUI?.simple, false)
+    var su = UIState(); su.simple = true
+    let back = (try? JSONEncoder().encode(su)).flatMap { try? JSONDecoder().decode(UIState.self, from: $0) }
+    eq("simple window: kept across a restart", back?.simple, true)
+    check("simple window: starts on for a newcomer, off for an agent builder",
+          Checkup.demo(.oneTool).simple && Checkup.demo(.newcomer).simple && !Checkup.demo(.agentBuilder).simple)
     eq("first desk: names are letters, digits and dashes", FirstDesk.cleanName("My Taxes 2026!"), "my-taxes-2026")
     eq("first desk: nothing usable is nothing", FirstDesk.cleanName("!!!"), "")
     eq("first desk: a name taken gets a number", FirstDesk.unique("api", taken: ["api", "api-2"]), "api-3")
