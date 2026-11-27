@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.59] - 2026-11-27
+
+Phone page reports its own trouble; Report a problem
+
 ### Added
 
 - **Report a problem from the phone.** The phone page now keeps a short note of
@@ -1454,7 +1458,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.58...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.59...HEAD
+[0.3.59]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.58...v0.3.59
 [0.3.58]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.57...v0.3.58
 [0.3.57]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.56...v0.3.57
 [0.3.56]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.55...v0.3.56
