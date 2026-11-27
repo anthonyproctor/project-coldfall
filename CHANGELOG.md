@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+## [0.3.57] - 2026-11-26
+
+The phone page updates itself after Coldfall does
+
 ### Added
 
 - The phone page updates itself. After Coldfall is updated, a page left open on your phone notices and reloads on its own; if you're in the middle of a message it keeps it and shows a Reload bar instead.
@@ -1430,7 +1434,8 @@ First build.
 - Tests, CI, and guards that keep the core free of UI code and keep private
   paths out of the repo.
 
-[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.56...HEAD
+[Unreleased]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.57...HEAD
+[0.3.57]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.56...v0.3.57
 [0.3.56]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.55...v0.3.56
 [0.3.55]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.54...v0.3.55
 [0.3.54]: https://github.com/anthonyproctor/project-coldfall/compare/v0.3.53...v0.3.54
