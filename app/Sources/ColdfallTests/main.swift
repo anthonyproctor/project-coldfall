@@ -4770,6 +4770,84 @@ do {
     eq("drip: and off stays off", off?.dripOn, false)
 }
 
+// MARK: - a desk asking for you (coldfall-cli notify)
+do {
+    let was = RemoteOpen.root
+    let root = testSandbox + "/notice-\(UUID().uuidString.prefix(6))"
+    RemoteOpen.root = root
+    defer { RemoteOpen.root = was; try? FileManager.default.removeItem(atPath: root) }
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    eq("notice: words kept", Notice.clean("Chrome wants you to click Allow."), "Chrome wants you to click Allow.")
+    eq("notice: lines and runs of space become one space", Notice.clean("one\n\n two\t three   four"), "one two three four")
+    eq("notice: colour codes dropped", Notice.clean("\u{1B}[31mred\u{1B}[0m text"), "red text")
+    eq("notice: a title-setting escape dropped whole", Notice.clean("a\u{1B}]0;evil title\u{07}b"), "ab")
+    eq("notice: and one ended the other way", Notice.clean("a\u{1B}]8;;https://x\u{1B}\\b"), "ab")
+    eq("notice: other control characters dropped", Notice.clean("bell\u{07} and\u{0} nul\u{202E}"), "bell and nul")
+    eq("notice: cut to its limit", Notice.clean(String(repeating: "x", count: 900)).count, Notice.maxText)
+    check("notice: and says so", Notice.clean(String(repeating: "x", count: 900)).hasSuffix("…"))
+    eq("notice: only space is nothing", Notice.clean(" \n\t "), "")
+
+    eq("notice: none to begin with", Notice.all(now: t0), [])
+    check("notice: an empty one isn't put up", Notice.add(desk: "deals", text: "  ", now: t0) == nil)
+    Notice.add(desk: "deals", text: "Click Allow in Chrome", now: t0)
+    Notice.add(desk: "work", text: "Sign in to the portal", now: t0.addingTimeInterval(5))
+    eq("notice: one per desk, oldest first", Notice.all(now: t0.addingTimeInterval(6)).map(\.desk), ["deals", "work"])
+    Notice.add(desk: "deals", text: "Now it wants Screen Recording", now: t0.addingTimeInterval(10))
+    eq("notice: a newer one from the same desk replaces it", Notice.all(now: t0.addingTimeInterval(11)).map(\.text),
+       ["Sign in to the portal", "Now it wants Screen Recording"])
+    check("notice: kept for this account alone",
+          ((try? FileManager.default.attributesOfItem(atPath: Notice.path))?[.posixPermissions] as? Int) == 0o600)
+    eq("notice: gone after a day", Notice.all(now: t0.addingTimeInterval(Notice.ttl + 6)).map(\.desk), ["deals"])
+    check("notice: cleared", Notice.clear(desk: "work", now: t0.addingTimeInterval(12)))
+    check("notice: clearing twice says there was none", !Notice.clear(desk: "work", now: t0.addingTimeInterval(12)))
+    eq("notice: what's left", Notice.all(now: t0.addingTimeInterval(13)).map(\.desk), ["deals"])
+
+    // What the app does with the CLI's request.
+    let names = ["deals", "work", "secret"], hidden: Set<String> = ["secret"]
+    func ask(_ desk: String, _ action: String, _ text: String? = nil) -> RemoteOpen.Answer {
+        RemoteOpen.notify(RemoteOpen.Request(desk: desk, action: action, text: text), names: names, hidden: hidden,
+                          now: t0.addingTimeInterval(20))
+    }
+    eq("notify: from a desk that doesn't exist", ask("nobody", "notify", "hi").outcome, .unknownDesk)
+    eq("notify: from a hidden desk", ask("secret", "notify", "hi").outcome, .hiddenDesk)
+    eq("notify: nothing to say", ask("work", "notify", "\u{1B}[0m").outcome, .empty)
+    eq("notify: put up", ask("work", "notify", "Approve the TCC prompt").outcome, .noticed)
+    eq("notify: and it's there", Notice.all(now: t0.addingTimeInterval(21)).first { $0.desk == "work" }?.text, "Approve the TCC prompt")
+    eq("notify: taken down", ask("work", "unnotify").outcome, .cleared)
+    check("notify: and it's gone", !Notice.all(now: t0.addingTimeInterval(21)).contains { $0.desk == "work" })
+    eq("notify: taking down none is fine", ask("work", "unnotify").message, "work had no notice up.")
+
+    // The phone page.
+    let tok = String(repeating: "n", count: 43)
+    func req(_ m: String, _ target: String, body: String = "") -> Inbox.Request {
+        let raw = "\(m) \(target) HTTP/1.1\r\nHost: 127.0.0.1:47101\r\nCookie: cf_inbox=\(Inbox.cookieValue(tok))\r\nX-Coldfall: 1\r\n"
+            + "Content-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        guard case .request(let r) = Inbox.parse(Data(raw.utf8)) else { return Inbox.Request(method: "BAD", path: "") }
+        return r
+    }
+    let h = FakeInboxHost()
+    func json(_ r: Inbox.Response) -> [String: Any] { (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:] }
+    Notice.add(desk: "asks", text: "Click Allow", now: Date())
+    Notice.add(desk: "unlisted", text: "not on the phone", now: Date())
+    let list = json(Inbox.respond(req("GET", "/api/desks"), token: tok, allowedHosts: ["127.0.0.1"], host: h))
+    let shown = (list["notices"] as? [[String: Any]])?.compactMap { $0["desk"] as? String }
+    eq("inbox: notices for listed desks", shown, ["asks"])
+    let desk = json(Inbox.respond(req("GET", "/api/read?desk=asks"), token: tok, allowedHosts: ["127.0.0.1"], host: h))
+    eq("inbox: a desk's view carries its notice", desk["notice"] as? String, "Click Allow")
+    let other = json(Inbox.respond(req("GET", "/api/read?desk=idle"), token: tok, allowedHosts: ["127.0.0.1"], host: h))
+    check("inbox: and one without has none", other["notice"] == nil)
+    eq("inbox: dismissing a desk it doesn't list is refused",
+       Inbox.respond(req("POST", "/api/notice/clear", body: #"{"desk":"unlisted"}"#), token: tok, allowedHosts: ["127.0.0.1"], host: h).status, 404)
+    let gone = Inbox.respond(req("POST", "/api/notice/clear", body: #"{"desk":"asks"}"#), token: tok, allowedHosts: ["127.0.0.1"], host: h)
+    eq("inbox: dismissed", json(gone)["message"] as? String, "Dismissed.")
+    check("inbox: and gone", !Notice.all().contains { $0.desk == "asks" })
+    check("inbox: dismissing pressed nothing in the desk", h.sent.isEmpty && h.pressed.isEmpty)
+    var noHeader = req("POST", "/api/notice/clear", body: #"{"desk":"asks"}"#); noHeader.headers["x-coldfall"] = nil
+    eq("inbox: and needs the page's header like any change",
+       Inbox.respond(noHeader, token: tok, allowedHosts: ["127.0.0.1"], host: h).status, 403)
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

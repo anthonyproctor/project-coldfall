@@ -348,6 +348,12 @@ public enum Inbox {
         }
     }
 
+    /// The notices up (see Notice), for desks the inbox lists: a hidden desk's stays off the phone.
+    public static func notices(for rows: [Row], now: Date = Date()) -> [[String: Any]] {
+        let names = Set(rows.map(\.name))
+        return Notice.all(now: now).filter { names.contains($0.desk) }.map { ["desk": $0.desk, "text": $0.text, "time": $0.time] }
+    }
+
     /// Keys the inbox may press in a desk stopped on a question, to answer
     /// a permission prompt or a choice from a phone. Nothing that interrupts
     /// or edits: no Ctrl-C, no text.
@@ -457,7 +463,8 @@ extension Inbox {
             }
             return .json(["message": host.inboxPushTest(e)])
         case ("GET", "/api/desks"):
-            return .json(["desks": json(host.inboxRows())])
+            let rows = host.inboxRows()
+            return .json(["desks": json(rows), "notices": notices(for: rows)])
         case ("GET", "/api/read"):
             let lines = min(2000, max(1, Int(r.query["lines"] ?? "") ?? 200))
             guard let name = r.query["desk"], let v = host.inboxDesk(name, lines: lines) else {
@@ -470,7 +477,14 @@ extension Inbox {
             } else if let u = v.unread {
                 o["unread"] = u
             }
+            if let n = Notice.all().first(where: { $0.desk == name }) { o["notice"] = n.text; o["noticeAt"] = n.time }
             return .json(o)
+        case ("POST", "/api/notice/clear"):
+            // Taking a notice down acts on nothing in the desk: no Face ID.
+            guard let name = fields(r.body)["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["message": "No such desk."], status: 404)
+            }
+            return .json(["message": Notice.clear(desk: name) ? "Dismissed." : "It was already gone."])
         case ("POST", "/api/send"):
             let f = fields(r.body)
             if let no = needsFaceID(f) { return no }
@@ -521,7 +535,7 @@ extension Inbox {
         case (_, "/"), (_, "/api/desks"), (_, "/api/read"), (_, "/api/send"), (_, "/api/keys"), (_, "/api/open"),
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
              (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
-             (_, "/api/faceid/register"), (_, "/api/faceid/verify"):
+             (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)

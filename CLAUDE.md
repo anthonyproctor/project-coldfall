@@ -81,6 +81,10 @@ it was last used, and whether opening it would ask about starting fresh.
 desk's choices were last read on (see `PromptCheck` in the core), and `--terminal out.txt --feed
 --feed-unread` snapshots Needs You with a card saying a version hasn't been read from yet.
 
+`coldfall-cli notify --from <desk> "message"` puts up that desk's notice (see `Notice` in the core): Needs You,
+the phone page and a Mac banner, and a phone notification in fixed words. `--terminal out.txt --feed --feed-notice`
+snapshots Needs You with a made-up one. Try it only in a throwaway home.
+
 `coldfall-cli wake <desk> --from <desk> "message"` starts a desk that is off, asks it and puts it back (see
 `Wake` in the core). Try it only in a throwaway home with stand-in agents (a desk whose `command` is a small
 script that reads a line and prints a reply), never against real desks.

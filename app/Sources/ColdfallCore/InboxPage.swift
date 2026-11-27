@@ -48,15 +48,23 @@ textarea{flex:1;min-height:46px;max-height:30vh;resize:vertical;background:var(-
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;color:var(--dim)}
 .card .keys{margin:10px 0 0}
 .card .keys button.go{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}
+.ask{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:12px;padding:12px 14px;margin:8px 0}
+.ask .who{display:flex;gap:8px;align-items:baseline;margin-bottom:4px}
+.ask .who b{color:var(--orange)}
+.ask p{margin:0;font-size:15px;line-height:1.4;word-break:break-word}
+.ask .row{display:flex;gap:8px;margin-top:10px}
+.ask button{background:none;color:var(--accent);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer}
 .hidden{display:none!important}
 </style>
 </head>
 <body>
 <header><button class="back" id="back">‹ Desks</button><h1 id="title">Desks</h1><span class="muted" id="when"></span></header>
 <main>
+  <section id="asks"></section>
   <section id="list"></section>
   <section id="detail" class="hidden">
     <div><span class="state" id="state"></span> <span class="muted" id="runtime"></span></div>
+    <div class="ask hidden" id="notice"><p id="noticetext"></p><div class="row"><button id="noticeclear">Dismiss</button></div></div>
     <div id="screen"></div>
     <div class="keys hidden" id="opts"></div>
     <div class="keys hidden" id="keys"></div>
@@ -130,8 +138,30 @@ function renderList(desks) {
   if (!desks.length) list.textContent = "No desks.";
 }
 
+// What desks asked for in their own words (coldfall-cli notify), above the list.
+function renderAsks(notices) {
+  const box = $("asks");
+  box.textContent = "";
+  for (const n of notices || []) {
+    const c = document.createElement("div"); c.className = "ask";
+    const who = document.createElement("div"); who.className = "who";
+    const b = document.createElement("b"); b.textContent = n.desk;
+    const t = document.createElement("span"); t.className = "muted"; t.textContent = "needs you · " + ago(n.time);
+    who.append(b, t);
+    const p = document.createElement("p"); p.textContent = n.text;
+    const row = document.createElement("div"); row.className = "row";
+    const go = document.createElement("button"); go.textContent = "Open desk";
+    go.onclick = () => { location.hash = "desk=" + encodeURIComponent(n.desk); };
+    const x = document.createElement("button"); x.textContent = "Dismiss";
+    x.onclick = () => { api("/api/notice/clear", {desk: n.desk}).then(refreshList).catch(e => { $("when").textContent = e.message; }); };
+    row.append(go, x);
+    c.append(who, p, row);
+    box.appendChild(c);
+  }
+}
+
 function refreshList() {
-  api("/api/desks").then(r => { renderList(r.desks); $("when").textContent = ""; })
+  api("/api/desks").then(r => { renderAsks(r.notices); renderList(r.desks); $("when").textContent = ""; })
     .catch(e => { $("when").textContent = e.message; });
 }
 
@@ -167,6 +197,8 @@ function refreshDesk() {
     const unread = (k === "blocked" && !opts.length && r.unread) || "";
     $("unread").textContent = unread ? "Its choices couldn't be read, so these are the plain keys. " + unread : "";
     $("unread").classList.toggle("hidden", !unread);
+    $("noticetext").textContent = r.notice || "";
+    $("notice").classList.toggle("hidden", !r.notice);
     $("open").classList.toggle("hidden", r.running);
     $("sendrow").classList.toggle("hidden", !r.running || k === "blocked" || !r.agent);
   }).catch(e => { $("note").textContent = e.message; });
@@ -178,6 +210,7 @@ function show() {
   current = m ? decodeURIComponent(m[1]) : null;
   $("msg").value = (current && drafts[current]) || "";
   $("list").classList.toggle("hidden", !!current);
+  $("asks").classList.toggle("hidden", !!current);
   phoneShow();
   $("detail").classList.toggle("hidden", !current);
   $("back").style.display = current ? "inline" : "none";
@@ -201,6 +234,11 @@ $("send").onclick = () => {
     if (r.outcome === "sent") { drafts[desk] = ""; if (current === desk) $("msg").value = ""; }
     if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 600); }
   }).catch(e => { $("note").textContent = e.message; });
+};
+$("noticeclear").onclick = () => {
+  const desk = current;
+  api("/api/notice/clear", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; refreshDesk(); } })
+    .catch(e => { $("note").textContent = e.message; });
 };
 $("open").onclick = () => { const desk = current; act("/api/open", {desk}).then(r => { if (current === desk) { $("note").textContent = r.message || ""; setTimeout(refreshDesk, 1500); } }); };
 $("back").onclick = () => { location.hash = ""; };

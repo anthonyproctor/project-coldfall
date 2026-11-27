@@ -66,6 +66,8 @@ public enum RemoteOpen {
         case pressed, notAsking
         /// `wake` putting a desk back to sleep: done, or left awake (why in the message).
         case slept, keptAwake
+        /// `notify`: the desk's notice is up, or taken down (or there was none).
+        case noticed, cleared, empty
     }
 
     public struct Answer: Codable, Equatable {
@@ -235,6 +237,20 @@ public enum RemoteOpen {
         }
         if t.draft { return Answer(.draft, "Someone is typing into \(desk); waiting for that message first.") }
         return nil
+    }
+
+    /// `coldfall-cli notify --from <desk>`: what the app does with it. Only a
+    /// desk in desks.toml, and not a hidden one, can put up a notice.
+    public static func notify(_ r: Request, names: [String], hidden: Set<String>, now: Date = Date()) -> Answer {
+        if let no = unknownOrHidden(r.desk, names: names, hidden: hidden) { return no }
+        if r.action == "unnotify" {
+            return Notice.clear(desk: r.desk, now: now) ? Answer(.cleared, "Took down \(r.desk)'s notice.")
+                                                         : Answer(.cleared, "\(r.desk) had no notice up.")
+        }
+        guard Notice.add(desk: r.desk, text: r.text ?? "", now: now) != nil else {
+            return Answer(.empty, "Nothing was put up: the notice was empty.")
+        }
+        return Answer(.noticed, "Put up a notice from \(r.desk) in Needs You.")
     }
 
     static func unknownOrHidden(_ desk: String, names: [String], hidden: Set<String>) -> Answer? {

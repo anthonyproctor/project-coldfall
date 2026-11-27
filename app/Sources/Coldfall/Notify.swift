@@ -74,6 +74,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "coldfall." + id, content: c, trigger: nil))
     }
 
+    /// A desk's notice taken down: its banner goes too.
+    func clearNotice(desk: String) {
+        guard available else { return }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["coldfall.notice." + desk])
+    }
+
     /// Clear a desk's banner once you've gone to it.
     func clear(desk: String) {
         guard available else { return }

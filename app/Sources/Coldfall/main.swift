@@ -293,6 +293,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         }
         feed.onGo = { [weak self] n in self?.showDesk(named: n) }
         feed.onAnswer = { [weak self] n, o in self?.answer(desk: n, with: o) }
+        feed.onDismiss = { [weak self] n in Notice.clear(desk: n); self?.notifier.clearNotice(desk: n) }
         feed.family = { [weak self] in self?.connector.items ?? [] }
         feed.onDraft = { [weak self] it, b in self?.draftMenu(for: it, at: b) }
         feed.onRelease = { [weak self] it, done in
@@ -959,6 +960,13 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                         list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: "asked a question",
                                                    prompt: nil, tail: "Which of these should I keep?\n  the old parser, or the new one",
                                                    unread: PromptCheck.unread(made, read: [o.runtime: "9.9.1"])))
+                    }
+                    // `--feed-notice`: plus a made-up notice from the last agent desk (coldfall-cli notify).
+                    if CommandLine.arguments.contains("--feed-notice"), let o = me.desks.last(where: { $0.runtime != "shell" }) {
+                        list.append(FeedPanel.Item(desk: o.name, runtime: o.runtime, icon: o.icon, reason: "needs you to do something",
+                                                   prompt: nil, tail: "Chrome is asking to allow remote debugging. Click Allow in the "
+                                                   + "Chrome window on the Mac, then I'll carry on with the price check.",
+                                                   unread: "The desk asked for this itself. Dismiss it once it's done.", notice: true))
                     }
                     // `--connector`: plus what the Connector at CONNECTOR_SOCKET has
                     // waiting (point it at connector-fixture, never a real one).
@@ -2127,8 +2135,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     func renameDeskState(from old: String, to new: String) {
         func move<V>(_ m: inout [String: V]) { if let v = m.removeValue(forKey: old) { m[new] = v } }
         move(&inventoryNews); move(&lastVisited); move(&memory)
-        move(&lastActivity); move(&lastAlerted); move(&phoneAlerted)
+        move(&lastActivity); move(&lastAlerted); move(&phoneAlerted); move(&noticePhoned)
         movedOnPaths.removeValue(forKey: old)
+        Notice.clear(desk: old)
         ui.tabLayout.renamed(from: old, to: new)
     }
 
@@ -2137,7 +2146,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
         inventoryNews.removeValue(forKey: name); lastVisited.removeValue(forKey: name)
         memory.removeValue(forKey: name); lastActivity.removeValue(forKey: name)
         lastAlerted.removeValue(forKey: name); phoneAlerted.removeValue(forKey: name)
+        noticePhoned.removeValue(forKey: name)
         movedOnPaths.removeValue(forKey: name)
+        Notice.clear(desk: name)
     }
 
     func endDesk(_ d: Desk) {
@@ -2236,6 +2247,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             for r in RemoteOpen.pending(now: now) {
                 if r.action == "read" || r.action == "send" { serveReadSend(r); continue }
                 if r.action == "sleep" { serveSleep(r); continue }
+                if r.action == "notify" || r.action == "unnotify" { serveNotify(r); continue }
                 guard RemoteOpen.claim(r) else { continue }
                 let running = Set(sessions.filter { $0.value.started || $0.value.resolving || $0.value.holding }.keys)
                 let a = RemoteOpen.decide(r.desk, names: desks.map(\.name),
@@ -2263,6 +2275,19 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                             signaled: s?.isSignaled)
             }))
         }
+    }
+
+    /// `coldfall-cli notify`: a desk asking for you in its own words (see
+    /// Notice). A banner on the Mac now; a phone hears of it once you've
+    /// walked away (the activity tick, as for a desk's own question).
+    func serveNotify(_ r: RemoteOpen.Request) {
+        guard RemoteOpen.claim(r) else { return }
+        let a = RemoteOpen.notify(r, names: desks.map(\.name), hidden: Set(desks.filter(\.hidden).map(\.name)))
+        if a.outcome == .noticed, ui.notifyDesks, let n = Notice.all().first(where: { $0.desk == r.desk }) {
+            notifier.notice(id: "notice." + r.desk, title: "\(r.desk) needs you", body: n.text)
+        }
+        if a.outcome == .cleared { notifier.clearNotice(desk: r.desk) }
+        RemoteOpen.answer(r, a)
     }
 
     /// `coldfall-cli read` and `send`. A send held back by a half-typed
@@ -3123,7 +3148,15 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             for (name, s) in self.sessions { s.setMark(Mark(map[name] ?? DeskStatus())) }
             self.serveRemote(map)
             self.noteRunning()
-            for p in forPhones { self.phonePush.send(p.kind, desk: p.desk, waiting: max(waiting, 1)) }
+            // A desk's notice reaches a phone the same way: once you've walked away, once per notice.
+            let notices = Notice.all().filter { n in self.desks.contains { $0.name == n.desk && !$0.hidden } }
+            if phones, idle >= PhoneRule.awayAfter {
+                for n in notices where self.noticePhoned[n.desk] != n.time {
+                    self.noticePhoned[n.desk] = n.time
+                    forPhones.append((n.desk, .needs))
+                }
+            }
+            for p in forPhones { self.phonePush.send(p.kind, desk: p.desk, waiting: max(waiting + notices.count, 1)) }
             if self.ui.dripOn {
                 var acts: [String: DeskActivity] = [:]
                 for (n, st) in map where st.running { acts[n] = st.activity }
@@ -3134,7 +3167,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             // The dock badge is the half that works when Coldfall is not the
             // front app, which is exactly when you have walked away from a desk.
             // Only when it changes: setting it each tick messages the Dock each time.
-            let badge = waiting > 0 ? "\(waiting)" : nil
+            let asking = waiting + notices.count
+            let badge = asking > 0 ? "\(asking)" : nil
             if NSApp.dockTile.badgeLabel != badge { NSApp.dockTile.badgeLabel = badge }
         }
     }
@@ -3143,6 +3177,8 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
     var lastActivity: [String: DeskActivity] = [:]
     /// The agent's report each desk was last alerted for (see NotifyRule).
     var lastAlerted: [String: Date] = [:]
+    /// Each desk's notice a phone was last told of, by its time (see Notice).
+    var noticePhoned: [String: Double] = [:]
     let notifier = Notifier()
     var inboxServer: InboxServer?
     let phonePush = PhonePush()
@@ -3745,6 +3781,11 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             return FeedPanel.Item(desk: name, runtime: d.runtime, icon: d.icon, reason: s.reason,
                                   prompt: choices(of: s, on: screen), tail: tail,
                                   unread: PromptCheck.unread(stamp(of: s), read: ui.choicesRead))
+        } + Notice.all().compactMap { n in
+            guard let d = desks.first(where: { $0.name == n.desk }), !d.hidden else { return nil }
+            return FeedPanel.Item(desk: n.desk, runtime: d.runtime, icon: d.icon, reason: "needs you to do something",
+                                  prompt: nil, tail: n.text,
+                                  unread: "The desk asked for this itself. Dismiss it once it's done.", notice: true)
         }
     }
 

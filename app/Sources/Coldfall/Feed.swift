@@ -21,6 +21,8 @@ final class FeedPanel: NSObject {
         let tail: String
         /// What to say then (PromptCheck.unread).
         var unread: String = PromptCheck.unread(nil, read: [:])
+        /// The desk's own notice (coldfall-cli notify), not a question on its screen.
+        var notice: Bool = false
     }
 
     private let panel: NSPanel
@@ -35,6 +37,8 @@ final class FeedPanel: NSObject {
     /// Press this option in this desk. Returns a line to show if it couldn't.
     var onAnswer: ((String, Prompt.Option) -> String?)?
     var onGo: ((String) -> Void)?
+    /// Take a desk's notice down.
+    var onDismiss: ((String) -> Void)?
     /// What's waiting in the Family Connector, if it runs and let Coldfall in.
     var family: (() -> [Connector.Item])?
     /// Pick a desk to draft a reply to this question; the button is where to show the menu.
@@ -153,6 +157,7 @@ final class FeedPanel: NSObject {
                 // The desk moves on at once; the list catches up on the next tick.
             }
             card.onGo = { [weak self] in self?.close(); self?.onGo?(it.desk) }
+            card.onDismiss = { [weak self] in self?.onDismiss?(it.desk); self?.refresh(force: true) }
             stack.addArrangedSubview(card)
             card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
@@ -303,6 +308,7 @@ private final class FamilyCard: NSView {
 private final class FeedCard: NSView {
     var onAnswer: ((Prompt.Option) -> Void)?
     var onGo: (() -> Void)?
+    var onDismiss: (() -> Void)?
     private let note = NSTextField(labelWithString: "")
     private var options: [Prompt.Option] = []
 
@@ -330,7 +336,16 @@ private final class FeedCard: NSView {
         go.isBordered = false
         go.font = .systemFont(ofSize: 11.5)
         go.contentTintColor = ui.dimText
-        let head = NSStackView(views: [icon, name, why, NSView(), go])
+        var tail: [NSView] = [go]
+        if it.notice {
+            let dismiss = NSButton(title: "Dismiss", target: self, action: #selector(dismissIt))
+            dismiss.bezelStyle = .inline
+            dismiss.isBordered = false
+            dismiss.font = .systemFont(ofSize: 11.5)
+            dismiss.contentTintColor = ui.dimText
+            tail.insert(dismiss, at: 0)
+        }
+        let head = NSStackView(views: [icon, name, why, NSView()] + tail)
         head.orientation = .horizontal
         head.spacing = 8
         head.alignment = .centerY
@@ -339,7 +354,8 @@ private final class FeedCard: NSView {
         // where no choice could be read, the last of the screen as it is.
         let about = it.prompt.map { $0.context.joined(separator: "\n") } ?? it.tail
         let body = NSTextField(wrappingLabelWithString: about)
-        body.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        // A notice is the agent's sentence to you, not a screen: ordinary type.
+        body.font = it.notice ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 11.5, weight: .regular)
         body.textColor = ui.text.withAlphaComponent(0.85)
         body.maximumNumberOfLines = it.prompt == nil ? 10 : Prompt.maxContext
         body.isSelectable = true
@@ -396,4 +412,5 @@ private final class FeedCard: NSView {
         onAnswer?(options[b.tag])
     }
     @objc private func goTo() { onGo?() }
+    @objc private func dismissIt() { onDismiss?() }
 }

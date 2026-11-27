@@ -228,6 +228,38 @@ case "open":
     print(a.message)
     exit(a.outcome == .started || a.outcome == .alreadyRunning ? 0 : 1)
 
+case "notify":
+    // A desk asking for you in its own words, for what an agent can't do:
+    // a permission prompt, an Allow dialog, a sign-in. Needs You and the
+    // phone page show it; a phone that gets notifications hears only
+    // "a desk needs you". `--clear` takes it down once it's handled;
+    // `--list` prints the notices up. Exit 0 when Coldfall has it.
+    var rest = Array(args.dropFirst())
+    var from: String?
+    if let k = rest.firstIndex(of: "--from"), k + 1 < rest.count { from = rest[k + 1]; rest.removeSubrange(k...(k + 1)) }
+    if rest.contains("--list") {
+        out(Notice.all().map { ["desk": $0.desk, "text": $0.text, "time": $0.time] as [String: Any] }); exit(0)
+    }
+    let clearing = rest.contains("--clear")
+    rest.removeAll { $0 == "--clear" }
+    let text = rest.joined(separator: " ")
+    guard let from, clearing || !Notice.clean(text).isEmpty else {
+        print("usage: coldfall-cli notify --from <your desk> \"what you need, and where\" | --from <your desk> --clear | --list"); exit(2)
+    }
+    let req = RemoteOpen.Request(desk: from, action: clearing ? "unnotify" : "notify", text: clearing ? nil : text)
+    guard RemoteOpen.status() != nil else {
+        // Kept for when it opens, but nobody has been told.
+        let all = DeskConfig.load()
+        let a = RemoteOpen.notify(req, names: all.map(\.name), hidden: Set(all.filter(\.hidden).map(\.name)))
+        print(a.outcome == .noticed ? "Project Coldfall isn't running, so nobody was told. The notice will be in Needs You when it opens."
+                                    : a.message)
+        exit(1)
+    }
+    do { try RemoteOpen.submit(req) } catch { print("Couldn't reach Coldfall: \(error.localizedDescription)"); exit(1) }
+    guard let a = RemoteOpen.wait(for: req, timeout: 10) else { print("Coldfall didn't answer within 10 seconds."); exit(1) }
+    print(a.message)
+    exit(a.outcome == .noticed || a.outcome == .cleared ? 0 : 1)
+
 case "read":
     // A desk's screen as text, without opening it. `--lines N` from the
     // bottom (default 60).
@@ -494,6 +526,7 @@ default:
       ask <desk> "message"     send, wait for it to finish, and print what it added
       wake <desk> --from <desk> "message"  start a desk that's off, ask it, put it back to sleep
                          (exit 0 done, 2 needs you, 3 still working, 4 not allowed; see wake_from)
+      notify --from <desk> "message"  ask for you: in Needs You and on the phone page (--clear, --list)
       holders [end <desk>]  desks kept running outside the app; end one
       hooks [install|remove]  the hook that tells Coldfall when a desk is done
       inventory <desk>   its MCP servers, hooks, skills and plugins, and what changed

@@ -8,6 +8,10 @@ opens this file.
 
 ## [Unreleased]
 
+### Added
+
+- `coldfall-cli notify --from <desk> "…"`: a desk can ask for you in its own words when it needs something only you can do, such as an Allow dialog, a permission prompt or a sign-in. It shows in Needs You with a Dismiss button and at the top of the phone page, the Dock badge counts it, and the Mac shows a banner. A phone that gets notifications hears only "A desk needs you", once you have walked away, as for a desk's own question. `--clear` takes it down; `--list` prints what is up. One notice per desk, gone after a day.
+
 ## [0.3.54] - 2026-11-26
 
 Face ID before answering from your phone, and Coldfall keeps working in the background.
