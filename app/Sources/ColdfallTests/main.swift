@@ -4247,6 +4247,8 @@ final class FakeInboxHost: InboxHost {
     }
     func inboxOpen(_ name: String) -> RemoteOpen.Answer { opened.append(name); return .init(.started, "Started.") }
     var chatView: Chat.View?
+    var family: String?
+    func inboxThemeFamily() -> String? { family }
     func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer { chatView.map { .chat($0) } ?? .none("none") }
     var stopped: [String] = [], pins: [(String, Bool)] = []
     var photoFolder: String?
@@ -4370,7 +4372,38 @@ do {
         eq("chat: all again when the page's last is gone", (chatJSON("&after=5")["messages"] as? [Any])?.count, 3)
         h.chatView = nil
         check("chat: a desk without one says so", chatJSON("")["none"] as? Bool == true)
+        let look = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/look")).body)) as? [String: Any] ?? [:]
+        check("look: the default theme keeps the page's own colours", look["default"] as? Bool == true)
+        h.family = "graphite"
+        let g = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/look")).body)) as? [String: Any] ?? [:]
+        check("look: another theme carries over, light and dark", (g["dark"] as? [String: String])?["bg"] == "121013" && (g["light"] as? [String: String])?["bg"] == "eef0f3")
+        h.family = nil
         eq("chat: not for a desk it doesn't list", respond(req("GET", "/api/chat?desk=secret")).status, 404)
+    }
+
+    // Themes: every one complete and readable, and the phone follows the Mac.
+    do {
+        let hexOK: (String) -> Bool = { $0.count == 6 && $0.allSatisfy(\.isHexDigit) }
+        for f in Themes.all {
+            for sk in [f.dark] + (f.light.map { [$0] } ?? []) {
+                let c = sk.chrome, t = sk.terminal
+                let all = [c.sidebar, c.editor, c.status, c.border, c.hover, c.selected, c.accent, c.text, c.dimText,
+                           t.background, t.foreground, t.cursor, t.selection] + t.ansi
+                let mode = sk.isDark ? "dark" : "light"
+                check("theme \(f.id) \(mode): every colour is a colour, 16 ANSI", all.allSatisfy(hexOK) && t.ansi.count == 16)
+                check("theme \(f.id) \(mode): text reads on the rail (\(String(format: "%.1f", Themes.contrast(c.text, c.sidebar))))", Themes.contrast(c.text, c.sidebar) >= 4.5)
+                check("theme \(f.id) \(mode): terminal text reads", Themes.contrast(t.foreground, t.background) >= 4.5)
+                check("theme \(f.id) \(mode): dim text still reads", Themes.contrast(c.dimText, c.sidebar) >= 3)
+                let p = Themes.phone(sk)
+                check("theme \(f.id) \(mode): the phone's button text reads on its accent", Themes.contrast(p["onaccent"]!, p["accent"]!) >= 3)
+            }
+        }
+        eq("themes: an unknown name is the default", Themes.family("nope").id, "vscode")
+        eq("themes: names any case", Themes.family("Graphite").id, "graphite")
+        eq("themes: a dark-only theme stays dark in light mode", Themes.skin(Themes.family("nord"), dark: false).isDark, true)
+        eq("themes: black text on a near-white accent", Themes.ink(on: "e9e6ec"), "111111")
+        eq("themes: white text on blue", Themes.ink(on: "0f62fe"), "ffffff")
+        eq("themes: mixing halfway", Themes.mix("ffffff", "000000", 0.5), "808080")
     }
 
     // Reading a transcript into messages.

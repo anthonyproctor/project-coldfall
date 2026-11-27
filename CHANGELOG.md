@@ -10,6 +10,7 @@ opens this file.
 
 ### Changed
 
+- Themes, chosen by looking: Settings ▸ Appearance shows each as a small picture and applies it as you click, to the window, every terminal and the phone page at once. New: *Graphite* (near-black graphite, no colour accent; after the Carbone theme for Claude by Julien Design Craft, MIT) and *Carbon* (IBM's Carbon Design System, Gray 100 and Gray 10, Apache 2.0; drawn in IBM Plex Mono when installed), each light and dark. Light, dark or follow the Mac sits beside them, and the terminal font applies on Return.
 - A desk's screen keeps 2000 lines to scroll back through instead of 500, in the app and from the phone.
 
 ### Added

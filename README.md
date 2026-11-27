@@ -245,6 +245,8 @@ VS Code Dark Modern and Light Modern, JetBrains Mono at 14, block cursor, and re
 
 **The chrome and the terminal are one theme, not two.** A Gruvbox terminal inside a stock-grey AppKit sidebar looks like two programs sharing a window. The sidebar, file tree, reader and status strip all take their colours from the same skin the terminal does.
 
+**Themes.** Settings ▸ Appearance shows each theme as a small picture of itself; click one and the window, every desk's terminal and the phone page change together. *Coldfall* is the default (VS Code's Modern colours). *Graphite* is near-black graphite with no colour accent, and white and cool grey by day, after the Carbone theme for Claude by Julien Design Craft (MIT). *Carbon* is IBM's Carbon Design System (Gray 100 at night, Gray 10 by day, Apache 2.0), drawn in IBM Plex Mono when it's installed. Gruvbox has both modes; Nord and Solarized are dark only and stay dark rather than inventing a light variant.
+
 It **follows the system** light/dark switch by default, repainting live — including the terminals, which hold concrete colours rather than semantic ones and so do not follow on their own. Pin it if you would rather it stayed put; a terminal you read all day is not something everyone wants flipping at sunset.
 
 The unfocused pane dims rather than relying on the focus ring alone: the eye finds the bright pane without hunting for a border.
@@ -255,7 +257,7 @@ A desk's vendor shows as a letter on the vendor's colour. Put `claude.png`, `cod
 
 ```toml
 [theme]
-palette   = "vscode"      # vscode | gruvbox | nord | solarized
+palette   = "graphite"    # vscode | graphite | carbon | gruvbox | nord | solarized
 mode      = "system"      # system | light | dark
 font      = "JetBrainsMono Nerd Font Mono"
 size      = 14

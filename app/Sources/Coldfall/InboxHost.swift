@@ -79,6 +79,8 @@ extension Controller: InboxHost {
         return (d.resolvedCwd, "")
     }
 
+    func inboxThemeFamily() -> String? { DeskConfig.themeSettings().palette }
+
     func inboxInterrupt(_ name: String) -> (ok: Bool, message: String) {
         guard let d = desks.first(where: { $0.name == name }), !d.hidden else { return (false, "No such desk.") }
         guard let s = sessions[name], s.started, !s.agentGone, d.runtime != "shell" else { return (false, "\(name) isn't running an agent.") }

@@ -470,6 +470,8 @@ public protocol InboxHost: AnyObject {
     func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer
     /// Press Esc in a desk that is working, to stop its turn.
     func inboxInterrupt(_ name: String) -> (ok: Bool, message: String)
+    /// The theme the Mac is in (desks.toml's palette), for the page to follow.
+    func inboxThemeFamily() -> String?
 }
 
 extension InboxHost {
@@ -481,6 +483,7 @@ extension InboxHost {
     public func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String) { (nil, "Photos aren't available here.") }
     public func inboxChat(_ name: String, before: Int?) -> Inbox.ChatAnswer { .none("No conversation to show here.") }
     public func inboxInterrupt(_ name: String) -> (ok: Bool, message: String) { (false, "Stopping a turn isn't available here.") }
+    public func inboxThemeFamily() -> String? { nil }
 }
 
 extension Inbox {
@@ -616,6 +619,12 @@ extension Inbox {
             if let no = needsFaceID(f) { return no }
             guard let name = f["desk"] else { return .json(["message": "Open needs a desk."], status: 400) }
             return answer(host.inboxOpen(name))
+        case ("GET", "/api/look"):
+            // The Mac's theme, as the page's colours. The default theme keeps
+            // the page's own look; any other one carries over, light and dark.
+            let f = Themes.family(host.inboxThemeFamily())
+            guard f.id != Themes.all[0].id else { return .json(["theme": f.id, "default": true]) }
+            return .json(["theme": f.id, "dark": Themes.phone(f.dark), "light": Themes.phone(Themes.skin(f, dark: false))])
         case ("GET", "/api/chat"):
             guard let name = r.query["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
                 return .json(["message": "No such desk."], status: 404)
@@ -722,7 +731,7 @@ extension Inbox {
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
              (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
              (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"), (_, "/api/stop"), (_, "/api/pin"),
-             (_, "/api/upload"), (_, "/api/chat"), (_, "/api/interrupt"):
+             (_, "/api/upload"), (_, "/api/chat"), (_, "/api/interrupt"), (_, "/api/look"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)

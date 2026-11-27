@@ -2896,6 +2896,7 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                                   ?? desks.first?.resolvedCwd
                                   ?? FileManager.default.currentDirectoryPath)
         settings?.onSaved = { [weak self] in self?.reloadDesks() }
+        settings?.onTheme = { [weak self] t in self?.applyThemeSettings(t) }
         settings?.showWindow(nil)
         settings?.window?.makeKeyAndOrderFront(nil)
     }
@@ -3062,21 +3063,31 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
             let was = Theme.isDark
             Theme.invalidate()
             guard Theme.isDark != was else { return }
-            DispatchQueue.main.async {
-                Theme.apply(to: self.window)
-                Theme.paint(self.rail, Theme.ui.sidebar)
-                for sl in self.slots { Theme.paint(sl.view, Theme.ui.sidebar) }
-                Theme.paint(self.center, Theme.ui.sidebar)
-                self.tabs.restyle()
-                for s in self.sessions.values {
-                    s.applyColor()
-                }
-                self.sidebar.restyle()
-                self.tree.restyle()
-                self.meter.restyle()
-                self.strip.restyle()
-            }
+            DispatchQueue.main.async { self.restyleAll() }
         }
+    }
+
+    /// Repaint every surface and terminal in the theme now in force.
+    func restyleAll() {
+        Theme.apply(to: window)
+        Theme.paint(rail, Theme.ui.sidebar)
+        for sl in slots { Theme.paint(sl.view, Theme.ui.sidebar) }
+        Theme.paint(center, Theme.ui.sidebar)
+        tabs.restyle()
+        for s in sessions.values { s.applyColor() }
+        sidebar.restyle()
+        tree.restyle()
+        meter.restyle()
+        strip.restyle()
+    }
+
+    /// A theme chosen in Settings: saved with the desks as they are now, and
+    /// in force everywhere at once.
+    func applyThemeSettings(_ t: DeskConfig.ThemeSettings) {
+        DeskConfig.write(desks, theme: t)
+        Theme.invalidate()
+        Theme.applyGlobally()
+        restyleAll()
     }
     var appearanceObserver: NSKeyValueObservation?
 

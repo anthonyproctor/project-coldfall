@@ -20,7 +20,7 @@ extension Inbox {
 <link rel="apple-touch-icon" href="/icon-180.png">
 <title>Coldfall</title>
 <style>
-:root{--bg:#faf9f5;--side:#f3f1ea;--surface:#fff;--raised:#f0eee6;--bubble:#efece3;--text:#1f1e1d;--dim:#73726c;--faint:#a3a199;--line:#e6e3da;--accent:#c96442;--green:#3f8f55;--amber:#c27c12;--red:#c0392b;--term:#fdfcf9;--glass:rgba(250,249,245,.86);--vh:100dvh}
+:root{--onaccent:#fff;--bg:#faf9f5;--side:#f3f1ea;--surface:#fff;--raised:#f0eee6;--bubble:#efece3;--text:#1f1e1d;--dim:#73726c;--faint:#a3a199;--line:#e6e3da;--accent:#c96442;--green:#3f8f55;--amber:#c27c12;--red:#c0392b;--term:#fdfcf9;--glass:rgba(250,249,245,.86);--vh:100dvh}
 @media (prefers-color-scheme:dark){:root{--bg:#1f1e1d;--side:#1a1918;--surface:#2a2927;--raised:#30302e;--bubble:#3a3936;--text:#f3f2ee;--dim:#a6a39b;--faint:#75736d;--line:#3b3a37;--accent:#d97757;--green:#71c287;--amber:#e3ab4f;--red:#ef6a55;--term:#191817;--glass:rgba(31,30,29,.86)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
@@ -77,7 +77,7 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;font-size:14px;color:var(--dim);margin-top:8px}
 .card .keys{margin:10px 0 0}
 .card .keys button{background:var(--raised);border:0;border-radius:999px;padding:8px 14px}
-.card .keys button.go{background:var(--accent);color:#fff;font-weight:600}
+.card .keys button.go{background:var(--accent);color:var(--onaccent);font-weight:600}
 #backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:7;opacity:0;pointer-events:none;transition:opacity .2s}
 
 /* a desk */
@@ -150,8 +150,8 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .composer .bar .sp{flex:1}
 .model{border:1px solid var(--line);background:none;border-radius:999px;padding:6px 13px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56%}
 .model .ef{color:var(--dim)}
-.send{width:38px;height:38px;border-radius:50%;border:0;background:var(--accent);color:#fff;display:grid;place-items:center;flex:none;padding:0}
-.send svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.send{width:38px;height:38px;border-radius:50%;border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;flex:none;padding:0}
+.send svg{width:18px;height:18px;stroke:var(--onaccent);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .send:disabled{opacity:.35}
 .send.stop{background:var(--text)}.send.stop i{width:12px;height:12px;border-radius:2px;background:var(--bg)}
 .add{width:36px;height:36px;border:1px solid var(--line);background:none}
@@ -160,7 +160,7 @@ h2{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
 .photo img{width:60px;height:60px;object-fit:cover;border-radius:12px;display:block}
 .photo button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--text);color:var(--bg);font-size:12px;line-height:1;padding:0}
 .photo.busy img{opacity:.4}
-.start{width:100%;background:var(--accent);color:#fff;border:0;border-radius:999px;padding:13px;font-weight:600;font-size:16px}
+.start{width:100%;background:var(--accent);color:var(--onaccent);border:0;border-radius:999px;padding:13px;font-weight:600;font-size:16px}
 #note{font-size:13px;color:var(--dim);margin:6px 8px 0;text-align:center}
 #note:empty{display:none}
 #conn{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 60px);z-index:8;background:var(--text);color:var(--bg);border-radius:999px;padding:7px 14px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
@@ -288,6 +288,23 @@ function fit() {
 }
 if (window.visualViewport) { visualViewport.addEventListener("resize", fit); visualViewport.addEventListener("scroll", fit); }
 window.addEventListener("resize", fit);
+
+// The Mac's theme, when it isn't the default: its colours, light and dark,
+// following this device's own setting.
+let look = null;
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+function paintLook() {
+  const root = document.documentElement.style;
+  const vars = look && (darkQuery.matches ? look.dark : look.light);
+  for (const k of ["bg","side","surface","raised","bubble","text","dim","faint","line","accent","onaccent","term","green","amber","red","sel","glass"]) root.removeProperty("--" + k);
+  if (!vars) return;
+  for (const [k, v] of Object.entries(vars)) if (/^[0-9a-f]{6}$/i.test(v)) root.setProperty("--" + k, "#" + v);
+  const b = vars.bg || "000000", n = parseInt(b, 16);
+  root.setProperty("--glass", "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + ",.88)");
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = "#" + vars.bg;
+}
+function loadLook() { api("/api/look").then(r => { look = r && !r.default ? r : null; paintLook(); }).catch(() => {}); }
+if (darkQuery.addEventListener) darkQuery.addEventListener("change", paintLook);
 
 // Every request gives up after 12 seconds, so a Mac that stopped answering
 // never freezes the page; a note says so, and it tries again on its own.
@@ -867,7 +884,7 @@ function show() {
   renderList(); grow(); fit();
 }
 // Back from the background or the network: look again at once.
-function wake() { if (document.hidden) return; failures = 0; conn(true); refreshList(); if (current) { fetching = false; refreshDesk(); refreshChat(); } seen(); }
+function wake() { if (document.hidden) return; failures = 0; conn(true); refreshList(); loadLook(); if (current) { fetching = false; refreshDesk(); refreshChat(); } seen(); }
 window.addEventListener("pageshow", wake);
 window.addEventListener("online", wake);
 window.addEventListener("focus", wake);
@@ -994,6 +1011,7 @@ $("faceset").onclick = async () => {
 function seen() { if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {}); }
 
 window.addEventListener("hashchange", show);
+loadLook();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); faceState(); } });
 show();
 seen();

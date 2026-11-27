@@ -184,7 +184,8 @@ each send went (kind, whose service, its answer). `--settings General --settings
 phone" --inbox-https demo.example.ts.net` snapshots Settings as if Tailscale served the inbox over
 HTTPS (add `--inbox-funnel` for the warning); a snapshot never asks Tailscale.
 
-Snapshots take their theme from the real desks.toml, not from `--desks`. To see
+Themes live in the core (`Themes`: every colour as hex, tested for contrast) and the app turns them into colours
+(`Theme`); `--settings Appearance` snapshots the picker. Snapshots take their theme from the real desks.toml, not from `--desks`. To see
 another mode, point `CFFIXED_USER_HOME` and `HOME` at a throwaway folder holding
 `.config/coldfall/desks.toml` with `[theme] mode = "light"`.
 

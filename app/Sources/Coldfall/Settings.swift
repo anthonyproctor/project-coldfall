@@ -9,6 +9,12 @@ import ColdfallCore
 /// silently owns it.
 final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
     var onSaved: (() -> Void)?
+    /// A theme, mode or font chosen in Appearance: the app writes it to
+    /// desks.toml and repaints everything at once.
+    var onTheme: ((DeskConfig.ThemeSettings) -> Void)?
+    private var themeCards: [ThemeCard] = []
+    private let themeMode = NSSegmentedControl(labels: ["System", "Light", "Dark"], trackingMode: .selectOne, target: nil, action: nil)
+    private let themeAbout = NSTextField(wrappingLabelWithString: "")
     private var desks: [Desk] = []
     private let table = NSTableView()
     private let name = NSTextField(), group = NSTextField()
@@ -16,8 +22,6 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
     private let account = NSTextField()
     private let budget = NSTextField()
     private let runtime = NSPopUpButton()
-    private let themePalette = NSPopUpButton()
-    private let themeMode = NSPopUpButton()
     private let themeFont = NSTextField()
     private let themeSize = NSTextField()
     private var editing: Int?
@@ -114,27 +118,48 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         // Appearance belongs here, not only in a TOML file. "Where do I go to
         // change the theme" having no answer but "edit a config file" is a
         // wrong answer for the thing a user looks at all day.
+        // Appearance: pick by looking, applied at once.
         let t = DeskConfig.themeSettings()
-        themePalette.addItems(withTitles: ["vscode", "gruvbox", "nord", "solarized"])
-        themePalette.selectItem(withTitle: t.palette ?? "vscode")
-        themeMode.addItems(withTitles: ["dark", "light", "system"])
-        themeMode.selectItem(withTitle: t.mode ?? "dark")
-        themeFont.stringValue = t.font ?? "JetBrainsMono Nerd Font Mono"
+        let mode = (t.mode ?? "dark").lowercased()
+        themeMode.selectedSegment = mode == "system" ? 0 : (mode == "light" ? 1 : 2)
+        themeMode.target = self; themeMode.action = #selector(themeChanged)
+        let showDark = mode == "dark" || (mode == "system" && Theme.systemIsDark)
+        let chosen = Themes.family(t.palette).id
+        themeCards = Themes.all.map { f in
+            let card = ThemeCard(f, dark: showDark)
+            card.isChosen = f.id == chosen
+            card.onPick = { [weak self] f in self?.pickTheme(f) }
+            return card
+        }
+        var rows: [NSView] = []
+        for i in stride(from: 0, to: themeCards.count, by: 3) {
+            let r = NSStackView(views: Array(themeCards[i..<min(i + 3, themeCards.count)]))
+            r.orientation = .horizontal; r.spacing = 14; r.alignment = .top
+            rows.append(r)
+        }
+        let grid = NSStackView(views: rows)
+        grid.orientation = .vertical; grid.alignment = .leading; grid.spacing = 14
+        themeFont.stringValue = t.font ?? Theme.defaultFont
         themeFont.placeholderString = "font, e.g. JetBrains Mono"
         themeSize.stringValue = String(t.size ?? 14)
         themeSize.placeholderString = "size"
-        for f in [themeFont, themeSize] { f.font = .systemFont(ofSize: 12) }
+        for f in [themeFont, themeSize] { f.font = .systemFont(ofSize: 12); f.target = self; f.action = #selector(themeChanged) }
         themeSize.widthAnchor.constraint(equalToConstant: 60).isActive = true
-
-        let themeRow = NSStackView(views: [themePalette, themeMode, themeSize])
-        themeRow.orientation = .horizontal; themeRow.spacing = 8
+        themeFont.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        let fontRow = NSStackView(views: [themeFont, themeSize])
+        fontRow.orientation = .horizontal; fontRow.spacing = 8
+        themeAbout.font = .systemFont(ofSize: 12); themeAbout.textColor = .secondaryLabelColor
+        themeAbout.preferredMaxLayoutWidth = 620
+        describeTheme(Themes.family(t.palette))
         let themeBlock = NSStackView(views: [
-            caps("APPEARANCE"), themeRow, themeFont,
-            note("nord and solarized are dark only and stay dark in light mode, "
-               + "rather than inventing a light variant badly. A font that is not "
-               + "installed falls back to the next one that is."),
+            caps("THEME"), grid, themeAbout,
+            caps("LIGHT OR DARK"), themeMode,
+            note("System follows the Mac, switching at sunset if the Mac does. A theme that is dark only stays dark."),
+            caps("TERMINAL FONT"), fontRow,
+            note("Press Return to apply. A font that isn't installed falls back to the next one that is. "
+               + "The window, every desk and the phone page change together."),
         ])
-        themeBlock.orientation = .vertical; themeBlock.alignment = .leading; themeBlock.spacing = 6
+        themeBlock.orientation = .vertical; themeBlock.alignment = .leading; themeBlock.spacing = 8
 
         let addBtn = NSButton(title: "Add / Update", target: self, action: #selector(addOrUpdate))
         let delBtn = NSButton(title: "Remove", target: self, action: #selector(remove))
@@ -939,6 +964,57 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         table.reloadData()
     }
 
+    /// What the chosen theme is, where its colours come from, and what to
+    /// install for the typeface it was drawn for.
+    private func describeTheme(_ f: Themes.Family) {
+        var s = f.blurb
+        if let c = f.credit { s += " " + c }
+        if let font = f.font, NSFont(name: font, size: 12) == nil {
+            s += " It's drawn for \(font), which isn't installed, so the terminal keeps its font. "
+                + "It's free from IBM (brew install --cask font-ibm-plex-mono)."
+        }
+        themeAbout.stringValue = s
+    }
+
+    private func pickTheme(_ f: Themes.Family) {
+        for c in themeCards { c.isChosen = c.family.id == f.id }
+        describeTheme(f)
+        var t = DeskConfig.themeSettings()
+        t.palette = f.id
+        applyTheme(t)
+    }
+
+    @objc private func themeChanged() {
+        var t = DeskConfig.themeSettings()
+        t.mode = ["system", "light", "dark"][max(0, themeMode.selectedSegment)]
+        let font = themeFont.stringValue.trimmingCharacters(in: .whitespaces)
+        t.font = font.isEmpty ? nil : font
+        t.size = Int(themeSize.stringValue).map { max(9, min(32, $0)) } ?? t.size
+        applyTheme(t)
+    }
+
+    private func applyTheme(_ t: DeskConfig.ThemeSettings) {
+        onTheme?(t)
+        // Written by the app, and only its [theme] table changed: a desk
+        // list being edited here still saves over it without a warning.
+        openedWith = DeskSync.snapshot()
+        window?.backgroundColor = Theme.ui.editor
+        let mode = (t.mode ?? "dark").lowercased()
+        let dark = mode == "dark" || (mode == "system" && Theme.systemIsDark)
+        let chosen = Themes.family(t.palette).id
+        // Redrawn for the mode now in force.
+        let fresh = themeCards.map { old -> ThemeCard in
+            let c = ThemeCard(old.family, dark: dark)
+            c.isChosen = old.family.id == chosen
+            c.onPick = { [weak self] f in self?.pickTheme(f) }
+            old.superview.flatMap { $0 as? NSStackView }.map { st in
+                if let i = st.arrangedSubviews.firstIndex(of: old) { st.removeArrangedSubview(old); old.removeFromSuperview(); st.insertArrangedSubview(c, at: i) }
+            }
+            return c
+        }
+        themeCards = fresh
+    }
+
     @objc private func save() {
         // Never write this window's list over an edit made while it was open.
         if let now = DeskSync.snapshot(), now != openedWith {
@@ -952,11 +1028,8 @@ final class SettingsWindow: NSWindowController, NSTableViewDataSource, NSTableVi
         }
         // The theme goes out with the desks. Saving used to rebuild the file
         // from the desk list alone, which silently deleted [theme].
-        var t = DeskConfig.themeSettings()
-        t.palette = themePalette.titleOfSelectedItem
-        t.mode = themeMode.titleOfSelectedItem
-        t.font = themeFont.stringValue.trimmingCharacters(in: .whitespaces)
-        t.size = Int(themeSize.stringValue) ?? t.size
+        // Appearance applies itself as it's chosen; this keeps it as it is.
+        let t = DeskConfig.themeSettings()
         Theme.invalidate()
         defer { Theme.applyGlobally() }   // switching dark/light takes effect now, every window
         DeskConfig.write(desks, theme: t)
