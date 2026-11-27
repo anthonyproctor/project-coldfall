@@ -11,9 +11,11 @@ extension Controller: InboxHost {
     func inboxRows() -> [Inbox.Row] {
         desks.filter { !$0.hidden }.map { d in
             let s = sessions[d.name]
-            return Inbox.Row(name: d.name, group: d.group, runtime: d.runtime, running: s?.started ?? false,
+            let running = s?.started ?? false
+            return Inbox.Row(name: d.name, group: d.group, runtime: d.runtime, running: running,
                              activity: Controller.activityWord(s?.activity), lastOutput: s?.lastOutput?.timeIntervalSince1970,
-                             detail: s?.started == true ? s?.detailLine : nil)
+                             detail: running ? s?.detailLine : nil, pinned: d.pinned,
+                             asleep: !running && ui.sleeping.contains(d.name), memory: running ? memory[d.name] : nil)
         }
     }
 
@@ -47,6 +49,30 @@ extension Controller: InboxHost {
         guard s.isBlocked else { return RemoteOpen.Answer(.notAsking, "\(name) isn't asking anything right now.") }
         s.typeOnBehalf(keys)
         return RemoteOpen.Answer(.pressed, "Pressed.")
+    }
+
+    func inboxStop(_ name: String) -> (ok: Bool, message: String) {
+        guard let d = desks.first(where: { $0.name == name }), !d.hidden else { return (false, "No such desk.") }
+        guard let s = sessions[name], s.started else { return (false, "\(name) isn't running.") }
+        endDesk(d)
+        refreshRail()
+        return (true, "Stopped \(name). Its conversation picks up when you start it again.")
+    }
+
+    func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String) {
+        guard let i = desks.firstIndex(where: { $0.name == name }), !desks[i].hidden else { return (false, "No such desk.") }
+        pinDesk(i, on)
+        return (true, on ? "Pinned \(name) to the top." : "Unpinned \(name).")
+    }
+
+    func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String) {
+        guard let d = desks.first(where: { $0.name == name }), !d.hidden else { return (nil, "No such desk.") }
+        guard d.runtime != "shell" else { return (nil, "\(name) is a plain terminal, with no agent to look at a photo.") }
+        // An agent on another machine can't open a file on this one.
+        if let c = d.command?.trimmingCharacters(in: .whitespaces), c.hasPrefix("ssh ") || c == "ssh" {
+            return (nil, "\(name) runs on another machine, so it can't open a photo saved on this Mac.")
+        }
+        return (d.resolvedCwd, "")
     }
 
     func inboxOpen(_ name: String) -> RemoteOpen.Answer {

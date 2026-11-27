@@ -35,8 +35,15 @@ final class DeskTerminalView: LocalProcessTerminalView {
     /// A plain terminal notification (OSC 9, 99, 777), as its message.
     var onNotice: ((String) -> Void)?
 
+    /// How far back a desk's screen goes. SwiftTerm keeps 500 lines unless
+    /// told otherwise, which is a few screens of an agent's answer: too little
+    /// to scroll back through, here or from the phone. Each line costs its
+    /// width in cells, so about 5 to 8 MB for a desk that has filled it.
+    static let scrollback = 2000
+
     /// Listen for OSC 7501. Called once the terminal exists.
     func listenForStatus() {
+        getTerminal().changeScrollback(DeskTerminalView.scrollback)
         getTerminal().registerOscHandler(code: 7501) { [weak self] data in
             guard let r = ProgramStatus.parse(String(decoding: data, as: UTF8.self)) else { return }
             self?.onStatus?(r)

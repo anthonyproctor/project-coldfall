@@ -54,7 +54,7 @@ final class InboxServer {
     func start() {
         stop()
         guard let token = Inbox.token() else { return }
-        addresses = Inbox.tailscaleAddresses() + ["127.0.0.1"]
+        addresses = (Inbox.testPort == nil ? Inbox.tailscaleAddresses() : []) + ["127.0.0.1"]
         for ip in addresses {
             let p = NWParameters.tcp
             // Each address on a port of its own (127.0.0.1 on localPort), with

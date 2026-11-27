@@ -4246,6 +4246,11 @@ final class FakeInboxHost: InboxHost {
         pressed.append((name, keys)); return .init(.pressed, "Pressed.")
     }
     func inboxOpen(_ name: String) -> RemoteOpen.Answer { opened.append(name); return .init(.started, "Started.") }
+    var stopped: [String] = [], pins: [(String, Bool)] = []
+    var photoFolder: String?
+    func inboxStop(_ name: String) -> (ok: Bool, message: String) { stopped.append(name); return (true, "Stopped \(name).") }
+    func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String) { pins.append((name, on)); return (true, "ok") }
+    func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String) { (photoFolder, "no folder") }
 }
 
 do {
@@ -4267,6 +4272,9 @@ do {
     eq("inbox: a body not all here yet waits", Inbox.parse(Data("POST /a HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc".utf8)), .incomplete)
     eq("inbox: junk is refused", Inbox.parse(Data("hello\r\n\r\n".utf8)), .bad)
     eq("inbox: a huge body is refused", Inbox.parse(Data("POST / HTTP/1.1\r\nContent-Length: 999999999\r\n\r\n".utf8)), .bad)
+    eq("inbox: a photo may be bigger than other requests", Inbox.parse(Data("POST /api/upload HTTP/1.1\r\nContent-Length: 2000000\r\n\r\n".utf8)), .incomplete)
+    eq("inbox: but only a photo", Inbox.parse(Data("POST /api/send HTTP/1.1\r\nContent-Length: 2000000\r\n\r\n".utf8)), .bad)
+    eq("inbox: and not without limit", Inbox.parse(Data("POST /api/upload HTTP/1.1\r\nContent-Length: 20000000\r\n\r\n".utf8)), .bad)
     eq("inbox: query read", req("GET", "/api/read?desk=a%20b&lines=5").query["desk"], "a b")
 
     eq("inbox: another Host is refused (no DNS rebinding)", respond(req("GET", "/", host: "evil.example")).status, 403)
@@ -4299,6 +4307,55 @@ do {
     check("inbox: choices that were read are sent without that note", both?["unread"] == nil && (both?["options"] as? [[String: String]])?.count == 2)
     check("inbox: a desk not asking carries no note", read?["unread"] == nil)
     check("inbox page: it has a place for the note", Inbox.page.contains("id=\"unread\""))
+
+    // Managing desks from the phone: stop (Face ID when set up), pin, photos.
+    do {
+        let rows = Inbox.json([Inbox.Row(name: "p", group: nil, runtime: "claude", running: true, activity: "quiet", lastOutput: 1,
+                                         pinned: true, memory: "800 MB"),
+                               Inbox.Row(name: "s", group: nil, runtime: "claude", running: false, activity: "quiet", lastOutput: nil, asleep: true)])
+        check("inbox rows: pinned, memory and asleep travel", rows[0]["pinned"] as? Bool == true && rows[0]["memory"] as? String == "800 MB"
+              && rows[1]["asleep"] as? Bool == true && rows[1]["pinned"] == nil)
+        let stop = respond(req("POST", "/api/stop", body: #"{"desk":"idle"}"#))
+        check("inbox: stop reaches the app", h.stopped == ["idle"] && String(decoding: stop.body, as: UTF8.self).contains("Stopped idle."))
+        eq("inbox: stopping a desk it doesn't list", respond(req("POST", "/api/stop", body: #"{"desk":"secret"}"#)).status, 404)
+        eq("inbox: stop needs the page's own header", respond(req("POST", "/api/stop", header: false, body: #"{"desk":"idle"}"#)).status, 403)
+        _ = respond(req("POST", "/api/pin", body: #"{"desk":"off","on":"false"}"#))
+        _ = respond(req("POST", "/api/pin", body: #"{"desk":"off"}"#))
+        check("inbox: pin and unpin", h.pins.map { "\($0.0)=\($0.1)" } == ["off=false", "off=true"])
+        // Only the changed screen is sent.
+        let first = respond(req("GET", "/api/read?desk=idle"))
+        let o = (try? JSONSerialization.jsonObject(with: first.body)) as? [String: Any] ?? [:]
+        let hash = o["hash"] as? String ?? ""
+        check("inbox read: the screen and its hash", o["text"] as? String == "<b>screen</b> of idle" && !hash.isEmpty)
+        let again = (try? JSONSerialization.jsonObject(with: respond(req("GET", "/api/read?desk=idle&have=" + hash)).body)) as? [String: Any] ?? [:]
+        check("inbox read: the same screen isn't sent twice", again["text"] == nil && again["hash"] as? String == hash && again["running"] as? Bool == true)
+        // Photos.
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0, count: 40))
+        eq("photo: a JPEG by its bytes", Inbox.photoKind(jpeg), "jpg")
+        eq("photo: a PNG", Inbox.photoKind(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0])), "png")
+        eq("photo: HEIC from a phone", Inbox.photoKind(Data([0, 0, 0, 0x18] + Array("ftypheic".utf8) + [0, 0, 0, 0])), "heic")
+        eq("photo: a script named .jpg is not a photo", Inbox.photoKind(Data("#!/bin/sh\nrm -rf ~\n".utf8)), nil)
+        let folder = testSandbox + "/photo-desk"
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = Inbox.savePhoto(jpeg, folder: folder, now: when), b = Inbox.savePhoto(jpeg, folder: folder, now: when)
+        check("photo: saved beside the desk under a name Coldfall makes", a?.hasPrefix(folder + "/.coldfall-photos/photo-") == true && a?.hasSuffix(".jpg") == true)
+        check("photo: a second in the same second doesn't overwrite", a != nil && b != nil && a != b)
+        eq("photo: git ignores the folder", try? String(contentsOfFile: folder + "/.coldfall-photos/.gitignore", encoding: .utf8), "*\n")
+        let mode = (try? FileManager.default.attributesOfItem(atPath: a ?? ""))?[.posixPermissions] as? Int
+        eq("photo: readable by this account only", mode, 0o600)
+        eq("photo: not into a folder that isn't there", Inbox.savePhoto(jpeg, folder: testSandbox + "/nowhere"), nil)
+        h.photoFolder = folder
+        let up = respond(req("POST", "/api/upload", body: #"{"desk":"idle","data":""# + jpeg.base64EncodedString() + #""}"#))
+        let uo = (try? JSONSerialization.jsonObject(with: up.body)) as? [String: Any] ?? [:]
+        check("inbox: a photo upload hands back its path", up.status == 200 && (uo["path"] as? String)?.hasPrefix(folder) == true)
+        eq("inbox: anything but a photo is refused",
+           respond(req("POST", "/api/upload", body: #"{"desk":"idle","data":""# + Data("not a photo at all".utf8).base64EncodedString() + #""}"#)).status, 400)
+        h.photoFolder = nil
+        eq("inbox: a desk with nowhere to put one says so",
+           respond(req("POST", "/api/upload", body: #"{"desk":"idle","data":""# + jpeg.base64EncodedString() + #""}"#)).status, 400)
+        check("inbox page: blob previews are allowed, nothing else new", Inbox.pagePolicy.1.contains("img-src 'self' blob:;"))
+    }
     _ = respond(req("POST", "/api/send", body: #"{"desk":"idle","text":"go"}"#))
     check("inbox: a send reaches the desk", h.sent.first.map { $0 == ("idle", "go") } == true)
     eq("inbox: a key it doesn't press", respond(req("POST", "/api/keys", body: #"{"desk":"asks","key":"ctrl-c"}"#)).status, 400)

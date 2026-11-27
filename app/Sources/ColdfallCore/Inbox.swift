@@ -35,7 +35,11 @@ public enum Inbox {
     /// passes the https address on to. One port on two addresses needed port
     /// sharing, which another account on the Mac could have used to listen
     /// beside Coldfall.
-    public static let localPort: UInt16 = 47101
+    public static let localPort: UInt16 = testPort ?? 47101
+    /// `COLDFALL_INBOX_TEST_PORT`: for a throwaway Coldfall beside a real one.
+    /// The inbox then listens on 127.0.0.1 at this port and nowhere else, so
+    /// it never meets the real one's ports or the tailnet.
+    public static let testPort: UInt16? = ProcessInfo.processInfo.environment["COLDFALL_INBOX_TEST_PORT"].flatMap { UInt16($0) }
     /// The port the inbox listens on at this address.
     public static func port(for address: String) -> UInt16 { address == "127.0.0.1" ? localPort : defaultPort }
     public static let cookieName = "cf_inbox"
@@ -140,6 +144,10 @@ public enum Inbox {
     }
 
     public static let maxBody = 64 * 1024
+    /// A photo from the phone, base64 in JSON: the one request allowed more.
+    public static let maxUploadBody = 12 * 1024 * 1024
+    /// The photo itself, once decoded.
+    public static let maxPhoto = 8 * 1024 * 1024
     public static let maxHead = 16 * 1024
 
     /// A request from the bytes so far.
@@ -156,7 +164,8 @@ public enum Inbox {
             headers[l[..<c].lowercased()] = l[l.index(after: c)...].trimmingCharacters(in: .whitespaces)
         }
         let length = Int(headers["content-length"] ?? "0") ?? -1
-        guard length >= 0, length <= maxBody else { return .bad }
+        let limit = first[0] == "POST" && first[1] == "/api/upload" ? maxUploadBody : maxBody
+        guard length >= 0, length <= limit else { return .bad }
         let bodyStart = end.upperBound
         guard data.count - bodyStart >= length else { return .incomplete }
         let target = String(first[1])
@@ -291,7 +300,7 @@ public enum Inbox {
     public static let pagePolicy = ("Content-Security-Policy",
                              "default-src 'none'; script-src " + (scriptHashes(page) + scriptHashes(askPage)).map { "'\($0)'" }.joined(separator: " ")
                              + "; style-src 'unsafe-inline'; connect-src 'self'; "
-                             + "img-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'")
+                             + "img-src 'self' blob:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'")
 
     /// "sha256-…" for each <script> in a page, over its text exactly.
     public static func scriptHashes(_ html: String) -> [String] {
@@ -317,10 +326,17 @@ public enum Inbox {
         public var lastOutput: Double?
         /// Why it is waiting, or what it is doing (see DeskDetail).
         public var detail: String?
+        /// Pinned to the top of the desk list, as in the app.
+        public var pinned: Bool = false
+        /// Put to sleep (stopped to save memory, picks up when started).
+        public var asleep: Bool = false
+        /// What it holds in memory now, as the app's rail says it ("820 MB").
+        public var memory: String? = nil
         public init(name: String, group: String?, runtime: String, running: Bool, activity: String, lastOutput: Double?,
-                    detail: String? = nil) {
+                    detail: String? = nil, pinned: Bool = false, asleep: Bool = false, memory: String? = nil) {
             self.name = name; self.group = group; self.runtime = runtime; self.running = running
             self.activity = activity; self.lastOutput = lastOutput; self.detail = detail
+            self.pinned = pinned; self.asleep = asleep; self.memory = memory
         }
         /// Needs you, done, working, idle, then not started.
         public var rank: Int {
@@ -344,6 +360,9 @@ public enum Inbox {
             if let g = r.group { o["group"] = g }
             if let l = r.lastOutput { o["lastOutput"] = l }
             if let d = r.detail { o["detail"] = d }
+            if r.pinned { o["pinned"] = true }
+            if r.asleep { o["asleep"] = true }
+            if let m = r.memory { o["memory"] = m }
             return o
         }
     }
@@ -364,6 +383,59 @@ public enum Inbox {
     }()
 
     /// A request body's fields: JSON object of strings.
+    /// The most a page may ask for at once: what a phone scrolls back through.
+    public static let maxReadLines = 5000
+
+    /// FNV-1a over the text, so the page can say which copy it has.
+    public static func textHash(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h ^= UInt64(b); h = h &* 0x100000001b3 }
+        return String(h, radix: 36)
+    }
+
+    /// What kind of picture these bytes are, by their first bytes; nil for
+    /// anything else, whatever it claims to be.
+    public static func photoKind(_ d: Data) -> String? {
+        let b = [UInt8](d.prefix(16))
+        guard b.count >= 12 else { return nil }
+        if b[0] == 0xFF, b[1] == 0xD8, b[2] == 0xFF { return "jpg" }
+        if b[0...7].elementsEqual([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) { return "png" }
+        if b[0...3].elementsEqual(Array("GIF8".utf8)) { return "gif" }
+        if b[0...3].elementsEqual(Array("RIFF".utf8)), b[8...11].elementsEqual(Array("WEBP".utf8)) { return "webp" }
+        if b[4...7].elementsEqual(Array("ftyp".utf8)) {
+            let brand = String(decoding: b[8...11], as: UTF8.self)
+            if ["heic", "heix", "mif1", "msf1", "heim", "heis"].contains(brand) { return "heic" }
+        }
+        return nil
+    }
+
+    /// The folder photos go in, inside a desk's folder. It ignores itself in
+    /// git, so a photo never ends up in a commit.
+    public static let photoFolder = ".coldfall-photos"
+
+    /// Save a photo for a desk; returns its full path. The name is made here,
+    /// from the time, never from anything the phone said.
+    public static func savePhoto(_ data: Data, folder: String, now: Date = Date()) -> String? {
+        guard let kind = photoKind(data), FileManager.default.fileExists(atPath: folder) else { return nil }
+        let dir = (folder as NSString).appendingPathComponent(photoFolder)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            guard (try? fm.createDirectory(atPath: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])) != nil else { return nil }
+        }
+        let ignore = (dir as NSString).appendingPathComponent(".gitignore")
+        if !fm.fileExists(atPath: ignore) { try? "*\n".write(toFile: ignore, atomically: true, encoding: .utf8) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        var path = (dir as NSString).appendingPathComponent("photo-\(f.string(from: now)).\(kind)")
+        var n = 2
+        while fm.fileExists(atPath: path) {
+            path = (dir as NSString).appendingPathComponent("photo-\(f.string(from: now))-\(n).\(kind)"); n += 1
+        }
+        guard fm.createFile(atPath: path, contents: data, attributes: [.posixPermissions: 0o600]) else { return nil }
+        return path
+    }
+
     public static func fields(_ body: Data) -> [String: String] {
         guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return [:] }
         var out: [String: String] = [:]
@@ -387,12 +459,22 @@ public protocol InboxHost: AnyObject {
     func inboxPushOn() -> Bool
     /// Send a test notification to one device. What to tell the person.
     func inboxPushTest(_ endpoint: String) -> String
+    /// Stop a running desk, as Stop in the app does, without its dialog
+    /// (the phone asked first).
+    func inboxStop(_ name: String) -> (ok: Bool, message: String)
+    /// Pin a desk to the top of the list, or take it off.
+    func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String)
+    /// Where a photo for this desk may go: its folder on this Mac, or why not.
+    func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String)
 }
 
 extension InboxHost {
     public func inboxIcon(_ size: Int) -> Data? { nil }
     public func inboxPushOn() -> Bool { false }
     public func inboxPushTest(_ endpoint: String) -> String { "Notifications aren't available here." }
+    public func inboxStop(_ name: String) -> (ok: Bool, message: String) { (false, "Stopping isn't available here.") }
+    public func inboxPin(_ name: String, on: Bool) -> (ok: Bool, message: String) { (false, "Pinning isn't available here.") }
+    public func inboxPhotoFolder(_ name: String) -> (folder: String?, message: String) { (nil, "Photos aren't available here.") }
 }
 
 extension Inbox {
@@ -466,11 +548,17 @@ extension Inbox {
             let rows = host.inboxRows()
             return .json(["desks": json(rows), "notices": notices(for: rows)])
         case ("GET", "/api/read"):
-            let lines = min(2000, max(1, Int(r.query["lines"] ?? "") ?? 200))
+            let lines = min(maxReadLines, max(1, Int(r.query["lines"] ?? "") ?? 200))
             guard let name = r.query["desk"], let v = host.inboxDesk(name, lines: lines) else {
                 return .json(["message": "No such desk."], status: 404)
             }
-            var o: [String: Any] = ["text": v.text, "running": v.running, "activity": v.activity, "runtime": v.runtime, "agent": v.agent]
+            // The screen goes only when it has changed since the copy the
+            // page already has: a phone polling a long scrollback every two
+            // seconds would otherwise carry it all each time.
+            let hash = textHash(v.text)
+            var o: [String: Any] = ["running": v.running, "activity": v.activity, "runtime": v.runtime, "agent": v.agent,
+                                    "hash": hash, "lines": v.text.isEmpty ? 0 : v.text.split(separator: "\n", omittingEmptySubsequences: false).count]
+            if r.query["have"] != hash { o["text"] = v.text }
             if let p = v.prompt {
                 o["question"] = p.question
                 o["options"] = p.options.map { ["key": $0.key, "label": Prompt.short($0.label, max: 60)] }
@@ -502,6 +590,43 @@ extension Inbox {
             if let no = needsFaceID(f) { return no }
             guard let name = f["desk"] else { return .json(["message": "Open needs a desk."], status: 400) }
             return answer(host.inboxOpen(name))
+        case ("POST", "/api/stop"):
+            // Ends an agent, maybe mid-turn: Face ID, like anything that acts on a desk.
+            let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
+            guard let name = f["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["ok": false, "message": "No such desk."], status: 404)
+            }
+            let a = host.inboxStop(name)
+            return .json(["ok": a.ok, "message": a.message])
+        case ("POST", "/api/pin"):
+            // Where a desk sits in the list, nothing in the desk: no Face ID.
+            let f = fields(r.body)
+            guard let name = f["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["ok": false, "message": "No such desk."], status: 404)
+            }
+            let a = host.inboxPin(name, on: f["on"] != "false")
+            return .json(["ok": a.ok, "message": a.message])
+        case ("POST", "/api/upload"):
+            // A photo for a desk to look at: saved on the Mac beside the
+            // desk, under a name Coldfall makes, and the path handed back
+            // for the message. Face ID, since it writes a file there.
+            let f = fields(r.body)
+            if let no = needsFaceID(f) { return no }
+            guard let name = f["desk"], host.inboxRows().contains(where: { $0.name == name }) else {
+                return .json(["ok": false, "message": "No such desk."], status: 404)
+            }
+            guard let b64 = f["data"], let data = Data(base64Encoded: b64), !data.isEmpty else {
+                return .json(["ok": false, "message": "That photo didn't arrive whole."], status: 400)
+            }
+            guard data.count <= maxPhoto else { return .json(["ok": false, "message": "That photo is over 8 MB."], status: 413) }
+            guard photoKind(data) != nil else { return .json(["ok": false, "message": "Only photos: JPEG, PNG, HEIC, GIF or WebP."], status: 400) }
+            let place = host.inboxPhotoFolder(name)
+            guard let folder = place.folder else { return .json(["ok": false, "message": place.message], status: 400) }
+            guard let path = savePhoto(data, folder: folder) else {
+                return .json(["ok": false, "message": "Couldn't save the photo in \(name)'s folder."], status: 500)
+            }
+            return .json(["ok": true, "path": path, "message": "Attached."])
         case ("POST", "/api/faceid/state"):
             let e = PhoneKey.expect(host: r.headers["host"] ?? "", secure: cameSecure(r))
             return .json(["required": PhoneKey.required, "pairing": PhoneKey.pairing(), "here": e != nil,
@@ -535,7 +660,8 @@ extension Inbox {
         case (_, "/"), (_, "/api/desks"), (_, "/api/read"), (_, "/api/send"), (_, "/api/keys"), (_, "/api/open"),
              (_, "/manifest.webmanifest"), (_, "/sw.js"), (_, "/api/push/state"), (_, "/api/push/subscribe"),
              (_, "/api/push/unsubscribe"), (_, "/api/push/test"), (_, "/api/faceid/state"), (_, "/api/faceid/begin"),
-             (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"):
+             (_, "/api/faceid/register"), (_, "/api/faceid/verify"), (_, "/api/notice/clear"), (_, "/api/stop"), (_, "/api/pin"),
+             (_, "/api/upload"):
             return .text("Method not allowed.", status: 405)
         default:
             return .text("Not found.", status: 404)

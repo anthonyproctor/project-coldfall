@@ -174,7 +174,8 @@ which `tailscale serve` points at; the Tailscale address is on 47100) for the
 cookie, then the `/api/*` routes with `X-Coldfall: 1` on POSTs. A Mac can't reach
 its own Tailscale address, so the tailnet side is only checkable from another device.
 The page is also an app for a phone's Home Screen (`/manifest.webmanifest`, `/sw.js`, `/icon-512.png`)
-and takes notification subscriptions (`/api/push/*`; see `WebPush` in the core). A headless Chrome
+and takes notification subscriptions (`/api/push/*`; see `WebPush` in the core). `COLDFALL_INBOX_TEST_PORT=47199` makes a
+throwaway Coldfall's inbox listen on 127.0.0.1 at that port only, so it can run beside a real one. A headless Chrome
 with a throwaway `--user-data-dir` pointed at `http://localhost:47101/?t=<inbox-token>` runs the
 page's script for real (`--dump-dom`, `--screenshot`). Never subscribe a real device or send a
 notification from a test: that calls Apple's or Google's service. `COLDFALL_PUSH_DEBUG=1` prints how
