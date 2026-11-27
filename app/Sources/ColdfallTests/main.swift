@@ -5233,6 +5233,64 @@ do {
     check("checkup: says its versions", shared.contains("Coldfall 0.3.61, macOS 26.1"))
 }
 
+// MARK: - Welcome's first desks (FirstDesk)
+do {
+    eq("first desk: names are letters, digits and dashes", FirstDesk.cleanName("My Taxes 2026!"), "my-taxes-2026")
+    eq("first desk: nothing usable is nothing", FirstDesk.cleanName("!!!"), "")
+    eq("first desk: a name taken gets a number", FirstDesk.unique("api", taken: ["api", "api-2"]), "api-3")
+    eq("first desk: an empty name becomes desk", FirstDesk.unique("", taken: []), "desk")
+
+    let multi = Checkup.demo(.multiTool)
+    let mo = FirstDesk.options(multi, home: "/srv/demo")
+    eq("first desk: folders offered, newest first", mo.map(\.name), ["api", "app", "notes"])
+    eq("first desk: only the first is ticked", mo.map(\.on), [true, false, false])
+    eq("first desk: each on the tool used there", mo.map(\.runtime), ["claude", "claude", "codex"])
+    eq("first desk: under home it's written with ~", mo.first?.cwd, "~/api")
+    eq("first desk: tools, most used first", FirstDesk.tools(multi).map(\.runtime), ["claude", "codex"])
+
+    let builder = Checkup.demo(.agentBuilder)
+    let agents: (String) -> [DiscoveredAgent] = { f in
+        ["research", "taxes"].map { DiscoveredAgent(name: $0, runtime: "claude", description: $0 == "taxes" ? "Files and tracks taxes" : nil,
+                                                    model: nil, path: f + "/.claude/agents/\($0).md", isProjectLevel: true) }
+        + [DiscoveredAgent(name: "global", runtime: "claude", description: nil, model: nil, path: "/x", isProjectLevel: false)]
+    }
+    let bo = FirstDesk.options(builder, home: "/home/x", agentsIn: agents)
+    eq("first desk: an agent builder is offered their agents first", bo.prefix(2).map(\.name), ["research", "taxes"])
+    check("first desk: only the folder's own agents", !bo.contains { $0.name == "global" })
+    check("first desk: nothing ticked for an agent builder", bo.allSatisfy { !$0.on })
+    eq("first desk: an agent's own description", bo[1].detail, "Files and tracks taxes")
+    check("first desk: the folders after, named apart from the agents", bo.contains { $0.kind == .folder && $0.name == "workspace" })
+
+    let again = FirstDesk.options(builder, home: "/home/x", existing: [Desk(name: "r", agent: "research", cwd: "/srv/demo/workspace"),
+                                                                     Desk(name: "site", cwd: "/srv/demo/site")], agentsIn: agents)
+    check("first desk: an agent with a desk already isn't offered again", !again.contains { $0.agent == "research" } && again.contains { $0.agent == "taxes" })
+    check("first desk: nor a folder with a plain desk", !again.contains { $0.kind == .folder && $0.name.hasPrefix("site") })
+    eq("first desk: nobody with a tool gets nothing to choose from", FirstDesk.options(Checkup.demo(.chatOnly)), [])
+    eq("first desk: ChatGPT points to Codex", FirstDesk.likelyPlan(Checkup.demo(.chatOnly)).runtime, "codex")
+    eq("first desk: otherwise Claude", FirstDesk.likelyPlan(Checkup.demo(.newcomer)).runtime, "claude")
+
+    var picked = bo
+    picked[0].on = true; picked[1].on = true
+    picked.append(FirstDesk.job(name: "My Notes", runtime: "codex", taken: []))
+    let made = FirstDesk.desks(picked, existing: [Desk(name: "research")])
+    eq("first desk: only what's ticked, renamed off existing desks", made.map(\.name), ["research-2", "taxes", "my-notes"])
+    eq("first desk: an agent desk runs its agent", made.first?.agent, "research")
+    eq("first desk: a job desk works in its own folder", made.last?.cwd, "~/Coldfall/my-notes")
+    let cx = FirstDesk.desks([FirstDesk.Option(kind: .agent, name: "rev", runtime: "codex", cwd: "~/w", agent: "rev", detail: "", on: true)])
+    eq("first desk: a Codex agent is a profile", cx.first?.command, "codex -p rev")
+
+    let home = testSandbox + "/firstdesk-\(UUID().uuidString.prefix(6))"
+    defer { try? FileManager.default.removeItem(atPath: home) }
+    let job = FirstDesk.job(name: "research", runtime: "claude", taken: [])
+    check("first desk: a job's folder is made", FirstDesk.makeFolder(job, home: home) && FileManager.default.fileExists(atPath: home + "/Coldfall/research/CLAUDE.md"))
+    try? "mine".write(toFile: home + "/Coldfall/research/CLAUDE.md", atomically: true, encoding: .utf8)
+    FirstDesk.makeFolder(job, home: home)
+    eq("first desk: and an instructions file already there is kept", try? String(contentsOfFile: home + "/Coldfall/research/CLAUDE.md", encoding: .utf8), "mine")
+    let cjob = FirstDesk.job(name: "ops", runtime: "codex", taken: [])
+    FirstDesk.makeFolder(cjob, home: home)
+    check("first desk: other agents read AGENTS.md", FileManager.default.fileExists(atPath: home + "/Coldfall/ops/AGENTS.md"))
+}
+
 // MARK: - the suite must not touch a real home directory
 //
 // Checked LAST, after every other test has run. A test that writes to the

@@ -330,6 +330,56 @@ public enum Checkup {
         return r
     }
 
+    // MARK: made up, for snapshots
+
+    /// A made-up check-up for each kind of person: snapshots of Welcome show
+    /// these, never the real Mac's folders. Paths are neutral (`/srv/demo`).
+    public static func demo(_ p: Profile, now: Date = Date()) -> Report {
+        func tool(_ id: String, _ name: String, _ rt: String?, installed: Bool = true, n: Int = 0, week: Int = 0, month: Int = 0,
+                  days: Double? = nil, folders: Int = 0) -> Tool {
+            Tool(id: id, name: name, installed: installed, signedIn: true, conversations: n, last7: week, last30: month,
+                 lastUsed: days.map { now.addingTimeInterval(-$0 * 86400) }, foldersLast30: folders, runtime: rt)
+        }
+        func folder(_ path: String, _ tools: [String], _ n: Int, days: Double, agents: [String] = []) -> Folder {
+            Folder(path: path, tools: tools, conversations: n, lastUsed: now.addingTimeInterval(-days * 86400), agents: agents,
+                   skills: 0, commands: 0, mcp: 0, instructions: ["CLAUDE.md"])
+        }
+        var r = Report(tools: [], chatApps: [], editors: ["Visual Studio Code"], editorAI: [], localModels: 0, localApps: [],
+                       built: Built(), folders: [], profile: p, simple: true, suggestions: [], now: now)
+        switch p {
+        case .agentBuilder:
+            r.tools = [tool("claude", "Claude Code", "claude", n: 120, week: 18, month: 64, days: 0, folders: 2),
+                       tool("codex", "Codex", "codex", n: 30, week: 2, month: 9, days: 3, folders: 1),
+                       tool("copilot", "GitHub Copilot CLI", "copilot", n: 4, days: 80)]
+            r.folders = [folder("/srv/demo/workspace", ["Claude Code", "Codex"], 52, days: 0,
+                                agents: ["research", "taxes", "deals", "health", "writing", "travel"]),
+                         folder("/srv/demo/site", ["Claude Code"], 11, days: 4)]
+            r.built = Built(agents: 6, skills: 3, commands: 4, mcp: 2, instructionFolders: 2)
+            r.chatApps = ["Claude"]
+            r.simple = false
+        case .multiTool:
+            r.tools = [tool("claude", "Claude Code", "claude", n: 80, week: 12, month: 40, days: 0, folders: 3),
+                       tool("codex", "Codex", "codex", n: 25, week: 5, month: 14, days: 1, folders: 2)]
+            r.folders = [folder("/srv/demo/api", ["Claude Code", "Codex"], 26, days: 0), folder("/srv/demo/app", ["Claude Code"], 18, days: 2),
+                         folder("/srv/demo/notes", ["Codex"], 7, days: 9)]
+            r.simple = false
+        case .oneTool:
+            r.tools = [tool("claude", "Claude Code", "claude", n: 40, week: 9, month: 22, days: 0, folders: 2)]
+            r.folders = [folder("/srv/demo/api", ["Claude Code"], 15, days: 0), folder("/srv/demo/blog", ["Claude Code"], 7, days: 6)]
+        case .local:
+            r.tools = [tool("ollama", "Ollama", "ollama")]
+            r.localModels = 3
+        case .installedUnused:
+            r.tools = [tool("codex", "Codex", "codex", n: 2, days: 70)]
+            r.chatApps = ["ChatGPT"]
+        case .chatOnly:
+            r.chatApps = ["ChatGPT"]
+        case .newcomer:
+            break
+        }
+        return r
+    }
+
     // MARK: reading it
 
     static func profile(_ r: Report) -> Profile {

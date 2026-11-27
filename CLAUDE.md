@@ -28,6 +28,9 @@ swift build -c release
 ./.build/release/Coldfall --snapshot /tmp/shot.png --settings Desks   # plus Settings on a tab, to shot-settings.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --inventory hub    # plus a desk's What This Desk Has, to shot-inventory.png
 ./.build/release/Coldfall --snapshot /tmp/shot.png --welcome none     # plus Welcome as a Mac with no agent CLI sees it
+./.build/release/Coldfall --snapshot /tmp/shot.png --welcome multi --welcome-step 2   # Welcome's first-desk step for a made-up profile
+                                                               # (builder, multi, one, local, unused, chat); --welcome-create
+                                                               # then presses Create: only in a throwaway HOME
 ./.build/release/Coldfall --snapshot /tmp/shot.png --show-hidden      # the rail with hidden desks listed
 ./.build/release/Coldfall --snapshot /tmp/shot.png --live             # the rail with Keep Active Groups on Top
 ./.build/release/Coldfall --snapshot /tmp/shot.png --desks-on-top --meter-hidden   # for public pictures: no real usage numbers

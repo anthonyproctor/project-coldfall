@@ -792,11 +792,18 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                     }
                     return
                 }
-                // `--welcome [none]`: the Welcome screen, to <out>-welcome.png;
-                // `none` draws it as a Mac with no vendor CLI would see it.
+                // `--welcome [none|builder|multi|one|local|unused|chat]`: the
+                // Welcome screen, to <out>-welcome.png, from this Mac's check-up
+                // or a made-up one (`none`: a Mac with no agent tool).
+                // `--welcome-step 2` draws its second step, the first desk.
                 if let k = CommandLine.arguments.firstIndex(of: "--welcome") {
-                    WelcomeWindow.pretendNothingInstalled =
-                        k + 1 < CommandLine.arguments.count && CommandLine.arguments[k + 1] == "none"
+                    let a = CommandLine.arguments
+                    let which = k + 1 < a.count ? a[k + 1] : ""
+                    WelcomeWindow.pretendNothingInstalled = which == "none"
+                    let demos: [String: Checkup.Profile] = ["builder": .agentBuilder, "multi": .multiTool, "one": .oneTool,
+                                                            "local": .local, "unused": .installedUnused, "chat": .chatOnly]
+                    WelcomeWindow.demo = demos[which]
+                    if let s = a.firstIndex(of: "--welcome-step"), s + 1 < a.count, let n = Int(a[s + 1]) { WelcomeWindow.startStep = n }
                     let ww = WelcomeWindow(projectDir: "/tmp")
                     guard let wv = ww.window?.contentView else { exit(1) }
                     wv.wantsLayer = true
@@ -817,6 +824,9 @@ final class Controller: NSObject, NSApplicationDelegate, LocalProcessTerminalVie
                         if let png = wrep.representation(using: .png, properties: [:]) {
                             try? png.write(to: URL(fileURLWithPath: (out as NSString).deletingPathExtension + "-welcome.png"))
                         }
+                        // `--welcome-create`: then press Create, as it stands, and
+                        // write desks.toml. Only ever in a throwaway HOME.
+                        if a.contains("--welcome-create") { ww.createAsShown() }
                         exit(0)
                     }
                     return

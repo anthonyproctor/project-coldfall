@@ -10,6 +10,13 @@ opens this file.
 
 ### Added
 
+- **A new Welcome, in two steps.** First, how you use AI today: the tools you
+  use and how much, what you've built on them, and a summary to copy and
+  share (counts only). Then your first desk, made for how you work: a folder
+  you already use, the agents you've built (you choose which), or a new job in
+  its own folder. One is ticked to start, instead of a desk for every tool
+  installed, all in your home folder. Without an agent tool yet, it asks which
+  plan you pay for and shows only that tool's install step.
 - **`coldfall-cli checkup`: how you use AI, before setting anything up.** It
   looks at which agent tools are installed and which you actually use (how
   often, in how many folders), what you've built on top (custom agents,

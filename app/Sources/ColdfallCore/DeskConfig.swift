@@ -190,9 +190,11 @@ public enum DeskConfig {
     /// theme table, from before this, keeps the dark it has always had.
     public static let starterTheme = "[theme]\nmode = \"system\"\n"
 
-    /// First run: leave a working config on disk rather than an empty window.
-    /// Only desks whose CLI is actually installed get written.
-    public static func writeStarter() {
+    /// First run: leave a working config on disk rather than an empty window:
+    /// the theme and a plain shell, which costs nothing. Welcome adds the desks
+    /// the person chooses (see FirstDesk). `everyTool` is the old start, a desk
+    /// for each installed CLI, which made too many at once.
+    public static func writeStarter(everyTool: Bool = false) {
         let dir = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         guard !FileManager.default.fileExists(atPath: path) else { return }
@@ -209,7 +211,7 @@ public enum DeskConfig {
 
         """
         for (runtime, bin) in [("claude", "claude"), ("codex", "codex"), ("antigravity", "agy"),
-                               ("copilot", "copilot"), ("grok", "grok"), ("ollama", "ollama")] {
+                               ("copilot", "copilot"), ("grok", "grok"), ("ollama", "ollama")] where everyTool {
             guard which(bin) != nil else { continue }
             out += """
 
